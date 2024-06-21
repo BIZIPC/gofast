@@ -8,9 +8,6 @@ stratigraphic details for log construction.
 """
 from __future__ import annotations 
 
-# import re 
-# import inspect
-# import itertools
 import warnings
 import copy 
 import numpy as np
@@ -18,10 +15,10 @@ import pandas as pd
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
-from .._typing import  Tuple,  Any, Optional, Union # List,
-from .._typing import  _F, ArrayLike, DataFrame #  Series
+from ..api.types import  Tuple,  Any, Optional, Union 
+from ..api.types import  _F, ArrayLike, DataFrame 
 from ..exceptions import  DepthError 
-from ..property import Config 
+from ..api.property import Config 
 from ..tools.coreutils import  convert_value_in, ellipsis2false
 from ..tools.mathex import find_closest 
 from ..tools.validator import  assert_xy_in  

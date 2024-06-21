@@ -13,8 +13,8 @@ import pandas as pd
 from pathlib import Path 
 from importlib import resources
 from collections import namedtuple
-from ..tools.box import Boxspace 
-from ..tools.baseutils import _is_readable 
+from ..api.structures import Boxspace  
+from ..tools.baseutils import is_readable 
 from ..tools.coreutils import random_state_validator, is_iterable
 from ..tools.coreutils import exist_features
 
@@ -119,7 +119,7 @@ def _to_dataframe(data, target_names=None, feature_names=None, target=None):
     """
     
     if isinstance(data, (str, bytes)):
-        data = _is_readable(data)  # Assumes CSV; adjust as necessary.
+        data = is_readable(data)  # Assumes CSV; adjust as necessary.
     elif isinstance(data, np.ndarray) or isinstance(data, list):
         try:
             data = pd.DataFrame(data, columns=feature_names)
@@ -207,7 +207,7 @@ def __to_dataframe(data, tnames=None , feature_names =None, target =None ):
         d0 = pd.DataFrame(data = data, columns = feature_names)
     else : 
         # read with pandas config parsers including the target 
-        df = _is_readable(data)  
+        df = is_readable(data)  
     # if tnames are given convert the array 
     # of target  to a target frame 
     if  ( 

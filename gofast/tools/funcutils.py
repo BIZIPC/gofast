@@ -1,17 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Funcutils
-=========
-
 `gofast.tools.funcutils` is a utilities package providing various 
 functionalities for functional programming tasks.
-
-Features:
-    - Currying and Partial Application
-    - Function Composition
-    - Memoization
-    - High-order Functions
-    - Utility Functions
 """
 import sys 
 import time
@@ -21,17 +11,18 @@ import logging
 import warnings
 import subprocess
 import threading
+from datetime import datetime
  
 import numpy as np
 import pandas as pd
 
-from .._typing import _T, Dict, Any, Callable, List, Type 
-from .._typing import  Optional, Tuple , Union  
-from .._typing import Series, DataFrame, ArrayLike, Array1D, LambdaType
+from .._gofastlog import gofastlog 
+from ..api.types import _T, Dict, Any, Callable, List, Type 
+from ..api.types import  Optional, Tuple , Union  
+from ..api.types import Series, DataFrame, ArrayLike, Array1D, LambdaType
 from ._dependency import import_optional_dependency
 from .coreutils import to_numeric_dtypes, is_iterable
 from .coreutils import get_installation_name, is_module_installed 
-from .._gofastlog import gofastlog 
 
 # Configure  logging
 _logger=gofastlog.get_gofast_logger(__name__)
@@ -50,8 +41,10 @@ __all__=[
     "update_dataframe_index", 
     "convert_to_pandas", 
     "update_index", 
-    "convert_and_format_data"
+    "convert_and_format_data", 
+    "validate_years"
   ]
+
 
 def curry(check_types=False, strict=False, allow_extra_args=False):
     """
@@ -79,17 +72,17 @@ def curry(check_types=False, strict=False, allow_extra_args=False):
     --------
     >>> from gofast.tools.funcutils import curry
 
-    @curry(check_types=True)
-    def add(x: int, y: int) -> int:
-        return x + y
+    >>> @curry(check_types=True)
+    >>> def add(x: int, y: int) -> int:
+    ...     return x + y
 
     >>> add_five = add(5)
     >>> print(add_five(3))
     8
 
-    @curry(strict=True)
-    def greet(greeting, name):
-        return f"{greeting}, {name}!"
+    >>> @curry(strict=True)
+    >>> def greet(greeting, name):
+    ...     return f"{greeting}, {name}!"
 
     >>> greet_hello = greet("Hello")
     >>> print(greet_hello("World"))
@@ -153,8 +146,8 @@ def compose(*functions, reverse_order=True, type_check=False):
     -------
     callable
         When composing functions, returns a new function representing the 
-        composition.  When used as a decorator, 
-        returns the enhanced decorated function.
+        composition.  When used as a decorator, returns the enhanced decorated
+        function.
 
     Examples
     --------
@@ -174,20 +167,23 @@ def compose(*functions, reverse_order=True, type_check=False):
     >>> print(increment_and_double(3))
     8
     """
-    if len(functions) == 1 and callable(functions[0]) and not (
-            reverse_order or type_check):
-        # Used as a decorator without additional arguments
+    if len(functions) == 1 and callable(functions[0]):
         return _enhance_function(functions[0], type_check=type_check)
     else:
-        # Composing multiple functions or decorator with additional arguments
-        def decorator(func):
-            nonlocal functions
-            if callable(func):
-                # Adding the decorated function to the composition
-                functions = (*functions, func) if reverse_order else (func, *functions)
-            return _compose_functions(
-                *functions, reverse_order=reverse_order, type_check=type_check)
-        return decorator
+        if reverse_order:
+            functions = reversed(functions)
+        def composed_function(*args, **kwargs):
+            # Start with the initial argument
+            result = args
+            for func in functions:
+                if type_check:
+                    _check_comp_arg_types(func, *result)
+                # Pass the result of the last function as the argument to the next
+                result = (func(*result),) if isinstance(result, tuple) else func(result)
+            # Return the final result after all functions have been applied
+            return result[0] if isinstance(result, tuple) else result
+
+        return composed_function
 
 def _enhance_function(func, type_check=False):
     """Enhances a single function with optional type checking."""
@@ -222,7 +218,12 @@ def _check_comp_arg_types(func, *args, **kwargs):
                 f"Argument {name} must be of type {expected_type.__name__},"
                 f" got {type(value).__name__}")
 
-def memoize(func=None, *, cache_limit=None, eviction_policy='LRU', thread_safe=False):
+def memoize(
+    func=None, *, 
+    cache_limit=None, 
+    eviction_policy='LRU', 
+    thread_safe=False
+    ):
     """
     A hybrid decorator for memoizing a function with options for cache size limit, 
     eviction policy, and thread safety.
@@ -252,11 +253,11 @@ def memoize(func=None, *, cache_limit=None, eviction_policy='LRU', thread_safe=F
     --------
     >>> from gofast.tools.funcutils import memoize
 
-    @memoize(cache_limit=100, eviction_policy='LRU', thread_safe=True)
-    def fibonacci(n):
-        if n < 2:
-            return n
-        return fibonacci(n - 1) + fibonacci(n - 2)
+    >>> @memoize(cache_limit=100, eviction_policy='LRU', thread_safe=True)
+    >>> def fibonacci(n):
+    ...      if n < 2:
+    ...          return n
+    ...   return fibonacci(n - 1) + fibonacci(n - 2)
 
     >>> print(fibonacci(10))
     55
@@ -269,34 +270,35 @@ def memoize(func=None, *, cache_limit=None, eviction_policy='LRU', thread_safe=F
         @functools.wraps(func)
         def memoized(*args, **kwargs):
             key = args + tuple(kwargs.items())
-            with lock:
-                if key in memo:
-                    if eviction_policy == 'LRU':
-                        # Move the key to the end to mark it as recently used
-                        cache_keys.append(cache_keys.pop(cache_keys.index(key)))
-                    return memo[key]
-                if cache_limit is not None and len(cache_keys) >= cache_limit:
-                    oldest_key = _apply_eviction_policy(
-                        eviction_policy, cache_keys)
-                    memo.pop(oldest_key, None)
-                result = func(*args, **kwargs)
-                memo[key] = result
-                cache_keys.append(key)
-                return result
-
-        if lock is None:
-            return memoized
-        else:
-            # Use lock only if thread safety is enabled
-            def wrapper(*args, **kwargs):
+            if lock:
                 with lock:
-                    return memoized(*args, **kwargs)
-            return wrapper
+                    result = check_cache(key,  *args, **kwargs)
+            else:
+                result = check_cache(key, *args, **kwargs)
+            return result
 
-    if func is None:
-        return decorator
-    else:
+        def check_cache(key, *args, **kwargs):
+            if key in memo:
+                if eviction_policy == 'LRU':
+                    cache_keys.append(cache_keys.pop(cache_keys.index(key)))
+                return memo[key]
+            result = func(*args, **kwargs)
+            handle_eviction(key, result)
+            return result
+
+        def handle_eviction(key, result):
+            if cache_limit is not None and len(cache_keys) >= cache_limit:
+                oldest_key = _apply_eviction_policy(eviction_policy, cache_keys)
+                memo.pop(oldest_key, None)
+            memo[key] = result
+            cache_keys.append(key)
+
+        return memoized
+
+    if func:
         return decorator(func)
+    return decorator
+
 
 def _apply_eviction_policy(eviction_policy, cache_keys):
     """ Added support for customizable eviction policies (LRU and FIFO). 
@@ -995,35 +997,40 @@ def ensure_pkg(
     def decorator(func: _T) -> _T:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # Check condition if partial_check is True 
-            # or perform check unconditionally
-            if not partial_check or _should_check_condition(
+            # Determine if this is a method or a function based on the first argument
+            bound_method = hasattr(args[0], func.__name__) if args else False # 
+            
+            # If partial_check is True, check condition before performing actions
+            if not partial_check or  _should_check_condition(
                     condition, *args, **kwargs):
                 try:
-                    # Attempt to import the package, installing 
+                    # Attempt to import the package, handling installation 
                     # if necessary and permitted
                     import_optional_dependency(
-                        name, extra=extra, 
-                        errors=errors, 
-                        min_version=min_version,
-                        exception=exception
+                        name, extra=extra, errors=errors, 
+                        min_version=min_version, exception=exception
                     )
                 except (ModuleNotFoundError, ImportError):
                     if auto_install:
-                        # Attempt package installation
-                        install_package(name, dist_name= dist_name, 
-                                        infer_dist_name=infer_dist_name, 
-                                        extra=extra,use_conda=use_conda,
-                                        verbose=verbose, 
-                                        )
+                        # Install the package if auto-install is enabled
+                        install_package(
+                            name, dist_name=dist_name, 
+                            infer_dist_name=infer_dist_name, 
+                            extra=extra, use_conda=use_conda, verbose=verbose
+                        )
                     elif exception is not None:
                         raise exception
                     else:
                         raise
                     
-            return func(*args, **kwargs)
+            # If the function is a bound method, call it with 'self' or 'cls'
+            if bound_method:
+                return func(args[0], *args[1:], **kwargs)
+            else:
+                return func(*args, **kwargs) # 
         
         return wrapper
+    
     return decorator
 
 def _should_check_condition(condition: Any, *args, **kwargs) -> bool:
@@ -1415,7 +1422,7 @@ def _add_dynamic_method(func):
         return
 
     for pandas_class in [pd.DataFrame, pd.Series]:
-        method_name = "go" + func.__name__
+        method_name = "go_" + func.__name__
         if hasattr(pandas_class, method_name):
             continue
         try:
@@ -2691,6 +2698,394 @@ def series_naming(name, data=None, error='ignore'):
         isinstance(s, pd.DataFrame) and len(s.columns) == 1 and (
             cast_numeric(s.columns[0], error='ignore') or s.columns[0] is None)
     ) else {}
+
+
+def validate_years(
+    start_year: Optional[Union[int, str]] = None, 
+    end_year: Optional[Union[int, str]] = None, *, 
+    check_range: bool = True,
+    range_validator: Optional[Callable[[int], bool]] = None
+) -> Union[Callable, tuple]:
+    """
+    Validate the years provided to a function or use as a decorator.
+    
+    This function checks if the `start_year` and `end_year` are valid integer 
+    years and whether `start_year` is before `end_year`. Optionally, it 
+    validates if the years are within a reasonable range defined by the 
+    `range_validator`. The function can be used as a decorator to enforce 
+    this validation on function arguments named `start_year` and `end_year`, 
+    or as a standalone function that validates and returns the years.
+    
+    Parameters
+    ----------
+    start_year : int, str, or None, optional
+        The starting year as an integer, a string representing a year, or 
+        the name of the  parameter representing the starting year in the 
+        decorated function. If `None`, it will be treated as a decorator, 
+        and the parameter will be dynamically determined.
+        
+    end_year : int, str, or None, optional
+        The ending year as an integer, a string representing a year, or the 
+        name of the parameter representing the ending year in the decorated 
+        function. If `None`, it will be treated as a decorator, and the 
+        parameter will be dynamically determined.
+        
+    check_range : bool, default=True
+        If `True`, enables the range check of the years using the 
+        `range_validator`. If `False`, this check is bypassed.
+        
+    range_validator : Callable[[int], bool], optional
+        A function that accepts an integer year and returns `True` if the year 
+        is within an acceptable range. If not provided, the default validator 
+        checks if the year is between 1900 and the current year.
+        
+    Returns
+    -------
+    Callable or tuple
+        If used as a decorator, it returns the wrapped function. If used as 
+        a standalone function, it returns a tuple of validated 
+        `(start_year, end_year)` as integers.
+        
+    Raises
+    ------
+    ValueError
+        If the years cannot be parsed as integers, `start_year` is not less 
+        than `end_year`, or the years are not within the valid range as 
+        determined by `range_validator`.
+        
+    Examples
+    --------
+    As a decorator, using parameter names of the decorated function:
+    
+    >>> @validate_years(start_year='start', end_year='end')
+    ... def some_function(start: int, end: int):
+    ...     return f"Range: {start} to {end}"
+    
+    Using a custom `range_validator` to enforce that years must be in the
+    21st century:
+
+    >>> def is_21st_century(year: int) -> bool:
+    ...     return 2000 <= year <= 2100
+    >>> start, end = validate_years('2001', '2020', range_validator=is_21st_century)
+    >>> print(f"Validated range: {start} to {end}")
+    Validated range: 2001 to 2020
+    
+    As a standalone function:
+    
+    >>> start, end = validate_years('2001', '2020')
+    >>> print(f"Validated range: {start} to {end}")
+    Validated range: 2001 to 2020
+    """
+    if range_validator is None:
+        range_validator = lambda x: (1900 <= x <= datetime.now().year, (1900, datetime.now().year))
+    
+    # Decorator function
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            nonlocal start_year, end_year
+            # If start_year and end_year are string, try getting the value from args or kwargs
+            if isinstance(start_year, str) or isinstance(end_year, str):
+                sy = _get_param_value(start_year, args, kwargs, func)
+                ey = _get_param_value(end_year, args, kwargs, func)
+            else:
+                # Otherwise, parse them directly
+                sy = _parse_year(start_year, 'start_year')
+                ey = _parse_year(end_year, 'end_year')
+            
+            # Validation logic remains unchanged
+            _check_year_order(sy, ey)
+            if check_range:
+                _check_year_range(sy, range_validator)
+                _check_year_range(ey, range_validator)
+                
+            return func(*args, **kwargs)
+        return wrapper
+
+    # Improved condition to determine function usage based on argument types
+    if ((isinstance(start_year, (int, str)) or start_year is None) and 
+        (isinstance(end_year, (int, str)) or end_year is None)):
+        # Direct function usage, assuming start_year and end_year are not both callables
+        if not callable(start_year) and not callable(end_year):
+            sy = _parse_year(start_year, 'start_year') if start_year is not None else None
+            ey = _parse_year(end_year, 'end_year') if end_year is not None else None
+            if sy is not None and ey is not None:
+                _check_year_order(sy, ey)
+                if check_range:
+                    _check_year_range(sy, range_validator)
+                    _check_year_range(ey, range_validator)
+                return sy, ey
+        return decorator
+    else:
+        # Otherwise, assume decorator usage with function to decorate
+        # being passed later
+        return decorator
+
+def _parse_year(year: Union[int, str], name: str) -> int:
+    """
+    Parse the year from a string or integer to an integer.
+    
+    Parameters
+    ----------
+    year : int or str
+        The year to parse.
+    name : str
+        The name of the parameter (start_year or end_year) for error messaging.
+        
+    Returns
+    -------
+    int
+        The parsed year as an integer.
+    
+    Raises
+    ------
+    ValueError
+        If the year cannot be converted to an integer.
+    """
+    try:
+        return int(year)
+    except ValueError:
+        raise ValueError(f"'{name}' must be convertible to an integer.")
+
+
+def _check_year_order(start_year: int, end_year: int) -> None:
+    """
+    Check if start_year is less than end_year.
+    
+    Parameters
+    ----------
+    start_year : int
+        The starting year.
+    end_year : int
+        The ending year.
+    
+    Raises
+    ------
+    ValueError
+        If start_year is not less than end_year.
+    """
+    if start_year >= end_year:
+        raise ValueError(f"{start_year} must be less than {end_year}.")
+
+
+def _check_year_range(
+        year: int, 
+        range_validator: Callable[[int], Union[bool, Tuple[bool, Tuple[int, int]]]]
+        ) -> None:
+    """
+    Validates if a given year is within an acceptable range as determined by
+    the range_validator. The range_validator function can return either a 
+    boolean indicating the validity of the year, or a tuple comprising a 
+    boolean and another tuple detailing the valid range (start, end).
+
+    Parameters
+    ----------
+    year : int
+        The year to be validated.
+    range_validator : Callable[[int], Union[bool, Tuple[bool, Tuple[int, int]]]]
+        A function that returns either a boolean indicating if the year is valid,
+        or a tuple containing a boolean and the valid range. If the year is
+        not valid and a range is provided, a ValueError will be raised including
+        the valid range in its message.
+
+    Raises
+    ------
+    ValueError
+        If the year is not within the valid range. The exception message will
+        include the valid range if it is provided by the range_validator.
+
+    Examples
+    --------
+    Using a range_validator that returns a boolean:
+    
+    >>> from gofast.tools.funcutils import _check_year_range
+    >>> def simple_validator(year: int) -> bool:
+    ...     return 2000 <= year <= 2100
+    >>> try:
+    ...     _check_year_range(1999, simple_validator)
+    ... except ValueError as e:
+    ...     print(e)
+    The year 1999 is out of the valid range.
+
+    Using a range_validator that returns a tuple with the valid range:
+    
+    >>> def detailed_validator(year: int) -> Tuple[bool, Tuple[int, int]]:
+    ...     return 2000 <= year <= 2100, (2000, 2100)
+    >>> try:
+    ...     _check_year_range(1999, detailed_validator)
+    ... except ValueError as e:
+    ...     print(e)
+    The year 1999 is out of the valid range. Valid range is 2000 to 2100.
+    """
+    result = range_validator(year)
+    is_valid = result if isinstance(result, bool) else result[0]
+    valid_range = None if isinstance(result, bool) else result[1]
+
+    if not is_valid:
+        error_message = f"The year {year} is out of the valid range."
+        if valid_range:
+            error_message += f" Valid range is {valid_range[0]} to {valid_range[1]}."
+        raise ValueError(error_message)
+
+def _get_param_value(param_name: Union[int, str], args, kwargs, func) -> int:
+    """
+    Get the value of a parameter by name from args or kwargs of a function.
+    
+    Parameters
+    ----------
+    param_name : int, str
+        The name of the parameter to retrieve the value for, or its actual value.
+    args : tuple
+        The positional arguments passed to the function.
+    kwargs : dict
+        The keyword arguments passed to the function.
+    func : Callable
+        The function from which to retrieve the parameter value.
+    
+    Returns
+    -------
+    int
+        The value of the parameter as an integer.
+    """
+    if isinstance(param_name, int):
+        return param_name
+    elif param_name in kwargs:
+        return kwargs[param_name]
+    else:
+        param_index = func.__code__.co_varnames.index(param_name)
+        if param_index < len(args):
+            return args[param_index]
+        else:
+            raise ValueError(f"The parameter {param_name} was not provided to the function.")
+
+def context_checker(
+    return_context_as_bool: bool = False,  
+    custom_logic: Optional[Callable[[Callable], Callable]] = None,
+    verbose: bool = False
+    ) -> Callable:
+    """
+    A versatile decorator to introspect and modify the behavior of functions
+    based on their context of usage. It can determine whether a function is
+    being used as a decorator for another function or called directly. This
+    decorator also supports executing with custom or default logic.
+    
+    Parameters
+    ----------
+    return_context_as_bool : bool, optional
+        If True, the decorator returns a boolean value indicating the context
+        instead of modifying or executing the target function. ``True`` means 
+        the function is used as a decorator, and ``False`` indicates it is called
+        directly. Defaults to ``False``.
+    
+    custom_logic : Optional[Callable[[Callable], Callable]], optional
+        A function that defines custom logic to apply to the decorated function.
+        If provided, this logic supersedes the default decoration logic.
+        If ``None``, default logic is applied.
+        
+    verbose : bool, optional
+        If ``True``, prints messages indicating the detected usage context. 
+        Useful for debugging purposes. Defaults to ``False``.
+        
+    Returns
+    -------
+    Callable
+        Depending on `return_context_as_bool`, the function either returns a
+        boolean indicating the usage context or modifies the target function
+        based on the specified logic (`custom_logic` or default).
+
+    Examples
+    --------
+    Direct call returning context as boolean:
+    
+    >>> import functools 
+    >>> from gofast.tools.funcutils import context_checker
+    >>> @context_checker(return_context_as_bool=True)
+    ... def my_function():
+    ...     pass
+    >>> print(my_function())
+    Detected direct call or dual-use scenario.
+    True
+    
+    Used as a decorator with custom logic, printing before and after:
+    
+    >>> def custom_logic(func):
+    ...     @functools.wraps(func)
+    ...     def wrapper(*args, **kwargs):
+    ...         print("Before function call")
+    ...         result = func(*args, **kwargs)
+    ...         print("After function call")
+    ...         return result
+    ...     return wrapper
+    >>> @context_checker(custom_logic=custom_logic)
+    ... def another_function():
+    ...     print("Function logic here.")
+    >>> another_function()
+    Detected dual-use or direct call scenario.
+    Before function call
+    Function logic here.
+    After function call
+    
+    Using as a dual-use decorator without providing function (useful for
+    decorators that can operate without arguments):
+    
+    >>> @context_checker(verbose=True)
+    ... def dual_use_decorator(func=None):
+    ...     if func is not None:
+    ...         return context_checker(func)
+    ...     def inner_decorator(f):
+    ...         @functools.wraps(f)
+    ...         def wrapper(*args, **kwargs):
+    ...             print("Dual-use logic applied.")
+    ...             return f(*args, **kwargs)
+    ...         return wrapper
+    ...     return inner_decorator
+    >>> @dual_use_decorator()
+    ... def decorated_function():
+    ...     print("Decorated function executed.")
+    >>> decorated_function()
+    Detected dual-use or direct call scenario.
+    Dual-use logic applied.
+    Decorated function executed.
+    """
+    def wrapper(target: Optional[Callable] = None) -> Any:
+        def apply_logic(func: Callable) -> Callable:
+            logic_to_apply = custom_logic if custom_logic else _apply_default_logic
+            return logic_to_apply(func)
+        
+        if target and callable(target):
+            if return_context_as_bool:
+                if verbose:
+                    print("Detected as a decorator.")
+                return False
+            return apply_logic(target)
+        
+        if return_context_as_bool:
+            if verbose:
+                print("Detected direct call or dual-use scenario.")
+            return True
+        
+        def dual_use_decorator(func: Optional[Callable] = None) -> Any:
+            if callable(func):
+                if verbose:
+                    print("Detected dual-use or direct call scenario.")
+                return apply_logic(func)
+            else:
+                if verbose:
+                    print("Detected function definition missing, applying logic directly.")
+                # Handle the case where the decorator is used without ()
+                return apply_logic(dual_use_decorator)
+        
+        return dual_use_decorator if not target else apply_logic(target)
+    
+    def _apply_default_logic(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def decorated(*args, **kwargs) -> Any:
+            if verbose:
+                print("Default decoration logic applied.")
+            return func(*args, **kwargs)
+        return decorated
+    
+    return wrapper if not return_context_as_bool else wrapper(None)
 
 
 

@@ -19,7 +19,6 @@ import matplotlib as mpl
 import matplotlib.pyplot  as plt
 import matplotlib.ticker as mticker
 from abc import ABCMeta 
-from scipy.cluster.hierarchy import dendrogram 
 from matplotlib import cm 
 from matplotlib.colors import BoundaryNorm
 
@@ -28,29 +27,25 @@ from sklearn.metrics import mean_squared_error, silhouette_samples
 from sklearn.metrics import  silhouette_score
 from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, label_binarize
-from sklearn.cluster import KMeans 
+
 from sklearn.impute import   SimpleImputer
 
 from .._gofastlog import gofastlog
-from .._docstring import _core_docs, _baseplot_params, DocstringComponents
-from .._typing import  _F, Optional, Tuple, List, ArrayLike, NDArray 
-from .._typing import DataFrame,  Series 
 from ..analysis.dimensionality import nPCA
-from ..exceptions import NotFittedError, EstimatorError, PlotError
-from ..metrics import precision_recall_tradeoff, roc_curve_, confusion_matrix_
-from ..property import BasePlot 
-from ..tools._dependency import import_optional_dependency 
-from ..tools.coreutils import  to_numeric_dtypes, fancier_repr_formatter 
-from ..tools.coreutils import  smart_strobj_recognition, reshape 
-from ..tools.coreutils import  projection_validator
-from ..tools.coreutils import  str2columns, make_ids, type_of_target, is_iterable 
-from ..tools.mathex import linkage_matrix 
-from ..tools.mlutils import categorize_target, extract_target
-from ..tools.validator import  _check_consistency_size,  get_estimator_name  
-from ..tools.validator import build_data_if,  check_array, check_X_y, check_y 
+from ..api.docstring import _core_docs, _baseplot_params, DocstringComponents
+from ..api.property import BasePlot 
+from ..api.types import  _F, Optional, List, ArrayLike, NDArray 
+from ..api.types import DataFrame,  Series 
+from ..exceptions import NotFittedError, EstimatorError
+from ..tools.baseutils import categorize_target, extract_target
+from ..tools.coreutils import to_numeric_dtypes, fancier_repr_formatter 
+from ..tools.coreutils import smart_strobj_recognition, reshape 
+from ..tools.coreutils import str2columns, make_ids, type_of_target, is_iterable 
+from ..tools.funcutils import ensure_pkg 
+from ..tools.validator import _check_consistency_size
+from ..tools.validator import build_data_if
 from ..tools.validator import _is_numeric_dtype , check_consistent_length
 from ..tools.validator import assert_xy_in 
-
 from .utils import _get_xticks_formatage,  make_mpl_properties
 
 _logger=gofastlog.get_gofast_logger(__name__)
@@ -470,6 +465,10 @@ class MetricPlotter (BasePlot):
     
         return self
 
+    @ensure_pkg ("scikitplot", dist_name="scikit-plot", infer_dist_name=True, 
+                 extra = (
+      " Need `sckit-plot` package for `plotCumulativeGain` to successfully run .")
+     ) 
     def plotCumulativeGain(
         self, 
         y_probas=None, 
@@ -513,18 +512,22 @@ class MetricPlotter (BasePlot):
         self : object
             Returns the instance itself after rendering the plot.
         """
-        self.inspect 
-        y_probas = y_probas if y_probas is not None else self.y_pred 
-        import_optional_dependency('scikitplot')
         from scikitplot.metrics import plot_cumulative_gain
         
+        self.inspect 
+        y_probas = y_probas if y_probas is not None else self.y_pred 
+    
         plt.figure()
         plot_cumulative_gain(self.y_true, y_probas)
         plt.title(title)
         plt.show()
     
         return self
-
+    
+    @ensure_pkg ("scikitplot", dist_name="scikit-plot", infer_dist_name=True, 
+                 extra = (
+      " Need `sckit-plot` package for `plotLiftCurve` to successfully run .")
+     ) 
     def plotLiftCurve(self, y_probas=None, title='Lift Curve'):
         """
         Plot a lift curve for a binary classification model.
@@ -567,10 +570,10 @@ class MetricPlotter (BasePlot):
         self : object
             Returns the instance itself after rendering the plot.
         """
+        from scikitplot.metrics import  plot_lift_curve
+        
         self.inspect 
         y_probas = y_probas if y_probas is not None else self.y_pred
-        import_optional_dependency('scikitplot')
-        from scikitplot.metrics import  plot_lift_curve
         plt.figure()
         plot_lift_curve(self.y_true, y_probas)
         plt.title(title)
@@ -1640,6 +1643,8 @@ class EvalPlotter(BasePlot):
         -------
         None
         """
+        from .dimensionality import plot_unified_pca
+        
         if self.y is None: 
             raise TypeError("Biplot expects the target y")
         axis1, axis2 = pca_axes_labels 
@@ -1902,8 +1907,7 @@ class EvalPlotter(BasePlot):
         label=None, 
         kind='threshold', 
         method=None, 
-        cvp_kws=None, 
-        **prt_kws
+        **cvp_kws, 
         )-> 'EvalPlotter':
         """ 
         Plots Precision-Recall (PR) or Precision-Recall tradeoff.
@@ -1932,9 +1936,6 @@ class EvalPlotter(BasePlot):
 
         cvp_kws : dict, optional
             Additional keyword arguments for sklearn's `cross_val_predict`.
-
-        prt_kws : dict
-            Additional keyword arguments for `precision_recall_tradeoff`.
 
         Returns
         -------
@@ -1974,8 +1975,11 @@ class EvalPlotter(BasePlot):
             raise ValueError(f"Invalid kind '{kind}'. Expected"
                              " 'threshold' or 'recall'.")
         # Retrieve precision-recall tradeoff data
-        prtObj = precision_recall_tradeoff(clf, self.X, self.y, cv=self.cv, 
-                       label=label, method=method, cvp_kws=cvp_kws, **prt_kws)
+        from ..metrics import precision_recall_tradeoff
+        
+        prtObj = precision_recall_tradeoff(
+            self.y, estimator=clf, X=self.X, cv=self.cv, label=label,
+            scoring_method=method, **cvp_kws)
 
         # Plotting setup
         fig, ax = plt.subplots(figsize=self.fig_size)
@@ -2026,8 +2030,7 @@ class EvalPlotter(BasePlot):
         clfs, 
         label, 
         method=None, 
-        cvp_kws=None, 
-        **roc_kws
+        **cvp_kws
         ):
         """
         Plots Receiver Operating Characteristic (ROC) curves for classifiers.
@@ -2083,7 +2086,7 @@ class EvalPlotter(BasePlot):
 
         # Generate ROC curves for each classifier
         roc_curves = [self._generate_roc_curve(
-            clf, label, meth, cvp_kws, roc_kws) for name, clf, meth in clfs]
+            clf, label, meth, cvp_kws) for name, clf, meth in clfs]
 
         # Plotting
         fig, ax = self._setup_roc_plot()
@@ -2092,10 +2095,14 @@ class EvalPlotter(BasePlot):
         
         return self
 
-    def _generate_roc_curve(self, clf, label, method, cvp_kws, roc_kws):
+    def _generate_roc_curve(self, clf, label, method, cvp_kws):
         """ Generates ROC curve data for a given classifier. """
-        return roc_curve_(clf, self.X, self.y, cv=self.cv, label=label,
-                          method=method, cvp_kws=cvp_kws, **roc_kws)
+        from ..metrics import roc_tradeoff
+        
+        return roc_tradeoff(self.y,X= self.X,  estimator= clf, pos_label= label, 
+                     cv= self.cv, method=method, **cvp_kws)
+        # return roc_curve_(clf, self.X, self.y, cv=self.cv, label=label,
+        #                   method=method, cvp_kws=cvp_kws, **roc_kws)
 
     def _setup_roc_plot(self):
         """ Sets up the ROC plot. """
@@ -2206,8 +2213,9 @@ class EvalPlotter(BasePlot):
     
     def _compute_roc(self, clf, method, label, cvp_kws, **roc_kws):
         # Computes ROC curve for a given classifier
-        roc_obj = roc_curve_(clf, self.X, self.y, cv=self.cv, label=label,
-                             method=method, cvp_kws=cvp_kws, **roc_kws)
+        from ..metrics import roc_tradeoff
+        roc_obj = roc_tradeoff(self.y, estimator = clf, X=self.X,  cv=self.cv, 
+                             pos_label=label, method=method, **cvp_kws)
         return roc_obj
     
     def _draw_roc_curve(self, ax, roc_obj, clf_name):
@@ -2299,7 +2307,7 @@ class EvalPlotter(BasePlot):
         kind=None, 
         labels=None,
         matshow_kws=None, 
-        **conf_mx_kws
+        **cvp_kws
         ):
         """
         Plots a confusion matrix for a classifier.
@@ -2324,8 +2332,9 @@ class EvalPlotter(BasePlot):
         matshow_kws : dict, optional
             Additional keyword arguments for `matplotlib.pyplot.matshow`.
 
-        conf_mx_kws : dict
-            Additional keyword arguments for the confusion matrix computation.
+        cvp_kws : dict
+            Additional keyword arguments for the cross-validation predict
+            computation.
 
         Returns
         -------
@@ -2366,6 +2375,7 @@ class EvalPlotter(BasePlot):
         ...                          kind='error', **plot_kws) 
         """
         self.inspect
+        from ..metrics import evaluate_confusion_matrix
 
         kind = kind.lower().strip() if kind else 'map'
         matshow_kws = matshow_kws or {'cmap': plt.cm.gray}
@@ -2375,15 +2385,18 @@ class EvalPlotter(BasePlot):
         labels = self.litteral_classes or labels
 
         # Compute confusion matrix
-        confObj = confusion_matrix_(clf, self.X, y, cv=self.cv, **conf_mx_kws)
+        confObj = evaluate_confusion_matrix(
+            y, classifier=clf, X=self.X, cv=self.cv, **cvp_kws)
 
         # Plotting
         fig, ax = plt.subplots(figsize=self.fig_size)
         if kind == 'map':
-            cax = ax.matshow(confObj.conf_mx, **matshow_kws)
+            cax = ax.matshow(confObj.cm, **matshow_kws)
             cb_label = 'Items Confused'
         elif kind == 'error':
-            cax = ax.matshow(confObj.norm_conf_mx, **matshow_kws)
+            cm = confObj.cm.astype('float') / confObj.cm.sum(axis=1)[:, np.newaxis]
+            np.fill_diagonal(cm, 0)
+            cax = ax.matshow(cm, **matshow_kws)
             cb_label = 'Error Rate'
 
         self._style_matshow_plot(ax, cax, labels, cb_label, fig)
@@ -2730,192 +2743,7 @@ attributes object. For instance::
     
 """
 # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-def plot_loc_projection(
-    X: DataFrame | NDArray, 
-    Xt: DataFrame | NDArray =None, *, 
-    columns: List[str] =None, 
-    test_kws: dict =None,  
-    **baseplot_kws 
-    ): 
-    """ Visualize train and test dataset based on 
-    the geographical coordinates.
-    
-    Since there is geographical information(latitude/longitude or
-    easting/northing), it is a good idea to create a scatterplot of 
-    all instances to visualize data.
-    
-    Parameters 
-    ---------
-    X:  Ndarray ( M x N matrix where ``M=m-samples``, & ``N=n-features``)
-        training set; Denotes data that is observed at training and prediction 
-        time, used as independent variables in learning. The notation 
-        is uppercase to denote that it is ordinarily a matrix. When a matrix, 
-        each sample may be represented by a feature vector, or a vector of 
-        precomputed (dis)similarity with each training sample. 
-
-    Xt: Ndarray ( M x N matrix where ``M=m-samples``, & ``N=n-features``)
-        Shorthand for "test set"; data that is observed at testing and 
-        prediction time, used as independent variables in learning. The 
-        notation is uppercase to denote that it is ordinarily a matrix.
-    columns: list of str or index, optional 
-        columns is usefull when a dataframe is given  with a dimension size 
-        greater than 2. If such data is passed to `X` or `Xt`, columns must
-        hold the name to considered as 'easting', 'northing' when UTM 
-        coordinates are given or 'latitude' , 'longitude' when latlon are 
-        given. 
-        If dimension size is greater than 2 and columns is None , an error 
-        will raises to prevent the user to provide the index for 'y' and 'x' 
-        coordinated retrieval. 
-        
-    test_kws: dict, 
-        keywords arguments passed to :func:`matplotlib.plot.scatter` as test
-        location font and colors properties. 
-        
-    baseplot_kws: dict, 
-        All all  the keywords arguments passed to the peroperty  
-        :class:`gofast.property.BasePlot` class. 
-        
-    Examples
-    --------
-    >>> from gofast.datasets import fetch_data 
-    >>> from gofast.plot.evaluate  import plot_loc_projection 
-    >>> # Discard all the non-numeric data 
-    >>> # then inut numerical data 
-    >>> from gofast.utils import to_numeric_dtypes, naive_imputer
-    >>> X, Xt, *_ = fetch_data ('bagoue', split_X_y =True, as_frame =True) 
-    >>> X =to_numeric_dtypes(X, pop_cat_features=True )
-    >>> X= naive_imputer(X)
-    >>> Xt = to_numeric_dtypes(Xt, pop_cat_features=True )
-    >>> Xt= naive_imputer(Xt)
-    >>> plot_kws = dict (fig_size=(8, 12),
-                     lc='k',
-                     marker='o',
-                     lw =3.,
-                     font_size=15.,
-                     xlabel= 'easting (m) ',
-                     ylabel='northing (m)' , 
-                     markerfacecolor ='k', 
-                     markeredgecolor='r',
-                     alpha =1., 
-                     markeredgewidth=2., 
-                     show_grid =True,
-                     galpha =0.2, 
-                     glw=.5, 
-                     rotate_xlabel =90.,
-                     fs =3.,
-                     s =None )
-    >>> plot_loc_projection( X, Xt , columns= ['east', 'north'], 
-                        trainlabel='train location', 
-                        testlabel='test location', **plot_kws
-                       )
-    """
-    
-    trainlabel =baseplot_kws.pop ('trainlabel', None )
-    testlabel =baseplot_kws.pop ('testlabel', None  )
-    
-    for k  in list(baseplot_kws.keys()): 
-        setattr (pobj , k, baseplot_kws[k])
-        
-    #check array
-    X=check_array (
-        X, 
-        input_name="X", 
-        to_frame =True, 
-        )
-    Xt =check_array (
-        Xt, 
-        input_name="Xt", 
-        to_frame =True, 
-        )
-    # validate the projections.
-    xy , xynames = projection_validator(X, Xt, columns )
-    x, y , xt, yt =xy 
-    xname, yname, xtarget_name, yname=xynames 
-
-    pobj.xlim =[np.ceil(min(x)), np.floor(max(x))]
-    pobj.ylim =[np.ceil(min(y)), np.floor(max(y))]   
-    
-    xpad = abs((x -x.mean()).min())/5.
-    ypad = abs((y -y.mean()).min())/5.
- 
-    if  Xt is not None: 
-
-        min_x, max_x = xt.min(), xt.max()
-        min_y, max_y = yt.min(), yt.max()
-        
-        
-        pobj.xlim = [min([pobj.xlim[0], np.floor(min_x)]),
-                     max([pobj.xlim[1], np.ceil(max_x)])]
-        pobj.ylim = [min([pobj.ylim[0], np.floor(min_y)]),
-                     max([pobj.ylim[1], np.ceil(max_y)])]
-      
-    pobj.xlim =[pobj.xlim[0] - xpad, pobj.xlim[1] +xpad]
-    pobj.ylim =[pobj.ylim[0] - ypad, pobj.ylim[1] +ypad]
-    
-     # create figure obj 
-    fig = plt.figure(figsize = pobj.fig_size)
-    ax = fig.add_subplot(1,1,1)
-    
-    xname = pobj.xlabel or xname 
-    yname = pobj.ylabel or yname 
-    
-    if pobj.s is None: 
-        pobj.s = pobj.fs *40 
-    ax.scatter(x, y, 
-               color = pobj.lc,
-                s = pobj.s if not pobj.s else pobj.fs * pobj.s, 
-                alpha = pobj.alpha , 
-                marker = pobj.marker,
-                edgecolors = pobj.marker_edgecolor,
-                linewidths = pobj.lw,
-                linestyles = pobj.ls,
-                facecolors = pobj.marker_facecolor,
-                label = trainlabel 
-            )
-    
-    if  Xt is not None:
-        if pobj.s is not None: 
-            pobj.s /=2 
-        test_kws = test_kws or dict (
-            color = 'r',s = pobj.s, alpha = pobj.alpha , 
-            marker = pobj.marker, edgecolors = 'r',
-            linewidths = pobj.lw, linestyles = pobj.ls,
-            facecolors = 'k'
-            )
-        ax.scatter(xt, yt, 
-                    label = testlabel, 
-                    **test_kws
-                    )
-
-    ax.set_xlim (pobj.xlim)
-    ax.set_ylim (pobj.ylim)
-    ax.set_xlabel( xname,
-                  fontsize= pobj.font_size )
-    ax.set_ylabel (yname,
-                   fontsize= pobj.font_size )
-    ax.tick_params(axis='both', 
-                   labelsize= pobj.font_size )
-    plt.xticks(rotation = pobj.rotate_xlabel)
-    plt.yticks(rotation = pobj.rotate_ylabel)
-    
-    if pobj.show_grid is True : 
-        ax.grid(pobj.show_grid,
-                axis=pobj.gaxis,
-                which = pobj.gwhich, 
-                color = pobj.gc,
-                linestyle=pobj.gls,
-                linewidth=pobj.glw, 
-                alpha = pobj.galpha
-                )
-        if pobj.gwhich =='minor': 
-            ax.minorticks_on()
             
-    if len(pobj.leg_kws) ==0 or 'loc' not in pobj.leg_kws.keys():
-         pobj.leg_kws['loc']='upper left'
-    ax.legend(**pobj.leg_kws)
-    pobj.save(fig)
-
-              
 def plot_model(
     yt: ArrayLike |Series, 
     ypred:ArrayLike |Series=None,
@@ -3511,1129 +3339,7 @@ Examples
                }
 >>> plot_model_scores([svc_model],scores =[fake_scores] , **base_plot_params ) 
 """
-def plot_dendroheat(
-    df: DataFrame |NDArray, 
-    columns: List[str] =None, 
-    labels:Optional[List[str]] =None,
-    metric:str ='euclidean',  
-    method:str ='complete', 
-    kind:str = 'design', 
-    cmap:str ='hot_r', 
-    fig_size:Tuple[int] =(8, 8), 
-    facecolor:str ='white', 
-    **kwd
-):
-    """
-    Attaches dendrogram to a heat map. 
-    
-    Hierachical dendrogram are often used in combination with a heat map which
-    allows us to represent the individual value in data array or matrix 
-    containing our training examples with a color code. 
-    
-    Parameters 
-    ------------
-    df: dataframe or NDArray of (n_samples, n_features) 
-        dataframe of Ndarray. If array is given , must specify the column names
-        to much the array shape 1 
-    columns: list 
-        list of labels to name each columns of arrays of (n_samples, n_features) 
-        If dataframe is given, don't need to specify the columns. 
-        
-    kind: str, ['squareform'|'condense'|'design'], default is {'design'}
-        kind of approach to summing up the linkage matrix. 
-        Indeed, a condensed distance matrix is a flat array containing the 
-        upper triangular of the distance matrix. This is the form that ``pdist`` 
-        returns. Alternatively, a collection of :math:`m` observation vectors 
-        in :math:`n` dimensions may be passed as  an :math:`m` by :math:`n` 
-        array. All elements of the condensed distance matrix must be finite, 
-        i.e., no NaNs or infs.
-        Alternatively, we could used the ``squareform`` distance matrix to yield
-        different distance values than expected. 
-        the ``design`` approach uses the complete inpout example matrix  also 
-        called 'design matrix' to lead correct linkage matrix similar to 
-        `squareform` and `condense``. 
-        
-    metric : str or callable, default is {'euclidean'}
-        The metric to use when calculating distance between instances in a
-        feature array. If metric is a string, it must be one of the options
-        allowed by :func:`sklearn.metrics.pairwise.pairwise_distances`.
-        If ``X`` is the distance array itself, use "precomputed" as the metric.
-        Precomputed distance matrices must have 0 along the diagonal.
-        
-    method : str, optional, default is {'complete'}
-        The linkage algorithm to use. See the ``Linkage Methods`` section below
-        for full descriptions in :func:`gofast.tools.exmath.linkage_matrix`
-        
-    labels : ndarray, optional
-        By default, ``labels`` is None so the index of the original observation
-        is used to label the leaf nodes.  Otherwise, this is an :math:`n`-sized
-        sequence, with ``n == Z.shape[0] + 1``. The ``labels[i]`` value is the
-        text to put under the :math:`i` th leaf node only if it corresponds to
-        an original observation and not a non-singleton cluster.
-        
-    cmap: str , default is {'hot_r'}
-        matplotlib color map 
-     
-    fig_size: str , Tuple , default is {(8, 8)}
-        the size of the figure 
-    facecolor: str , default is {"white"}
-        Matplotlib facecolor 
-  
-    kwd: dict 
-        additional keywords arguments passes to 
-        :func:`scipy.cluster.hierarchy.dendrogram` 
-        
-    Examples
-    ---------
-    >>> # (1) -> Use random data
-    >>> import numpy as np 
-    >>> from gofast.plot.evaluate  import plot_dendroheat
-    >>> np.random.seed(123) 
-    >>> variables =['X', 'Y', 'Z'] ; labels =['ID_0', 'ID_1', 'ID_2',
-                                             'ID_3', 'ID_4']
-    >>> X= np.random.random_sample ([5,3]) *10 
-    >>> df =pd.DataFrame (X, columns =variables, index =labels)
-    >>> plot_dendroheat (df)
-    >>> # (2) -> Use Bagoue data 
-    >>> from gofast.datasets import load_bagoue  
-    >>> X, y = load_bagoue (as_frame=True )
-    >>> X =X[['magnitude', 'power', 'sfi']].astype(float) # convert to float
-    >>> plot_dendroheat (X )
-    
-    
-    """
- 
-    df=check_array (
-        df, 
-        input_name="Data 'df' ", 
-        to_frame =True, 
-        )
-    if columns is not None: 
-        if isinstance (columns , str):
-            columns = [columns]
-        if len(columns)!= df.shape [1]: 
-            raise TypeError("X and columns must be consistent,"
-                            f" got {len(columns)} instead of {df.shape [1]}"
-                            )
-        df = pd.DataFrame(data = df, columns = columns )
-        
-    # create a new figure object  and define x axis position 
-    # and y poaition , width, heigh of the dendrogram via the  
-    # add_axes attributes. Furthermore, we rotate the dengrogram
-    # to 90 degree counter-clockwise. 
-    fig = plt.figure (figsize = fig_size , facecolor = facecolor )
-    axd = fig.add_axes ([.09, .1, .2, .6 ])
-    
-    row_cluster = linkage_matrix(df = df, metric= metric, 
-                                 method =method , kind = kind ,  
-                                 )
-    orient ='left' # use orientation 'right for matplotlib version < v1.5.1
-    mpl_version = mpl.__version__.split('.')
-    if mpl_version [0] =='1' : 
-        if mpl_version [1] =='5' : 
-            if float(mpl_version[2]) < 1. :
-                orient = 'right'
-                
-    r = dendrogram(row_cluster , orientation= orient,  
-                   **kwd )
-    # 2. reorder the data in our initial dataframe according 
-    # to the clustering label that can be accessed by a dendrogram 
-    # which is essentially a Python dictionnary via a key leaves 
-    df_rowclust = df.iloc [r['leaves'][::-1]] if hasattr(
-        df, 'columns') else df  [r['leaves'][::-1]]
-    
-    # 3. construct the heatmap from the reordered dataframe and position 
-    # in the next ro the dendrogram 
-    axm = fig.add_axes ([.23, .1, .63, .6]) #.6 # [.23, .1, .2, .6]
-    cax = axm.matshow (df_rowclust , 
-                       interpolation = 'nearest' , 
-                       cmap=cmap, 
-                       )
-    #4.  modify the asteric  of the dendogram  by removing the axis 
-    # ticks and hiding the axis spines. Also we add a color bar and 
-    # assign the feature and data record names to names x and y axis  
-    # tick lables, respectively 
-    axd.set_xticks ([]) # set ticks invisible 
-    axd.set_yticks ([])
-    for i in axd.spines.values () : 
-        i.set_visible (False) 
-        
-    fig.colorbar(cax )
-    xticks_loc = list(axm.get_xticks())
-    yticks_loc = list(axm.get_yticks())
 
-    df_rowclust_cols = df_rowclust.columns if hasattr (
-        df_rowclust , 'columns') else [f"{i+1}" for i in range (df.shape[1])]
-    axm.xaxis.set_major_locator(mticker.FixedLocator(xticks_loc))
-    axm.xaxis.set_major_formatter(mticker.FixedFormatter(
-        [''] + list (df_rowclust_cols)))
-    
-    df_rowclust_index = df_rowclust.index if hasattr(
-        df_rowclust , 'columns') else [f"{i}" for i in range (df.shape[0])]
-    axm.yaxis.set_major_locator(mticker.FixedLocator(yticks_loc))
-    axm.yaxis.set_major_formatter(mticker.FixedFormatter(
-        [''] + list (df_rowclust_index)))
-    
-    plt.show () 
-    
-    
-def plot_dendrogram (
-    df:DataFrame, 
-    columns:List[str] =None, 
-    labels: ArrayLike =None,
-    metric:str ='euclidean',  
-    method:str ='complete', 
-    kind:str = None,
-    return_r:bool =False, 
-    verbose:bool=False, 
-    **kwd ): 
-    r""" Visualizes the linkage matrix in the results of dendrogram. 
-    
-    Note that the categorical features if exist in the dataframe should 
-    automatically be discarded. 
-    
-    Parameters 
-    -----------
-    df: dataframe or NDArray of (n_samples, n_features) 
-        dataframe of Ndarray. If array is given , must specify the column names
-        to much the array shape 1 
-        
-    columns: list 
-        list of labels to name each columns of arrays of (n_samples, n_features) 
-        If dataframe is given, don't need to specify the columns. 
-        
-    kind: str, ['squareform'|'condense'|'design'], default is {'design'}
-        kind of approach to summing up the linkage matrix. 
-        Indeed, a condensed distance matrix is a flat array containing the 
-        upper triangular of the distance matrix. This is the form that ``pdist`` 
-        returns. Alternatively, a collection of :math:`m` observation vectors 
-        in :math:`n` dimensions may be passed as  an :math:`m` by :math:`n` 
-        array. All elements of the condensed distance matrix must be finite, 
-        i.e., no NaNs or infs.
-        Alternatively, we could used the ``squareform`` distance matrix to yield
-        different distance values than expected. 
-        the ``design`` approach uses the complete inpout example matrix  also 
-        called 'design matrix' to lead correct linkage matrix similar to 
-        `squareform` and `condense``. 
-        
-    metric : str or callable, default is {'euclidean'}
-        The metric to use when calculating distance between instances in a
-        feature array. If metric is a string, it must be one of the options
-        allowed by :func:`sklearn.metrics.pairwise.pairwise_distances`.
-        If ``X`` is the distance array itself, use "precomputed" as the metric.
-        Precomputed distance matrices must have 0 along the diagonal.
-        
-    method : str, optional, default is {'complete'}
-        The linkage algorithm to use. See the ``Linkage Methods`` section below
-        for full descriptions in :func:`gofast.tools.exmath.linkage_matrix`
-        
-    labels : ndarray, optional
-        By default, ``labels`` is None so the index of the original observation
-        is used to label the leaf nodes.  Otherwise, this is an :math:`n`-sized
-        sequence, with ``n == Z.shape[0] + 1``. The ``labels[i]`` value is the
-        text to put under the :math:`i` th leaf node only if it corresponds to
-        an original observation and not a non-singleton cluster.
-        
-    return_r: bool, default='False', 
-        return r-dictionnary if set to 'True' otherwise returns nothing 
-    
-    verbose: int, bool, default='False' 
-        If ``True``, output message of the name of categorical features 
-        dropped.
-    
-    kwd: dict 
-        additional keywords arguments passes to 
-        :func:`scipy.cluster.hierarchy.dendrogram` 
-        
-    Returns
-    -------
-    r : dict
-        A dictionary of data structures computed to render the
-        dendrogram. Its has the following keys:
-
-        ``'color_list'``
-          A list of color names. The k'th element represents the color of the
-          k'th link.
-
-        ``'icoord'`` and ``'dcoord'``
-          Each of them is a list of lists. Let ``icoord = [I1, I2, ..., Ip]``
-          where ``Ik = [xk1, xk2, xk3, xk4]`` and ``dcoord = [D1, D2, ..., Dp]``
-          where ``Dk = [yk1, yk2, yk3, yk4]``, then the k'th link painted is
-          ``(xk1, yk1)`` - ``(xk2, yk2)`` - ``(xk3, yk3)`` - ``(xk4, yk4)``.
-
-        ``'ivl'``
-          A list of labels corresponding to the leaf nodes.
-
-        ``'leaves'``
-          For each i, ``H[i] == j``, cluster node ``j`` appears in position
-          ``i`` in the left-to-right traversal of the leaves, where
-          :math:`j < 2n-1` and :math:`i < n`. If ``j`` is less than ``n``, the
-          ``i``-th leaf node corresponds to an original observation.
-          Otherwise, it corresponds to a non-singleton cluster.
-
-        ``'leaves_color_list'``
-          A list of color names. The k'th element represents the color of the
-          k'th leaf.
-          
-    Examples 
-    ----------
-    >>> from gofast.datasets import load_iris 
-    >>> from gofast.plot import  plot_dendrogram
-    >>> data = load_iris () 
-    >>> X =data.data[:, :2] 
-    >>> plot_dendrogram (X, columns =['X1', 'X2' ] ) 
-
-    """
-    if hasattr (df, 'columns') and columns is not None: 
-        df = df [columns ]
-        
-    df = to_numeric_dtypes(df, pop_cat_features= True, verbose =verbose )
-    
-    df=check_array (
-        df, 
-        input_name="Data 'df' ", 
-        to_frame =True, 
-        )
-
-    kind:str = kind or 'design'
-    row_cluster = linkage_matrix(df = df, columns = columns, metric= metric, 
-                                 method =method , kind = kind ,
-                                 )
-    #make dendogram black (1/2)
-    # set_link_color_palette(['black']) 
-    r= dendrogram(row_cluster, labels= labels  , 
-                           # make dendogram colors (2/2)
-                           # color_threshold= np.inf,  
-                           **kwd)
-    plt.tight_layout()
-    plt.ylabel ('Euclidian distance')
-    plt.show ()
-    
-    return r if return_r else None 
-
-def plot_silhouette (
-    X:NDArray |DataFrame, 
-    labels:ArrayLike=None, 
-    prefit:bool=True, 
-    n_clusters:int =3,  
-    n_init: int=10 , 
-    max_iter:int=300 , 
-    random_state:int=None , 
-    tol:float=1e4 , 
-    metric:str='euclidean', 
-    **kwd 
- ): 
-    r"""
-    quantifies the quality  of clustering samples. 
-    
-    Parameters
-    ----------
-    X : {array-like, sparse matrix} of shape (n_samples, n_features)
-        Training instances to cluster. It must be noted that the data
-        will be converted to C ordering, which will cause a memory
-        copy if the given data is not C-contiguous.
-        If a sparse matrix is passed, a copy will be made if it's not in
-        CSR format.
-        
-    labels : array-like 1d of shape (n_samples,)
-        Label values for each sample.
-         
-    n_clusters : int, default=8
-        The number of clusters to form as well as the number of
-        centroids to generate.
-        
-    prefit : bool, default=False
-        Whether a prefit `labels` is expected to be passed into the function
-        directly or not.
-        If `True`, `labels` must be a fit predicted values target.
-        If `False`, `labels` is fitted and updated from `X` by calling
-        `fit_predict` methods. Any other values passed to `labels` is 
-        discarded.
-         
-    n_init : int, default=10
-        Number of time the k-means algorithm will be run with different
-        centroid seeds. The final results will be the best output of
-        n_init consecutive runs in terms of inertia.
-
-    max_iter : int, default=300
-        Maximum number of iterations of the k-means algorithm for a
-        single run.
-
-    tol : float, default=1e-4
-        Relative tolerance with regards to Frobenius norm of the difference
-        in the cluster centers of two consecutive iterations to declare
-        convergence.
-
-    verbose : int, default=0
-        Verbosity mode.
-
-    random_state : int, RandomState instance or None, default=42
-        Determines random number generation for centroid initialization. Use
-        an int to make the randomness deterministic.
-    
-    tol : float, default=1e-4
-        Relative tolerance with regards to Frobenius norm of the difference
-        in the cluster centers of two consecutive iterations to declare
-        convergence.
-        
-    metric : str or callable, default='euclidean'
-        The metric to use when calculating distance between instances in a
-        feature array. If metric is a string, it must be one of the options
-        allowed by :func:`sklearn.metrics.pairwise.pairwise_distances`.
-        If ``X`` is the distance array itself, use "precomputed" as the metric.
-        Precomputed distance matrices must have 0 along the diagonal.
-
-    **kwds : optional keyword parameters
-        Any further parameters are passed directly to the distance function.
-        If using a ``scipy.spatial.distance`` metric, the parameters are still
-        metric dependent. See the scipy docs for usage examples.
-        
-    Note
-    -------
-    The sihouette coefficient is bound between -1 and 1 
-    
-    See More
-    ---------
-    Silhouette is used as graphical tools,  to plot a measure how tighly is  
-    grouped the examples of the clusters are.  To calculate the silhouette 
-    coefficient, three steps is allows: 
-        
-    * calculate the **cluster cohesion**, :math:`a(i)`, as the average 
-        distance between examples, :math:`x^{(i)}`, and all the others 
-        points
-    * calculate the **cluster separation**, :math:`b^{(i)}` from the next 
-        average distance between the example , :math:`x^{(i)}` amd all 
-        the example of nearest cluster 
-    * calculate the silhouette, :math:`s^{(i)}`, as the difference between 
-        the cluster cohesion and separation divided by the greater of the 
-        two, as shown here: 
-    
-        .. math:: 
-            
-            s^{(i)}=\frac{b^{(i)} - a^{(i)}}{max {{b^{(i)},a^{(i)} }}}
-                
-    Examples 
-    --------
-    >>> from gofast.datasets import load_hlogs 
-    >>> from gofast.plot.evaluate  import plot_silhouette
-    >>> # use resistivity and gamma for this demo
-    >>> X_res_gamma = load_hlogs().frame[['resistivity', 'gamma_gamma']]  
-    
-    (1) Plot silhouette with 'prefit' set to 'False' 
-    >>> plot_silhouette (X_res_gamma, prefit =False)
-    
-    """
-    if  ( 
-        not prefit 
-        and labels is not None
-        ): 
-        warnings.warn("'labels' is given while 'prefix' is 'False'"
-                      "'prefit' will set to 'True'")
-        prefit=True 
-        
-    if labels is not None: 
-        if not hasattr (labels, '__array__'): 
-            raise TypeError( "Labels (target 'y') expects an array-like: "
-                            f"{type(labels).__name__!r}")
-        labels=check_y (
-            labels, 
-            to_frame =True, 
-            )
-        if len(labels)!=len(X): 
-            raise TypeError("X and labels must have a consistency size."
-                            f"{len(X)} and {len(labels)} respectively.")
-            
-    if prefit and labels is None: 
-        raise TypeError ("Labels can not be None, while 'prefit' is 'True'"
-                         " Turn 'prefit' to 'False' or provide the labels "
-                         "instead.")
-    if not prefit : 
-        km= KMeans (n_clusters =n_clusters , 
-                    init='k-means++', 
-                    n_init =n_init , 
-                    max_iter = max_iter , 
-                    tol=tol, 
-                    random_state =random_state
-                        ) 
-        labels = km.fit_predict(X ) 
-        
-    return _plot_silhouette(X, labels, metric = metric , **kwd)
-    
-    
-def _plot_silhouette (X, labels, metric ='euclidean', **kwds ):
-    r"""Plot quantifying the quality  of clustering silhouette 
-    
-    Parameters 
-    ---------
-    X : array-like of shape (n_samples_a, n_samples_a) if metric == \
-            "precomputed" or (n_samples_a, n_features) otherwise
-        An array of pairwise distances between samples, or a feature array.
-
-    labels : array-like of shape (n_samples,)
-        Label values for each sample.
-
-    metric : str or callable, default='euclidean'
-        The metric to use when calculating distance between instances in a
-        feature array. If metric is a string, it must be one of the options
-        allowed by :func:`sklearn.metrics.pairwise.pairwise_distances`.
-        If ``X`` is the distance array itself, use "precomputed" as the metric.
-        Precomputed distance matrices must have 0 along the diagonal.
-
-    **kwds : optional keyword parameters
-        Any further parameters are passed directly to the distance function.
-        If using a ``scipy.spatial.distance`` metric, the parameters are still
-        metric dependent. See the scipy docs for usage examples.
-        
-    Examples
-    ---------
-    >>> import numpy as np 
-    >>> from gofast.exlib.sklearn import KMeans 
-    >>> from gofast.datasets import load_iris 
-    >>> from gofast.plot.evaluate  import plot_silhouette
-    >>> d= load_iris ()
-    >>> X= d.data [:, 0][:, np.newaxis] # take the first axis 
-    >>> km= KMeans (n_clusters =3 , init='k-means++', n_init =10 , 
-                    max_iter = 300 , 
-                    tol=1e-4, 
-                    random_state =0 
-                    )
-    >>> y_km = km.fit_predict(X) 
-    >>> plot_silhouette (X, y_km)
-  
-    See also 
-    ---------
-    gofast.tools.plotutils.plot_silhouette: Plot naive silhouette 
-    
-    Notes
-    ------ 
-    
-    Silhouette is used as graphical tools,  to plot a measure how tighly is  
-    grouped the examples of the clusters are.  To calculate the silhouette 
-    coefficient, three steps is allows: 
-        
-    * calculate the **cluster cohesion**, :math:`a(i)`, as the average 
-        distance between examples, :math:`x^{(i)}`, and all the others 
-        points
-    * calculate the **cluster separation**, :math:`b^{(i)}` from the next 
-        average distance between the example , :math:`x^{(i)}` amd all 
-        the example of nearest cluster 
-    * calculate the silhouette, :math:`s^{(i)}`, as the difference between 
-        the cluster cohesion and separation divided by the greater of the 
-        two, as shown here: 
-            
-        .. math:: 
-            
-            s^{(i)}=\frac{b^{(i)} - a^{(i)}}{max {{b^{(i)},a^{(i)} }}}
-    
-    Note that the sihouette coefficient is bound between -1 and 1 
-    
-    """
-    cluster_labels = np.unique (labels) 
-    n_clusters = cluster_labels.shape [0] 
-    silhouette_vals = silhouette_samples(X, labels= labels, metric = metric ,
-                                         **kwds)
-    y_ax_lower , y_ax_upper = 0, 0 
-    yticks =[]
-    
-    for i, c  in enumerate (cluster_labels ) : 
-        c_silhouette_vals = silhouette_vals[labels ==c ] 
-        c_silhouette_vals.sort()
-        y_ax_upper += len(c_silhouette_vals)
-        color =cm.jet (float(i)/n_clusters )
-        plt.barh(range(y_ax_lower, y_ax_upper), c_silhouette_vals, 
-                 height =1.0 , 
-                 edgecolor ='none', 
-                 color =color, 
-                 )
-        yticks.append((y_ax_lower + y_ax_upper)/2.)
-        y_ax_lower += len(c_silhouette_vals)
-    silhouette_avg = np.mean(silhouette_vals) 
-    plt.axvline (silhouette_avg, 
-                 color='red', 
-                 linestyle ='--'
-                 )
-    plt.yticks(yticks, cluster_labels +1 ) 
-    plt.ylabel ("Cluster") 
-    plt.xlabel ("Silhouette coefficient")
-    plt.tight_layout()
-
-    plt.show() 
-    
-def plot_learning_inspections (
-    models:List[object] , 
-    X:NDArray, y:ArrayLike,  
-    fig_size:Tuple[int] = ( 22, 18 ) , 
-    cv: int = None, 
-    savefig:Optional[str] = None, 
-    titles = None, 
-    subplot_kws =None, 
-    **kws 
-  ): 
-    """ Inspect multiple models from their learning curves. 
-    
-    Mutiples Inspection plots that generate the test and training learning 
-    curve, the training  samples vs fit times curve, the fit times 
-    vs score curve for each model.  
-    
-    Parameters
-    ----------
-    models : list of estimator instances
-        Each estimator instance implements `fit` and `predict` methods which
-        will be cloned for each validation.
-    X : array-like of shape (n_samples, n_features)
-        Training vector, where ``n_samples`` is the number of samples and
-        ``n_features`` is the number of features.
-
-    y : array-like of shape (n_samples) or (n_samples, n_features)
-        Target relative to ``X`` for classification or regression;
-        None for unsupervised learning.
-
-    cv : int, cross-validation generator or an iterable, default=None
-        Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
-
-        - None, to use the default 5-fold cross-validation,
-        - integer, to specify the number of folds.
-        - :term:`CV splitter`,
-        - An iterable yielding (train, test) splits as arrays of indices.
-
-        For integer/None inputs, if ``y`` is binary or multiclass,
-        :class:`StratifiedKFold` used. If the estimator is not a classifier
-        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
-
-        Refer Sckikit-learn :ref:`User Guide <cross_validation>` for the various
-        cross-validators that can be used here.
-        
-    savefig: str, default =None , 
-        the path to save the figures. Argument is passed to matplotlib.Figure 
-        class. 
-    titles: str, list 
-       List of model names if changes are needed. If ``None``, model names 
-       are used by default. 
-    kws: dict, 
-        Additional keywords argument passed to :func:`plot_learning_inspection`. 
-        
-    Returns
-    ----------
-    axes: Matplotlib axes
-    
-    See also 
-    ---------
-    plot_learning_inspection:  Inspect single model 
-    
-    Examples 
-    ---------
-    >>> from gofast.datasets import fetch_data
-    >>> from gofast.models.premodels import p 
-    >>> from gofast.plot.evaluate  import plot_learning_inspections 
-    >>> # import sparse  matrix from Bagoue dataset 
-    >>> X, y = fetch_data ('bagoue prepared') 
-    >>> # import the two pretrained models from SVM 
-    >>> models = [p.SVM.rbf.best_estimator_ , p.SVM.poly.best_estimator_]
-    >>> plot_learning_inspections (models , X, y, ylim=(0.7, 1.01) )
-    
-    """
-    models = is_iterable(models, exclude_string= True, transform =True )
-    titles = list(is_iterable( 
-        titles , exclude_string= True, transform =True )) 
-
-    if len(titles ) != len(models): 
-        titles = titles + [None for i in range (len(models)- len(titles))]
-    # set the cross-validation to 4 
-    cv = cv or 4  
-    #set figure and subplots 
-    if len(models)==1:
-        msg = ( f"{plot_learning_inspection.__module__}."
-               f"{plot_learning_inspection.__qualname__}"
-               ) 
-        raise PlotError ("For a single model inspection, use the"
-                         f" function {msg!r} instead."
-                         )
-        
-    fig , axes = plt.subplots (3 , len(models), figsize = fig_size )
-    subplot_kws = subplot_kws or  dict(
-        left=0.0625, right = 0.95, wspace = 0.1, hspace = .5 )
-    
-    fig.subplots_adjust(**subplot_kws)
-    
-    if not is_iterable( axes) :
-        axes =[axes ] 
-    for kk, model in enumerate ( models ) : 
-        title = titles[kk] or  get_estimator_name (model )
-        plot_learning_inspection(model, X=X , y=y, axes = axes [:, kk], 
-                               title =title, 
-                               **kws)
-        
-    if savefig : 
-        fig.savefig (savefig , dpi = 300 )
-    plt.show () if savefig is None else plt.close () 
-    
-def plot_learning_inspection(
-    model,  
-    X,  
-    y, 
-    axes=None, 
-    ylim=None, 
-    cv=5, 
-    n_jobs=None,
-    train_sizes=None, 
-    display_legend = True, 
-    title=None,
-):
-    """Inspect model from its learning curve. 
-    
-    Generate 3 plots: the test and training learning curve, the training
-    samples vs fit times curve, the fit times vs score curve.
-
-    Parameters
-    ----------
-    model : estimator instance
-        An estimator instance implementing `fit` and `predict` methods which
-        will be cloned for each validation.
-
-    title : str
-        Title for the chart.
-
-    X : array-like of shape (n_samples, n_features)
-        Training vector, where ``n_samples`` is the number of samples and
-        ``n_features`` is the number of features.
-
-    y : array-like of shape (n_samples) or (n_samples, n_features)
-        Target relative to ``X`` for classification or regression;
-        None for unsupervised learning.
-
-    axes : array-like of shape (3,), default=None
-        Axes to use for plotting the curves.
-
-    ylim : tuple of shape (2,), default=None
-        Defines minimum and maximum y-values plotted, e.g. (ymin, ymax).
-
-    cv : int, cross-validation generator or an iterable, default=None
-        Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
-
-        - None, to use the default 5-fold cross-validation,
-        - integer, to specify the number of folds.
-        - :term:`CV splitter`,
-        - An iterable yielding (train, test) splits as arrays of indices.
-
-        For integer/None inputs, if ``y`` is binary or multiclass,
-        :class:`StratifiedKFold` used. If the estimator is not a classifier
-        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
-
-        Refer :ref:`User Guide <cross_validation>` for the various
-        cross-validators that can be used here.
-
-    n_jobs : int or None, default=None
-        Number of jobs to run in parallel.
-        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
-        ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
-        for more details.
-
-    train_sizes : array-like of shape (n_ticks,)
-        Relative or absolute numbers of training examples that will be used to
-        generate the learning curve. If the ``dtype`` is float, it is regarded
-        as a fraction of the maximum size of the training set (that is
-        determined by the selected validation method), i.e. it has to be within
-        (0, 1]. Otherwise it is interpreted as absolute sizes of the training
-        sets. Note that for classification the number of samples usually have
-        to be big enough to contain at least one sample from each class.
-        (default: np.linspace(0.1, 1.0, 5))
-        
-    display_legend: bool, default ='True' 
-        display the legend
-        
-    Returns
-    ----------
-    axes: Matplotlib axes 
-    
-    Examples 
-    ----------
-    >>> from gofast.datasets import fetch_data
-    >>> from gofast.models import p 
-    >>> from gofast.plot.evaluate  import plot_learning_inspection 
-    >>> # import sparse  matrix from Bagoue datasets 
-    >>> X, y = fetch_data ('bagoue prepared') 
-    >>> # import the  pretrained Radial Basis Function (RBF) from SVM 
-    >>> plot_learning_inspection (p.SVM.rbf.best_estimator_  , X, y )
-    
-    """ 
-    train_sizes = train_sizes or np.linspace(0.1, 1.0, 5)
-    
-    X, y = check_X_y(
-        X, 
-        y, 
-        accept_sparse= True,
-        to_frame =True 
-        )
-    
-    if axes is None:
-        _, axes = plt.subplots(1, 3, figsize=(20, 5))
-    
-    axes[0].set_title(title or get_estimator_name(model))
-    if ylim is not None:
-        axes[0].set_ylim(*ylim)
-    axes[0].set_xlabel("Training examples")
-    axes[0].set_ylabel("Score")
-
-    train_sizes, train_scores, test_scores, fit_times, _ = learning_curve(
-        model,
-        X,
-        y,
-        cv=cv,
-        n_jobs=n_jobs,
-        train_sizes=train_sizes,
-        return_times=True,
-    )
-    train_scores_mean = np.mean(train_scores, axis=1)
-    train_scores_std = np.std(train_scores, axis=1)
-    test_scores_mean = np.mean(test_scores, axis=1)
-    test_scores_std = np.std(test_scores, axis=1)
-    fit_times_mean = np.mean(fit_times, axis=1)
-    fit_times_std = np.std(fit_times, axis=1)
-
-    # Plot learning curve
-    axes[0].grid()
-    axes[0].fill_between(
-        train_sizes,
-        train_scores_mean - train_scores_std,
-        train_scores_mean + train_scores_std,
-        alpha=0.1,
-        color="r",
-    )
-    axes[0].fill_between(
-        train_sizes,
-        test_scores_mean - test_scores_std,
-        test_scores_mean + test_scores_std,
-        alpha=0.1,
-        color="g",
-    )
-    axes[0].hlines(
-        np.mean([train_scores[-1], test_scores[-1]]), 
-        train_sizes[0],
-        train_sizes[-1], 
-        color="gray", 
-        linestyle ="--", 
-        label="Convergence score"
-        )
-    axes[0].plot(
-        train_sizes, 
-        train_scores_mean, 
-        "o-", 
-        color="r", 
-        label="Training score"
-    )
-    axes[0].plot(
-        train_sizes, test_scores_mean, 
-        "o-", 
-        color="g", 
-        label="Cross-validation score"
-    )
-
-    if display_legend:
-        axes[0].legend(loc="best")
-
-    # set title name
-    title_name = ( 
-        f"{'the model'if title else get_estimator_name(model)}"
-        )
-    # Plot n_samples vs fit_times
-    axes[1].grid()
-    axes[1].plot(train_sizes, fit_times_mean, "o-")
-    axes[1].fill_between(
-        train_sizes,
-        fit_times_mean - fit_times_std,
-        fit_times_mean + fit_times_std,
-        alpha=0.1,
-    )
-    axes[1].set_xlabel("Training examples")
-    axes[1].set_ylabel("fit_times")
-    axes[1].set_title(f"Scalability of {title_name}")
-
-    # Plot fit_time vs score
-    fit_time_argsort = fit_times_mean.argsort()
-    fit_time_sorted = fit_times_mean[fit_time_argsort]
-    test_scores_mean_sorted = test_scores_mean[fit_time_argsort]
-    test_scores_std_sorted = test_scores_std[fit_time_argsort]
-    axes[2].grid()
-    axes[2].plot(fit_time_sorted, 
-                 test_scores_mean_sorted, "o-"
-                 )
-    axes[2].fill_between(
-        fit_time_sorted,
-        test_scores_mean_sorted - test_scores_std_sorted,
-        test_scores_mean_sorted + test_scores_std_sorted,
-        alpha=0.1,
-    )
-    axes[2].set_xlabel("fit_times")
-    axes[2].set_ylabel("Score")
-    axes[2].set_title(f"Performance of {title_name}")
-
-    return axes
-
-def plot_matshow(
-    arr, / , labelx:List[str] =None, labely:List[str]=None, 
-    matshow_kws=None, **baseplot_kws
-    ): 
-    
-    #xxxxxxxxx update base plot keyword arguments
-    for k  in list(baseplot_kws.keys()): 
-        setattr (pobj , k, baseplot_kws[k])
-        
-    arr= check_array(
-        arr, 
-        to_frame =True, 
-        input_name="Array 'arr'"
-        )
-    matshow_kws= matshow_kws or dict()
-    fig = plt.figure(figsize = pobj.fig_size)
-
-    ax = fig.add_subplot(1,1,1)
-    
-    cax = ax.matshow(arr, **matshow_kws) 
-    cbax= fig.colorbar(cax, **pobj.cb_props)
-    
-    if pobj.cb_label is None: 
-        pobj.cb_label=''
-    ax.set_xlabel( pobj.xlabel,
-          fontsize= pobj.font_size )
-    
-    
-    # for label in zip ([labelx, labely]): 
-    #     if label is not None:
-    #         if not is_iterable(label):
-    #             label = [label]
-    #         if len(label) !=arr.shape[1]: 
-    #             warnings.warn(
-    #                 "labels and arr dimensions must be consistent"
-    #                 f" Expect {arr.shape[1]}, got {len(label)}. "
-    #                 )
-                #continue
-    if labelx is not None: 
-        ax = _check_labelxy (labelx , arr, ax )
-    if labely is not None: 
-        ax = _check_labelxy (labely, arr, ax , axis ='y')
-    
-    if pobj.ylabel is None:
-        pobj.ylabel =''
-    if pobj.xlabel is None:
-        pobj.xlabel = ''
-    
-    ax.set_ylabel (pobj.ylabel,
-                   fontsize= pobj.font_size )
-    ax.tick_params(axis=pobj.tp_axis, 
-                    labelsize= pobj.font_size, 
-                    bottom=pobj.tp_bottom, 
-                    top=pobj.tp_top, 
-                    labelbottom=pobj.tp_labelbottom, 
-                    labeltop=pobj.tp_labeltop
-                    )
-    if pobj.tp_labeltop: 
-        ax.xaxis.set_label_position('top')
-    
-    cbax.ax.tick_params(labelsize=pobj.font_size ) 
-    cbax.set_label(label=pobj.cb_label,
-                   size=pobj.font_size,
-                   weight=pobj.font_weight)
-    
-    plt.xticks(rotation = pobj.rotate_xlabel)
-    plt.yticks(rotation = pobj.rotate_ylabel)
-
-    pobj.save(fig)
-
-plot_matshow.__doc__ ="""\
-Quick matrix visualization using matplotlib.pyplot.matshow.
-
-Parameters
-----------
-arr: 2D ndarray, 
-    matrix of n rowns and m-columns items 
-matshow_kws: dict
-    Additional keywords arguments for :func:`matplotlib.axes.matshow`
-    
-labelx: list of str, optional 
-        list of labels names that express the name of each category on 
-        x-axis. It might be consistent with the matrix number of 
-        columns of `arr`. 
-        
-label: list of str, optional 
-        list of labels names that express the name of each category on 
-        y-axis. It might be consistent with the matrix number of 
-        row of `arr`.
-    
-Examples
----------
->>> import numpy as np
->>> from gofast.plot.evaluate  import plot_matshow 
->>> matshow_kwargs ={
-    'aspect': 'auto',
-    'interpolation': None,
-   'cmap':'copper_r', 
-        }
->>> baseplot_kws ={'lw':3, 
-           'lc':(.9, 0, .8), 
-           'font_size':15., 
-            'cb_format':None,
-            #'cb_label':'Rate of prediction',
-            'xlabel': 'Predicted flow classes',
-            'ylabel': 'Geological rocks',
-            'font_weight':None,
-            'tp_labelbottom':False,
-            'tp_labeltop':True,
-            'tp_bottom': False
-            }
->>> labelx =['FR0', 'FR1', 'FR2', 'FR3', 'Rates'] 
->>> labely =['VOLCANO-SEDIM. SCHISTS', 'GEOSYN. GRANITES', 
-             'GRANITES', '1.0', 'Rates']
->>> array2d = np.array([(1. , .5, 1. ,1., .9286), 
-                    (.5,  .8, 1., .667, .7692),
-                    (.7, .81, .7, .5, .7442),
-                    (.667, .75, 1., .75, .82),
-                    (.9091, 0.8064, .7, .8667, .7931)])
->>> plot_matshow(array2d, labelx, labely, matshow_kwargs,**baseplot_kws )  
-
-"""
-  
-def plot_unified_pca(
-    components:NDArray,
-    Xr: NDArray,
-    y: ArrayLike,
-    classes: ArrayLike=None,
-    markers:List [str]=None, 
-    colors: List [str ]=None, 
-    **baseplot_kws, 
- ):
-    """
-    The biplot is the best way to visualize all-in-one following a PCA analysis.
-    
-    There is an implementation in R but there is no standard implementation
-    in Python. 
-
-    Parameters  
-    -----------
-    components: NDArray, shape (n_components, n_eigenvectors ), 
-        the eigenvectors of the PCA. The shape in axis must much the number 
-        of component computed using PCA. If the `Xr` shape 1 equals to the 
-        shape 0 of the component matrix `components`, it will be transposed 
-        to fit `Xr` shape 1.
-        
-    Xr: NDArray of transformed X. 
-        the PCA projected data scores on n-given components.The reduced  
-        dimension of train set 'X' with maximum ratio as sorted eigenvectors 
-        from first to the last component. 
- 
-    y: Array-like, 
-        the target composing the class labels.
-    classes: list or int, 
-        class categories or class labels 
-    markers: str, 
-        Matplotlib list of markers for plotting  classes.
-    colors: str, 
-        Matplotlib list of colors to customize plots 
-        
-    baseplot: dict, :class:`gofast.property.BasePlot`. 
-        Matplotlib property from `BasePlot` instances. 
-
-    Examples 
-    ---------
-    >>> from gofast.analysis import nPCA
-    >>> from gofast.datasets import fetch_data
-    >>> from gofast.plot import  plot_unified_pca, pobj_obj  #  is Baseplot instance 
-    >>> X, y = fetch_data ('bagoue pca' )  # fetch pca data 
-    >>> pca= nPCA (X, n_components= 2 , return_X= False ) # return PCA object 
-    >>> components = pca.components_ [:2, :] # for two components 
-    >>> plot_unified_pca ( components , pca.X, y ) # pca.X is the reduced dim X 
-    >>> # to change for instance line width (lw) or style (ls) 
-    >>> # just use the baseplotobject (pobj_obj)
-    
-    References 
-    -----------
-    Originally written by `Serafeim Loukas`_, serafeim.loukas@epfl.ch 
-    and was edited to fit the :term:`gofast` package API. 
-    
-    .. _Serafeim Loukas: https://towardsdatascience.com/...-python-7c274582c37e
-    
-    """
-    #xxxxxxxxx update base plot keyword arguments
-    for k  in list(baseplot_kws.keys()): 
-        setattr (pobj , k, baseplot_kws[k])
-        
-    Xr = check_array(
-        Xr, 
-        to_frame= False, 
-        input_name="X reduced 'Xr'"
-        )
-    components = check_array(
-        components, 
-        to_frame =False ,
-        input_name="PCA components"
-        )
-    Xr = np.array (Xr); components = np.array (components )
-    xs = Xr[:,0] # projection on PC1
-    ys = Xr[:,1] # projection on PC2
-    
-    if Xr.shape[1]==components.shape [0] :
-        # i.e components is not transposed 
-        # transposed then 
-        components = components.T 
-    n = components.shape[0] # number of variables
-    
-    fig = plt.figure(figsize=pobj.fig_size, #(10,8),
-               dpi=pobj.fig_dpi #100
-               )
-    if classes is None: 
-        classes = np.unique(y)
-    if colors is None:
-        # make color based on group
-        # to fit length of classes
-        colors = make_mpl_properties(
-            len(classes))
-        
-    colors = [colors[c] for c in range(len(classes))]
-    if markers is None:
-        markers= make_mpl_properties(len(classes), prop='marker')
-        
-    markers = [markers[m] for m in range(len(classes))]
-    
-    for s,l in enumerate(classes):
-        plt.scatter(xs[y==l],ys[y==l], 
-                    color = colors[s], 
-                    marker=markers[s]
-                    ) 
-    for i in range(n):
-        # plot as arrows the variable scores 
-        # (each variable has a score for PC1 and one for PC2)
-        plt.arrow(0, 0, components[i,0], components[i,1], 
-                  color = pobj.lc, #'k', 
-                  alpha = pobj.alpha, #0.9,
-                  linestyle = pobj.ls, # '-',
-                  linewidth = pobj.lw, #1.5,
-                  overhang=0.2)
-        plt.text(components[i,0]* 1.15, components[i,1] * 1.15, 
-                 "Var"+str(i+1),
-                 color = 'k', 
-                 ha = 'center',
-                 va = 'center',
-                 fontsize= pobj.font_size
-                 )
-    plt.tick_params(axis ='both', labelsize = pobj.font_size)
-    
-    plt.xlabel(pobj.xlabel or "PC1",size=pobj.font_size)
-    plt.ylabel(pobj.ylabel or "PC2",size=pobj.font_size)
-    limx= int(xs.max()) + 1
-    limy= int(ys.max()) + 1
-    plt.xlim([-limx,limx])
-    plt.ylim([-limy,limy])
-    plt.grid()
-    plt.tick_params(axis='both',
-                    which='both', 
-                    labelsize=pobj.font_size
-                    )
-    
-    pobj.save(fig)
-    # if self.savefig is not None: 
-    #     savefigure (plt, self.savefig, dpi = self.fig_dpi )
-    
 def _remaining_plot_roperties (self, ax, xlim=None, ylim=None, fig=None ): 
     """Append the remaining lines properties such as xlabel, grid , 
     legend and ticks parameters. Relevant idea to not 
@@ -4768,39 +3474,7 @@ def _chk_predict_args (Xt, yt, *args,  predict =False ):
         
     return Xt, yt, index , clf ,  ypred 
 
-def _check_labelxy (lablist, ar, ax, axis = 'x' ): 
-    """ Assert whether the x and y labels given for setting the ticklabels 
-    are consistent. 
-    
-    If consistent, function set x or y labels along the x or y axis 
-    of the given array. 
-    
-    :param lablist: list, list of the label to set along x/y axis 
-    :param ar: arraylike 2d, array to set x/y axis labels 
-    :param ax: matplotlib.pyplot.Axes, 
-    :param axis: str, default="x", kind of axis to set the label. 
-    
-    """
-    warn_msg = ("labels along axis {axis} and arr dimensions must be"
-                " consistent. Expects {shape}, got {len_label}")
-    ax_ticks, ax_labels  = (ax.set_xticks, ax.set_xticklabels 
-                         ) if axis =='x' else (
-                             ax.set_yticks, ax.set_yticklabels )
-    if lablist is not None: 
-        lablist = is_iterable(lablist, exclude_string=True, 
-                              transform =True )
-        if not _check_consistency_size (
-                lablist , ar[0 if axis =='x' else 1], error ='ignore'): 
-            warnings.warn(warn_msg.format(
-                axis = axis , shape=ar.shape[0 if axis =='x' else 1], 
-                len_label=len(lablist))
-                )
-        else:
-            ax_ticks(np.arange(0, ar.shape[0 if axis =='x' else 1]))
-            ax_labels(lablist)
-        
-    return ax         
-        
+
 def plot2d(
     ar, 
     y=None,  

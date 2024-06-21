@@ -1,37 +1,33 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
-#   Author: LKouadio 
+#   Author: LKouadio <etanoyau@gmail.com>
 
 """
-load different data as a function 
-=================================
-
+load different data as a function. 
 Inspired from the machine learning popular dataset loading 
 """
 import warnings
 import os
 import random
 import joblib
-import numpy as np
 from importlib import resources 
 from importlib.resources import files
+import numpy as np
 import pandas as pd 
 
-from ..tools.baseutils import read_data, fancier_downloader, check_file_exists 
-from ..tools.baseutils import transform_dates  
-from ..tools.box import Boxspace
+from ..api.structures import Boxspace  
+from ..tools.baseutils import fancier_downloader, check_file_exists 
 from ..tools.coreutils import  to_numeric_dtypes, smart_format, get_valid_key
 from ..tools.coreutils import  random_sampling, assert_ratio, key_checker 
 from ..tools.coreutils import  format_to_datetime, is_in_if, validate_feature
 from ..tools.coreutils import convert_to_structured_format, resample_data
 from ..tools.coreutils import split_train_test_by_id
-from ._globals import FORENSIC_BF_DICT, FORENSIC_LABELS_DESCR 
-from ._globals import DYSPNEA_DICT, DYSPNEA_LABELS_DESCR
 from .io import csv_data_loader, _to_dataframe, DMODULE 
 from .io import description_loader, DESCR, RemoteDataURL  
 
 __all__= [ "load_iris",  "load_hlogs",  "load_nansha", "load_forensic", 
-          "load_jrs_bet", "load_statlog", "load_hydro_metrics", "load_mxs"]
+          "load_jrs_bet", "load_statlog", "load_hydro_metrics", "load_mxs", 
+          "load_bagoue"]
 
 
 def load_hydro_metrics(*, return_X_y=False, as_frame=False, tag=None, 
@@ -355,6 +351,9 @@ def load_dyspnea(
     >>> X, y = load_dyspnea (return_X_y=True )
 
     """
+    from ..tools.dataops import transform_dates 
+    from ._globals import DYSPNEA_DICT, DYSPNEA_LABELS_DESCR
+    
     key = get_valid_key(key, "pp", {
         "pp": ("pp", 'preprocessed', 'cleaned', 'transformed', 'structured'), 
         "raw": ["raw", "unprocessed", "source", "original"]
@@ -594,7 +593,6 @@ To focus on specific targets 'pumping_level' and 'aquifer_thickness':
 >>> list(b.columns[-2:])
 ['pumping_level', 'aquifer_thickness']
 """
-
 def load_nansha (
     *,  return_X_y=False, 
     as_frame =False, 
@@ -717,6 +715,7 @@ Load the Nansha Engineering and Hydrogeological Drilling Dataset.
 
 This dataset contains multi-target information suitable for classification or 
 regression problems in hydrogeological and geotechnical contexts.
+See more in [1]_. 
 
 Parameters
 ----------
@@ -806,6 +805,14 @@ To retrieve land subsidence data for specific years with display rate:
 >>> n = load_nlogs(key='ls', samples=3, years="2015 2018", drop_display_rate=False)
 >>> list(n.frame.columns)
 [easting, northing, longitude, 2015, 2018, disp_rate]
+
+References 
+-----------
+.. [1] Liu, J., Liu, W., Allechy, F.B., Zheng, Z., Liu, R., Kouadio, K.L., 2024.
+       Machine learning-based techniques for land subsidence simulation in an 
+       urban area. J. Environ. Manage. 352, 17.
+       https://doi.org/https://doi.org/10.1016/j.jenvman.2024.120078
+
 """
 
 def load_bagoue(
@@ -1321,6 +1328,7 @@ def _get_subsidence_data (
       DataFrame and list of features and targets. 
    
     """
+    from ..tools.dataops import read_data
     columns =['easting',
              'northing',
              'longitude',
@@ -1376,6 +1384,8 @@ def load_forensic( *,
     exclude_vectorized_features=True,  
     **kws
 ):
+    from ._globals import FORENSIC_BF_DICT, FORENSIC_LABELS_DESCR 
+    
     key = get_valid_key(key, "pp", {
         "pp": ("pp", 'preprocessed', 'cleaned', 'transformed', 'structured'), 
         "raw": ["raw", "unprocessed", "source", "original"]

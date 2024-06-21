@@ -8,13 +8,13 @@ test_data_generation.py
 import pytest
 import numpy as np
 import pandas as pd
-from gofast.datasets._create import make_classification, make_regression
-from gofast.datasets._create import make_social_media_comments, make_african_demo 
-from gofast.datasets._create import make_agronomy_feedback, make_mining_ops 
-from gofast.datasets._create import  make_sounding, make_medical_diagnosis
-from gofast.datasets._create import  make_well_logging, make_ert,make_tem
-from gofast.datasets._create import make_erp, make_elogging, make_gadget_sales
-from gofast.datasets._create import make_retail_store, make_cc_factors, make_water_demand
+from gofast.datasets.generate import make_classification, make_regression
+from gofast.datasets.generate import make_social_media_comments, make_african_demo 
+from gofast.datasets.generate import make_agronomy_feedback, make_mining_ops 
+from gofast.datasets.generate import  make_sounding, make_medical_diagnosis
+from gofast.datasets.generate import  make_well_logging, make_ert,make_tem
+from gofast.datasets.generate import make_erp, make_elogging, make_gadget_sales
+from gofast.datasets.generate import make_retail_store, make_cc_factors, make_water_demand
 
 @pytest.mark.parametrize("function, config", [
     (make_classification, {'n_samples': 100, 'n_features': 20, 'return_X_y': True}),

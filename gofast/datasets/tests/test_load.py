@@ -9,7 +9,7 @@ import scipy
 from unittest.mock import patch
 import numpy as np
 import pandas as pd
-from gofast.tools.box import Boxspace 
+from gofast.api.structures import Boxspace 
 from gofast.datasets.load import load_hydro_metrics, load_statlog
 from gofast.datasets.load import  load_dyspnea, load_hlogs, load_nansha 
 from gofast.datasets.load import load_bagoue, load_iris, load_mxs
@@ -201,7 +201,6 @@ def _common_jrs_bet_tests(func, **kwargs):
     # Assertions for split_X_y functionality
     elif kwargs.get('split_X_y', False):
         X_train, X_test, y_train, y_test = result
-        print(X_train)
         assert isinstance(X_train, (np.ndarray, pd.DataFrame)), "X_train must be ndarray or DataFrame"
         assert isinstance(X_test, (np.ndarray, pd.DataFrame)), "X_test must be ndarray or DataFrame"
         assert isinstance(y_train, (np.ndarray, pd.Series)), "y_train must be ndarray or Series"

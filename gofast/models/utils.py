@@ -3,6 +3,9 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 from __future__ import annotations 
+import re
+import inspect
+import warnings
 import itertools 
 import numpy as np 
 import pandas as pd
@@ -20,8 +23,9 @@ from sklearn.svm import SVC, SVR
 from sklearn.pipeline import Pipeline 
 from sklearn.utils.multiclass import type_of_target  
 
-from .._typing import Tuple,_F, ArrayLike, NDArray, Dict, Union, Any
-from .._typing import  List, Optional, Type, DataFrame, Series 
+from ..api.types import Tuple,_F, ArrayLike, NDArray, Dict, Union, Any
+from ..api.types import  List, Optional, Type, DataFrame, Series 
+from ..api.summary import ModelSummary 
 from ..tools.coreutils import smart_format
 from ..tools.validator import get_estimator_name, check_X_y 
 from ..tools._dependency import import_optional_dependency 
@@ -61,8 +65,8 @@ __all__= [
     "plot_feature_correlation", 
     "get_best_kPCA_params", 
     "shrink_covariance_cv_score",
-    
   ]
+
 
 def align_estimators_with_params(param_grids, estimators=None):
     """
@@ -107,38 +111,56 @@ def align_estimators_with_params(param_grids, estimators=None):
     --------
     >>> from sklearn.ensemble import RandomForestClassifier
     >>> from sklearn.svm import SVC
-    >>> from gofast.models.utils import align_estimator_with_params 
+    >>> from gofast.models.utils import align_estimators_with_params 
 
     >>> estimators1 = [{"rf": RandomForestClassifier()}, {"svc": SVC()}]
     >>> param_grids1 = [("rf", {'n_estimators': [100, 200], 'max_depth': [10, 20]}), 
                     ("svc", {"C": [1, 10], "gamma": [.001, .01, .00001]})]
-
     >>> new_estimators1, new_param_grids1 = align_estimators_with_params(
         param_grids1, estimators1)
     >>> print(new_estimators1)
     >>> print(new_param_grids1)
-
+    [RandomForestClassifier(), SVC()]
+    [{'n_estimators': [100, 200], 'max_depth': [10, 20]}, 
+     {'C': [1, 10], 'gamma': [0.001, 0.01, 1e-05]}]
+    
     >>> estimators2 = [RandomForestClassifier(), SVC()]
     >>> param_grids2 = [{'n_estimators': [100, 200], 'max_depth': [10, 20]}, 
                     {"C": [1, 10], "gamma": [.001, .01, .00001]}]
-
     >>> new_estimators2, new_param_grids2 = align_estimators_with_params(
         param_grids2, estimators2)
     >>> print(new_estimators2)
     >>> print(new_param_grids2)
-
+    [RandomForestClassifier(), SVC()]
+    [{'n_estimators': [100, 200], 'max_depth': [10, 20]},
+     {'C': [1, 10], 'gamma': [0.001, 0.01, 1e-05]}]
+    
     >>> estimators3 = [{"rf": RandomForestClassifier()}, {"svc": SVC()}]
     >>> param_grids3 = [("svc", {"C": [1, 10], "gamma": [.001, .01, .00001]}), 
                     ("rf", {'n_estimators': [100, 200], 'max_depth': [10, 20]})]
-
     >>> new_estimators3, new_param_grids3 = align_estimators_with_params(
         param_grids3, estimators3)
     >>> print(new_estimators3)
     >>> print(new_param_grids3)
+    [SVC(), RandomForestClassifier()]
+    [{'C': [1, 10], 'gamma': [0.001, 0.01, 1e-05]},
+     {'n_estimators': [100, 200], 'max_depth': [10, 20]}]
 
+    >>> estimators4 = {'SVC': SVC(), 'SGDClassifier': SGDClassifier()}
+    >>> param_grids4 = {'SVC': {'C': [1, 10], 'kernel': ['linear', 'rbf']},
+                        'SGDClassifier': {'max_iter': [50, 100], 'alpha': [0.0001, 0.001]}}
+    >>> new_estimators4, new_param_grids4 = align_estimators_with_params(
+         param_grids4, estimators4)
+    >>> print(new_estimators4)
+    >>> print(new_param_grids4)
+    
     """
     if estimators is None:
         return process_estimators_and_params(param_grids)
+    
+    if estimators is not None: 
+        estimators, param_grids= parse_estimators_and_params(
+            estimators, param_grids, control="passthrough")
 
     param_grids = [param_grids] if isinstance(param_grids, dict) else param_grids
 
@@ -154,6 +176,113 @@ def align_estimators_with_params(param_grids, estimators=None):
             estimators, estimator_names, param_grid_names)
 
     return estimators, param_grids
+
+def parse_estimators_and_params(
+        estimators, param_grids, control='passthrough'):
+    """
+    Parse and validate estimators and parameter grids.
+
+    This function checks the provided estimators and parameter grids for 
+    consistency and validity. It ensures that the lengths of the estimators 
+    and parameter grids match, that the keys in both dictionaries are the same, 
+    and that each estimator implements the `fit` method.
+
+    Parameters
+    ----------
+    estimators : dict or list
+        Dictionary of estimator names to estimator instances, or a list of estimators.
+    
+    param_grids : dict or list
+        Dictionary of estimator names to parameter grids, or a list of parameter grids.
+    
+    control : str, default='passthrough'
+        Control the behavior of the function. If 'strict', the function will 
+        raise errors for invalid inputs. If 'passthrough', the function will 
+        return the inputs as they are if they are not dictionaries.
+    
+    Returns
+    -------
+    tuple
+        A tuple containing a list of estimators and a list of parameter grids, 
+        ordered by the estimator names.
+    
+    Raises
+    ------
+    ValueError
+        If the lengths of the estimators and parameter grids do not match, 
+        if the keys in both dictionaries are not the same, or if any estimator 
+        does not implement the `fit` method when control is 'strict'.
+    
+    Examples
+    --------
+    >>> from sklearn.svm import SVC
+    >>> from sklearn.linear_model import SGDClassifier
+    >>> from gofast.models.utils import parse_estimators_and_params
+    >>> estimators = {'SVC': SVC(), 'SGDClassifier': SGDClassifier()}
+    >>> param_grids = {'SVC': {'C': [1, 10], 'kernel': ['linear', 'rbf']}, 
+    ...                'SGDClassifier': {'max_iter': [50, 100], 'alpha': [0.0001, 0.001]}}
+    >>> parse_estimators_and_params(estimators, param_grids)
+    ([SGDClassifier(), SVC()], 
+     [{'max_iter': [50, 100], 'alpha': [0.0001, 0.001]}, 
+      {'C': [1, 10], 'kernel': ['linear', 'rbf']}])
+    """
+    if isinstance(estimators, dict) and isinstance(param_grids, dict):
+        if len(estimators) != len(param_grids):
+            raise ValueError(
+                "The number of estimators and parameter grids must be the same.")
+        
+        estimator_keys = set(estimators.keys())
+        param_grid_keys = set(param_grids.keys())
+
+        if estimator_keys != param_grid_keys:
+            raise ValueError(
+                "The keys in estimators and param_grids must be the same.")
+
+        ordered_estimators = []
+        ordered_param_grids = []
+
+        for key in estimators:
+            estimator = estimators[key]
+            if not hasattr(estimator, 'fit'):
+                raise ValueError(
+                    f"The estimator {key} does not implement a 'fit' method.")
+            ordered_estimators.append(estimator)
+            ordered_param_grids.append(param_grids[key])
+
+        return ordered_estimators, ordered_param_grids
+
+    elif control == 'strict':
+        raise ValueError(
+            "Both estimators and param_grids must be dictionaries in strict mode.")
+    
+    elif control == 'passthrough':
+        if isinstance(estimators, dict):
+            # Transform estimator dict to list and check if each implements fit method
+            ordered_estimators = []
+            for key in estimators:
+                estimator = estimators[key]
+                if not hasattr(estimator, 'fit'):
+                    raise ValueError(
+                        f"The estimator {key} does not implement a 'fit' method.")
+                ordered_estimators.append(estimator)
+        else:
+            ordered_estimators = estimators
+
+        if isinstance(param_grids, dict):
+            # Transform param_grid dict to list of param grids
+            ordered_param_grids = [param_grids[key] for key in param_grids]
+        else:
+            ordered_param_grids = param_grids
+
+        # Check if lengths match
+        if len(ordered_estimators) != len(ordered_param_grids):
+            raise ValueError(
+                "The number of estimators and parameter grids must be the same.")
+
+        return ordered_estimators, ordered_param_grids
+
+    else:
+        raise ValueError("Unknown control value. Use 'strict' or 'passthrough'.")
 
 def _unpack_estimators(estimators):
     """
@@ -303,69 +432,72 @@ def params_combinations(param_space):
     {'C': 100, 'gamma': 0.0001, 'kernel': 'linear'}
     {'C': 100, 'gamma': 0.0001, 'kernel': 'rbf'}
     """
+    if not isinstance (param_space, dict): 
+        raise TypeError ( "Expect a dictionnary for 'param_space';"
+                         f" got {type(param_space).__name__!r}")
     keys = param_space.keys()
     values = param_space.values()
     for combination in itertools.product(*values):
         yield dict(zip(keys, combination))
 
-def get_optimizer_method(optimizer: str) -> Type[BaseEstimator]:
+def get_strategy_method(strategy: str) -> Type[BaseEstimator]:
     """
-    Returns the corresponding optimizer class based on the provided optimizer 
+    Returns the corresponding strategy class based on the provided strategy 
     string.
     
-    This function accounts for standard optimizers as well as custom optimizers 
+    This function accounts for standard strategies as well as custom strategys 
     defined in gofast.
 
     Parameters
     ----------
-    optimizer : str
-        The name or abbreviation of the optimizer.
+    strategy : str
+        The name or abbreviation of the strategy.
 
     Returns
     -------
     Type[BaseEstimator]
-        The class of the optimizer corresponding to the provided optimizer 
+        The class of the strategy corresponding to the provided strategy 
         string.
 
     Raises
     ------
     ImportError
-        If a required external optimizer class (e.g., BayesSearchCV) is not 
+        If a required external strategy class (e.g., BayesSearchCV) is not 
         installed.
     ValueError
-        If no matching optimizer is found or the optimizer name is unrecognized.
+        If no matching strategy is found or the strategy name is unrecognized.
 
     Examples
     --------
-    >>> from gofast.models.utils import get_optimizer_method
-    >>> optimizer_class = get_optimizer_method('RSCV')
-    >>> print(optimizer_class)
+    >>> from gofast.models.utils import get_strategy_method
+    >>> strategy_class = get_strategy_method('RSCV')
+    >>> print(strategy_class)
     <class 'sklearn.model_selection.RandomizedSearchCV'>
-    >>> optimizer_class = get_optimizer_method('GASCV')
-    >>> print(optimizer_class)
+    >>> strategy_class = get_strategy_method('GESCV')
+    >>> print(strategy_class)
     <class 'gofast.models.selection.GeneticSearchCV'>
     """
-    # Ensure the optimizer name is standardized
-    optimizer = validate_optimizer(optimizer) 
+    # Ensure the strategy name is standardized
+    strategy = validate_strategy(strategy) 
     
-    # Mapping of optimizer names to their respective classes
-    # Standard optimizer dictionary
-    standard_optimizer_dict = {
+    # Mapping of strategy names to their respective classes
+    # Standard strategy dictionary
+    standard_strategy_dict = {
         'GridSearchCV': GridSearchCV,
         'RandomizedSearchCV': RandomizedSearchCV,
     }
     try: from skopt import BayesSearchCV
     except: 
-        if optimizer =='BayesSearchCV': 
+        if strategy =='BayesSearchCV': 
             emsg= ("scikit-optimize is required for 'BayesSearchCV'"
                    " but not installed.")
             import_optional_dependency('skopt', extra= emsg )
         pass 
-    else : standard_optimizer_dict["BayesSearchCV"]= BayesSearchCV
+    else : standard_strategy_dict["BayesSearchCV"]= BayesSearchCV
     
-    # Update standard optimizer with gofast optimizers if 
+    # Update standard strategy with gofast strategies if 
     # not exist previously.
-    if optimizer not in standard_optimizer_dict.keys(): 
+    if strategy not in standard_strategy_dict.keys(): 
         from gofast.models.selection import ( 
             SwarmSearchCV, 
             SequentialSearchCV, 
@@ -374,7 +506,7 @@ def get_optimizer_method(optimizer: str) -> Type[BaseEstimator]:
             GradientSearchCV,
             GeneticSearchCV 
             ) 
-        gofast_optimizer_dict = { 
+        gofast_strategy_dict = { 
             'SwarmSearchCV': SwarmSearchCV,
             'SequentialSearchCV': SequentialSearchCV,
             'AnnealingSearchCV': AnnealingSearchCV,
@@ -382,11 +514,107 @@ def get_optimizer_method(optimizer: str) -> Type[BaseEstimator]:
             'GradientSearchCV': GradientSearchCV,
             'GeneticSearchCV': GeneticSearchCV,
             }
-        standard_optimizer_dict ={**standard_optimizer_dict,**gofast_optimizer_dict }
+        standard_strategy_dict ={**standard_strategy_dict,**gofast_strategy_dict }
         
-    # Search for the corresponding optimizer class
-    return standard_optimizer_dict.get(optimizer)
+    # Search for the corresponding strategy class
+    return standard_strategy_dict.get(strategy)
+
+def get_strategy_name(strategy, error='raise'):
+    """
+    Retrieve the name of the strategy based on an input string.
     
+    This function searches for known strategy identifiers within the input
+    string using regular expressions and returns the formal name of the
+    strategy if a match is found. If no match is found, it handles the
+    situation based on the specified error handling mode ('raise', 'ignore',
+    'warn').
+
+    Parameters
+    ----------
+    strategy : str
+        The input string potentially containing an strategy name.
+    error : str, optional
+        Error handling mode: 'raise' (default) to raise an exception,
+        'ignore' to return a default message, and 'warn' to issue a warning.
+    
+    Returns
+    -------
+    str
+        The formal name of the strategy if found, or a default message
+        based on the error handling mode.
+    
+    Raises
+    ------
+    ValueError
+        If no strategy is found and error mode is 'raise'.
+    
+    Notes
+    -----
+    The function uses regular expressions for flexible and efficient matching.
+    The pattern matching checks for exact words and common abbreviations or
+    acronyms related to strategy names.
+
+    Examples
+    --------
+    >>> from gofast.models.utils import get_strategy_name
+    >>> get_strategy_name("I used random search CV for optimization")
+    'RandomizedSearchCV'
+
+    >>> get_strategy_name("What is GSCV?", error='warn')
+    UserWarning: Optimizer not found. Valid options include: RandomizedSearchCV, 
+    GridSearchCV, etc.
+
+    >>> get_strategy_name("optimize with GASCV")
+    'GeneticSearchCV'
+    
+    """
+    strategy = _standardize_input(strategy )
+    opt_dict = {
+       'RandomizedSearchCV': r"\b(random|RSCV|RandomizedSearchCV)\b",
+       'GridSearchCV': r"\b(grid|GSCV|GridSearchCV)\b",
+       'BayesSearchCV': r"\b(bayes|BSCV|BayesSearchCV)\b",
+       'AnnealingSearchCV': r"\b(annealing|ASCV|AnnealingSearchCV)\b",
+       'SwarmSearchCV': r"\b(swarm|pso|SWCV|PSOSCV|SwarmSearchCV)\b",
+       'SequentialSearchCV': r"\b(sequential|SSCV|SMBOSearchCV)\b",
+       'EvolutionarySearchCV': r"\b(evolution(?:ary)?|ESCV|EvolutionarySearchCV)\b",
+       'GradientSearchCV': r"\b(gradient|GBSCV|GradientBasedSearchCV)\b",
+       'GeneticSearchCV': r"\b(genetic|GASCV|GeneticSearchCV)\b"
+   }
+    
+    strategy_input = str(strategy).lower()
+    for key, pattern in opt_dict.items():
+        if re.search(pattern.lower(), strategy_input):
+            return key
+
+    valid_opts = ', '.join(opt_dict.keys())
+    error_message = f"Optimizer not found. Valid options include: {valid_opts}."
+
+    if error == 'raise':
+        raise ValueError(error_message)
+    elif error == 'warn':
+        warnings.warn(error_message, UserWarning)
+    
+    return "Optimizer not found"
+
+def _standardize_input(input_obj):
+    """
+    Standardizes the input to be a string. If the input is a class or an 
+    instance of a class, it retrieves the class name. If it's a string, 
+    it returns it as is.
+    """
+    if isinstance ( input_obj, str ): 
+        return input_obj
+    if inspect.isclass(input_obj):
+        # It's a class type
+        return input_obj.__name__
+    
+    elif hasattr(input_obj, '__class__'):
+        # It's an instance of a class
+        return input_obj.__class__.__name__
+    else:
+        # It's something else
+        return str(input_obj)
+
 def process_estimators_and_params(
     param_grids: List[Union[Dict[str, List[Any]], Tuple[BaseEstimator, Dict[str, List[Any]]]]],
     estimators: Optional[List[BaseEstimator]] = None
@@ -438,7 +666,6 @@ def process_estimators_and_params(
     [{'C': [1, 10, 100], 'kernel': ['linear', 'rbf']}, {'n_estimators': [10, 50, 100],
                                                         'max_depth': [5, 10, None]}]
     """
-    
     if all(isinstance(grid, (tuple, list)) for grid in param_grids):
         # Extract estimators and parameter grids from tuples
         estimators, param_grids = zip(*param_grids)
@@ -450,66 +677,67 @@ def process_estimators_and_params(
         raise ValueError("Estimators are missing. They must be provided either "
                          "in param_grids or as a separate list.")
         
-def validate_optimizer(optimizer: Union[str, _F]) -> str:
+def validate_strategy(strategy: Union[str, _F]) -> str:
     """
-    Check whether the given optimizer is a recognized optimizer type.
+    Check whether the given strategy is a recognized strategy type.
 
-    This function validates if the provided optimizer, either as a string 
+    This function validates if the provided strategy, either as a string 
     or an instance of a class derived from BaseEstimator, corresponds to a 
-    known optimizer type. If the optimizer is recognized, its standardized 
+    known strategy type. If the strategy is recognized, its standardized 
     name is returned. Otherwise, a ValueError is raised.
 
     Parameters
     ----------
-    optimizer : Union[str, _F]
-        The optimizer to validate. This can be a string name or an instance 
-        of an optimizer class.
+    strategy : Union[str, _F]
+        The strategy to validate. This can be a string name or an instance 
+        of an strategy class.
 
     Returns
     -------
     str
-        The standardized name of the optimizer.
+        The standardized name of the strategy.
 
     Raises
     ------
     ValueError
-        If the optimizer is not recognized.
+        If the strategy is not recognized.
 
     Examples
     --------
     >>> from sklearn.ensemble import RandomForestClassifier 
     >>> from gofast.models.selection import AnnealingSearchCV
-    >>> from gofast.models.utils import validate_optimizer
-    >>> validate_optimizer("RSCV")
+    >>> from gofast.models.utils import validate_strategy
+    >>> validate_strategy("RSCV")
     'RandomizedSearchCV'
-    >>> validate_optimizer(AnnealingSearchCV)
+    >>> validate_strategy(AnnealingSearchCV)
     'AnnealingSearchCV'
-    >>> validate_optimizer (RandomForestClassifier)
+    >>> validate_strategy (RandomForestClassifier)
     ValueError ...
     """
-    # Mapping of optimizer names to their possible abbreviations and variations
+    # Mapping of strategy names to their possible abbreviations and variations
     opt_dict = {
         'RandomizedSearchCV': ['RSCV', 'RandomizedSearchCV'], 
         'GridSearchCV': ['GSCV', 'GridSearchCV'], 
         'BayesSearchCV': ['BSCV', 'BayesSearchCV'], 
-        'AnnealingSearchCV': ['ANSCV', "AnnealingSearchCV"], 
+        'AnnealingSearchCV': ['ASCV', "AnnealingSearchCV"], 
         'SwarmSearchCV': ['SWSCV', 'SwarmSearchCV'], 
         'SequentialSearchCV': ['SQSCV', 'SequentialSearchCV'], 
         'EvolutionarySearchCV': ['EVSCV', 'EvolutionarySearchCV'], 
-        'GradientSearchCV':['GRSCV', 'GradientSearchCV'], 
-        'GeneticSearchCV': ['GESCV', 'GeneticSearchCV']
+        'GradientSearchCV': ['GBSCV', 'GradientSearchCV'], 
+        'GeneticSearchCV': ['GENSCV', 'GeneticSearchCV']
     }
 
-    optimizer_name = optimizer if isinstance(
-        optimizer, str) else get_estimator_name(optimizer)
+
+    strategy_name = strategy if isinstance(
+        strategy, str) else get_estimator_name(strategy)
 
     for key, values in opt_dict.items():
-        if optimizer_name.lower() in [v.lower() for v in values]:
+        if strategy_name.lower() in [v.lower() for v in values]:
             return key
 
-    valid_optimizers = [v1[1] for v1 in opt_dict.values()]
-    raise ValueError(f"Invalid 'optimizer' parameter '{optimizer_name}'."
-                     f" Choose from {smart_format(valid_optimizers, 'or')}.")
+    valid_strategys = [v1[1] for v1 in opt_dict.values()]
+    raise ValueError(f"Invalid 'strategy' parameter '{strategy_name}'."
+                     f" Choose from {smart_format(valid_strategys, 'or')}.")
     
 def find_best_C(X, y, C_range, cv=5, scoring='accuracy', 
                 scoring_reg='neg_mean_squared_error'):
@@ -558,7 +786,6 @@ def find_best_C(X, y, C_range, cv=5, scoring='accuracy',
     >>> best_C = find_best_C(X, y, C_range)
     >>> print(f"Best C value: {best_C}")
     """
-
     X, y = check_X_y(X,  y, to_frame= True, )
     task_type = type_of_target(y)
     best_score = ( 0 if task_type == 'binary' or task_type == 'multiclass'
@@ -684,7 +911,6 @@ def get_split_best_scores(cvres:Dict[str, ArrayLike],
         in the cross-validation. 
         
     """
-    #if split ==0: split =1 
     # get the split score 
     split_score = cvres[f'split{split}_test_score'] 
     # take the max score of the split 
@@ -713,16 +939,20 @@ def display_model_max_details(cvres:Dict[str, ArrayLike], cv:int =4):
         The number of KFlod during the fine-tuning models parameters. 
 
     """
+    texts= {}
     for k in range (cv):
-        print(f'split = {k}:')
         b= get_split_best_scores(cvres, split =k)
-        print( b)
+        texts ["split = {k}"]= b 
 
     globalmeansc , globalstdsc= get_cv_mean_std_scores(cvres)
-    print("Global split scores:")
-    print('mean=', globalmeansc , 'std=',globalstdsc)
+    texts["Global split ~ mean scores"]= globalmeansc
+    texts["Global split ~ std. scores"]= globalstdsc
+    
+    summary = ModelSummary().add_multi_contents(
+        *[texts] , titles = ["Model Max Details"], max_width= 90 )
+    print(summary )
 
-
+    
 def display_fine_tuned_results ( cvmodels: list[_F] ): 
     """Display fined -tuning results 
     
@@ -731,17 +961,23 @@ def display_fine_tuned_results ( cvmodels: list[_F] ):
     cvmnodels: list
         list of fined-tuned models.
     """
+    keys = [] 
+    values = [] 
     bsi_bestestimators = [model.best_estimator_ for model in cvmodels ]
     mnames = ( get_estimator_name(n) for n in bsi_bestestimators)
     bsi_bestparams = [model.best_params_ for model in cvmodels]
 
     for nam, param , estimator in zip(mnames, bsi_bestparams, 
                                       bsi_bestestimators): 
-        print("MODEL NAME =", nam)
-        print('BEST PARAM =', param)
-        print('BEST ESTIMATOR =', estimator)
-        print()
-
+        keys.append (nam )
+        values.append ( { 'Best Parameters': param, 
+                         ' Best Estimator': estimator
+                         }) 
+    dict_contents = dict ( zip ( keys, values ))
+    
+    summary = ModelSummary().add_multi_contents(*dict_contents, )
+    print(summary )
+        
 def display_cv_tables(cvres:Dict[str, ArrayLike],  cvmodels:list[_F] ): 
     """ Display the cross-validation results from all models at each 
     k-fold. 
@@ -758,7 +994,7 @@ def display_cv_tables(cvres:Dict[str, ArrayLike],  cvmodels:list[_F] ):
     Examples 
     ---------
     >>> from gofast.datasets import fetch_data
-    >>> from gofast.models import GridSearchMultiple, displayCVTables
+    >>> from gofast.models import GridSearchMultiple, display_cv_tables
     >>> X, y  = fetch_data ('bagoue prepared') 
     >>> gobj =GridSearchMultiple(estimators = estimators, 
                                  grid_params = grid_params ,
@@ -766,7 +1002,7 @@ def display_cv_tables(cvres:Dict[str, ArrayLike],  cvmodels:list[_F] ):
                                  verbose =1,  savejob=False , 
                                  kind='GridSearchCV')
     >>> gobj.fit(X, y) 
-    >>> displayCVTables (cvmodels=[gobj.models.SVC] ,
+    >>> display_cv_tables (cvmodels=[gobj.models.SVC] ,
                          cvres= [gobj.models.SVC.cv_results_ ])
     ... 
     """
@@ -943,7 +1179,8 @@ def visualize_score_distribution(
     return ax
 
 def performance_over_time(
-    cv_results, ax=None,
+    cv_results,
+    ax=None,
     title='Performance Over Time', 
     xlabel='Timestamp', 
     ylabel='Score', 
@@ -1375,7 +1612,6 @@ def plot_roc_curve_per_fold(cv_results, fold_indices, y, metric='roc_auc'):
     plt.legend(loc="lower right")
     plt.show()
 
-
 def plot_confidence_intervals(cv_results, metric='mean_test_score'):
     """
     Calculates and plots confidence intervals for cross-validation scores.
@@ -1775,3 +2011,501 @@ def get_best_kPCA_params(
     grid_search.fit(X, y)
     
     return grid_search.best_params_
+    
+def compile_cv_results(params_list, results_list):
+    """
+    Compiles cross-validation results into a structured list, each containing the parameter
+    set and its corresponding mean test score.
+
+    This function takes a list of parameter dictionaries and a corresponding list of
+    result dictionaries, computes the mean of the 'test_scores' for each parameter set,
+    and returns a list of dictionaries summarizing the results.
+
+    Parameters
+    ----------
+    params_list : list of dict
+        A list where each element is a dictionary of parameter settings.
+    results_list : list of dict
+        A list where each element is a dictionary containing the results of testing
+        each parameter set. Expected keys include 'test_scores', which should be a
+        list of scores, or `nan` if not available.
+
+    Returns
+    -------
+    list of dict
+        A list of dictionaries, each containing the 'params' dictionary for a parameter
+        set and its 'mean_test_score'.
+
+    Examples
+    --------
+    >>> params = [{'C': 0.1}, {'C': 1}, {'C': 10}, {'C': 100}]
+    >>> results = [
+    ...     {'fit_error': None, 'test_scores': [0.8, 0.82, 0.81], 'train_scores': [0.9, 0.92, 0.91]},
+    ...     {'fit_error': None, 'test_scores': [0.85, 0.87, 0.86], 'train_scores': [0.95, 0.97, 0.96]},
+    ...     {'fit_error': None, 'test_scores': [0.9, 0.92, 0.91], 'train_scores': [0.98, 0.99, 0.97]},
+    ...     {'fit_error': None, 'test_scores': [0.93, 0.95, 0.94], 'train_scores': [0.99, 1.0, 0.98]}
+    ... ]
+    >>> compiled_results = compile_cv_results(params, results)
+    >>> for res in compiled_results:
+    ...     print(res)
+    {'params': {'C': 0.1}, 'mean_test_score': 0.81}
+    {'params': {'C': 1}, 'mean_test_score': 0.86}
+    {'params': {'C': 10}, 'mean_test_score': 0.91}
+    {'params': {'C': 100}, 'mean_test_score': 0.94}
+
+    Notes
+    -----
+    - The function assumes that each entry in `results_list` corresponds to the parameter
+      set in the same position in `params_list`.
+    - It uses `numpy.nanmean` for calculating the mean test score, which safely ignores
+      any `nan` values. This is particularly useful in situations where some trials might
+      not have produced valid scores (e.g., due to errors during model fitting).
+    - In the absence of any valid test scores for a parameter set (i.e., all scores are `nan`),
+      the mean test score will also be `nan`.
+    """
+    compiled_results = []
+    for param, result in zip(params_list, results_list):
+        # Filter out 'nan' values from test_scores and compute the mean
+        test_scores = result.get('test_scores')
+        if test_scores is not np.nan:  # Assuming 'test_scores' could be an array/list or 'nan'
+            mean_test_score = np.nanmean(test_scores)  # Safely compute mean, ignoring 'nan'
+        else:
+            mean_test_score = np.nan
+        
+        compiled_result = {
+            'params': param,
+            'mean_test_score': mean_test_score
+        }
+        compiled_results.append(compiled_result)
+    return compiled_results
+
+def aggregate_cv_results(cv_results):
+    """
+    Aggregates cross-validation (CV) results for each unique parameter set, computing
+    mean scores, fit errors, fit times, and score times across all CV folds.
+
+    This function processes a list of dictionaries, each representing the results of
+    a single CV run, and aggregates these results by parameter set. It computes the
+    mean test score, mean train score, mean fit error, mean fit time, and mean score
+    time for each unique set of parameters.
+
+    Parameters
+    ----------
+    cv_results : list of dict
+        A list where each element is a dictionary containing the results of a single
+        CV run. Expected keys in each dictionary include 'parameters' (a dict of
+        parameter values), 'test_scores' (a list or a scalar 'nan'), 'train_scores'
+        (a list or a scalar 'nan'), 'fit_error' (None or a numeric value),
+        'fit_time', and 'score_time'.
+
+    Returns
+    -------
+    list of dict
+        A list of dictionaries, where each dictionary contains a unique 'params'
+        field (dict of parameter values) along with the aggregated metrics:
+        'mean_test_score', 'mean_train_score', 'mean_fit_error',
+        'mean_fit_times', and 'mean_score_times'.
+
+    Examples
+    --------
+    >>> cv_results = [
+    ...     {'parameters': {'C': 0.1}, 'test_scores': [0.8, 0.82],
+    ...      'train_scores': [0.9, 0.92], 'fit_error': None, 'fit_time': 0.1,
+    ...      'score_time': 0.01, 'n_test_samples': 200},
+    ...     {'parameters': {'C': 0.1}, 'test_scores': [0.81, 0.83],
+    ...      'train_scores': [0.91, 0.93], 'fit_error': None, 'fit_time': 0.2,
+    ...      'score_time': 0.02, 'n_test_samples': 200}
+    ... ]
+    >>> results = aggregate_cv_results(cv_results)
+    >>> print(results)
+    [{'params': {'C': 0.1}, 'mean_test_score': 0.815, 'mean_train_score': 0.915,
+      'mean_fit_error': nan, 'mean_fit_times': 0.15, 'mean_score_times': 0.015, 
+      'n_test_samples': 200}]
+
+    Notes
+    -----
+    - The function assumes that 'test_scores' and 'train_scores' can either be lists
+      of numeric values or a scalar 'nan' to indicate missing data.
+    - 'fit_error' is handled as optional, with None indicating no error and numeric
+      values indicating some form of error measurement. If all fit errors are None,
+      'mean_fit_error' will be reported as `nan`.
+    - This function is designed to be flexible, accommodating any set of parameters
+      provided in the 'parameters' dictionary of each CV result.
+    - It uses `numpy.nanmean` to safely compute mean values while ignoring `nan`s,
+      allowing for robust aggregation even in the presence of incomplete data.
+    """
+    def to_list( value): 
+        """ Convert float of non interable value into an iterable value."""
+        if not isinstance ( value, list): 
+            value = [ value] 
+         
+        return value 
+        
+    # Initialize a dictionary to hold aggregated results
+    aggregated_results = {}
+    
+    for result in cv_results:
+        # Extract parameter values as a hashable tuple for uniqueness
+        params_tuple = tuple(result['parameters'].items())
+        
+        if params_tuple not in aggregated_results:
+            aggregated_results[params_tuple] = {
+                'params': result['parameters'],
+                'n_test_samples': [], 
+                'fit_errors': [],
+                'test_scores': [],
+                'train_scores': [],
+                'fit_times': [],
+                'score_times': []
+            }
+        
+        aggregated_results[params_tuple]['fit_errors'].append(result.get('fit_error', np.nan))
+        aggregated_results[params_tuple]['n_test_samples'].append(result.get('n_test_samples', np.nan))
+        aggregated_results[params_tuple]['test_scores'].extend(
+            to_list(result.get('test_scores', [np.nan])))
+        aggregated_results[params_tuple]['train_scores'].extend(
+            to_list(result.get('train_scores', [np.nan]))) 
+        aggregated_results[params_tuple]['fit_times'].append(result.get('fit_time', np.nan))
+        aggregated_results[params_tuple]['score_times'].append(result.get('score_time', np.nan))
+    
+    # Convert aggregated results to the desired format
+    final_results = []
+    for _, aggregated in aggregated_results.items():
+        # Calculate mean and standard deviation of test scores
+        mean_test_score = np.nanmean(aggregated['test_scores'])
+        std_test_score = np.nanstd(aggregated['test_scores'])
+        
+        # Calculate other aggregated metrics
+        mean_train_score = np.nanmean(aggregated['train_scores'])
+        mean_fit_times = np.nanmean(aggregated['fit_times'])
+        mean_score_times = np.nanmean(aggregated['score_times'])
+        mean_n_test_samples = np.nanmean(aggregated['n_test_samples'])
+        fit_error= np.nan if all(x is None for x in aggregated['fit_errors']) else np.nanmean(
+                                            [x for x in aggregated['fit_errors'] if x is not None]),
+        
+        # Append the formatted result
+        final_results.append({
+            'params': aggregated['params'],
+            'mean_test_score': mean_test_score,
+            'std_test_score': std_test_score,
+            'mean_train_score': mean_train_score,
+            'mean_fit_times': mean_fit_times,
+            'mean_score_times': mean_score_times,
+            'mean_n_test_samples': mean_n_test_samples,
+            'fit_error': fit_error
+        })
+    
+    return final_results
+
+def get_param_types2(estimator: BaseEstimator) -> dict:
+    """
+    Get the parameter types for a given estimator.
+    
+    Parameters
+    ----------
+    estimator : BaseEstimator
+        An instance of a scikit-learn estimator.
+    
+    Returns
+    -------
+    param_types : dict
+        A dictionary mapping parameter names to their types.
+    """
+    params = estimator.get_params()
+    param_types = {param: type(value) for param, value in params.items()}
+    return param_types
+
+def resolve_param_type(value, expected_types):
+    """
+    Resolve the type of a parameter value based on the expected types.
+    
+    Parameters
+    ----------
+    value : any
+        The parameter value to be resolved.
+    expected_types : tuple
+        A tuple of expected types.
+    
+    Returns
+    -------
+    resolved_value : any
+        The parameter value converted to the appropriate type if possible,
+        otherwise the original value.
+    """
+    for expected_type in expected_types:
+        try:
+            if expected_type == str and value in {'scale', 'auto'}:
+                return value
+            return expected_type(value)
+        except (ValueError, TypeError):
+            continue
+    return value
+
+def apply_param_types2(estimator: BaseEstimator, param_dict: dict) -> dict:
+    """
+    Apply the parameter types to the values in the given dictionary.
+    
+    Parameters
+    ----------
+    estimator : BaseEstimator
+        An instance of a scikit-learn estimator.
+    param_dict : dict
+        A dictionary of hyperparameters.
+    
+    Returns
+    -------
+    new_param_dict : dict
+        A new dictionary with values converted to the expected types.
+    """
+    param_types = get_param_types(estimator)
+    new_param_dict = {}
+    
+    for param, value in param_dict.items():
+        if param in param_types:
+            expected_type = param_types[param]
+            if expected_type in {str, float}:
+                new_param_dict[param] = resolve_param_type(value, (str, float))
+            else:
+                new_param_dict[param] = expected_type(value)
+        else:
+            new_param_dict[param] = value  # keep original if param not found
+    
+    return new_param_dict
+
+                                                                                                                      
+def get_param_types(estimator: BaseEstimator) -> dict:
+    """
+    Get the parameter types for a given estimator.
+    
+    Parameters
+    ----------
+    estimator : BaseEstimator
+        An instance of a scikit-learn estimator.
+    
+    Returns
+    -------
+    param_types : dict
+        A dictionary mapping parameter names to their types.
+    """
+    params = estimator.get_params()
+    param_types = {param: type(value) for param, value in params.items()}
+    return param_types
+
+def apply_param_types(estimator: BaseEstimator, param_dict: dict) -> dict:
+    """
+    Apply the parameter types to the values in the given dictionary.
+    
+    Parameters
+    ----------
+    estimator : BaseEstimator
+        An instance of a scikit-learn estimator.
+    param_dict : dict
+        A dictionary of hyperparameters.
+    
+    Returns
+    -------
+    new_param_dict : dict
+        A new dictionary with values converted to the expected types.
+    """
+    param_types = get_param_types(estimator)
+    new_param_dict = {}
+    
+    for param, value in param_dict.items():
+        if param in param_types:
+            if value is None: 
+                new_param_dict[param] = value
+                continue 
+            expected_type = param_types[param]
+            new_param_dict[param] = expected_type(value)
+        else:
+            new_param_dict[param] = value  # keep original if param not found
+        
+        # sometimes, param can hold string and float, try to convert to float 
+        # if string is passed 
+        if isinstance ( new_param_dict[param], str): 
+            try : 
+                new_param_dict[param] = float( new_param_dict[param]) 
+            except : 
+                pass 
+            
+    return new_param_dict
+
+def process_performance_data(df, mode='average', on='@data'):
+    """
+    Process performance data based on specified parameters.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing performance data with each cell being a list of scores.
+        If the DataFrame contains only numerical values, it will be automatically
+        converted to a DataFrame with each value wrapped in a list.
+    
+    mode : str, optional, default='average'
+        Processing mode. Options:
+        - 'average': Averages each row array value at each index.
+        - 'rowX': Processes data based on the specific row index (e.g., 'row0', 'row1').
+        - 'dX': Same as 'rowX'.
+        - 'cvX': Processes data based on the specific column index (e.g., 'cv0', 'cv1').
+        - 'cX': Same as 'cvX'.
+    
+    on : str, optional, default='@data'
+        Specifies the axis of processing.
+        - '@data': Processes data based on rows.
+        - '@cv': Processes data based on columns.
+    
+    Returns
+    -------
+    pd.DataFrame
+        Processed DataFrame with columns names and processed values.
+    
+    Raises
+    ------
+    ValueError
+        If the parameters for 'mode' or 'on' are invalid, or if the specified
+        row or column index is out of bounds.
+    
+    Examples
+    --------
+    >>> import pandas as pd 
+    >>> from gofast.models.utils import process_performance_data
+    >>> df = pd.DataFrame({
+    ...     'DecisionTreeClassifier': [[0.9667, 0.9667, 0.9, 0.9667, 1.0],
+    ...                                [0.9667, 0.9667, 0.9, 0.9667, 1.0],
+    ...                                [0.9667, 0.9667, 0.9, 0.9667, 1.0]],
+    ...     'LogisticRegression': [[0.9667, 1.0, 0.9333, 0.9667, 1.0],
+    ...                             [0.9667, 1.0, 0.9333, 0.9667, 1.0],
+    ...                             [0.9667, 1.0, 0.9333, 0.9667, 1.0]]
+    ... })
+    >>> process_performance_data(df, mode='average')
+        DecisionTreeClassifier  LogisticRegression
+     0                 0.96002             0.97334
+     1                 0.96002             0.97334
+     2                 0.96002             0.97334
+    >>> process_performance_data(df, mode='row0')
+        DecisionTreeClassifier  LogisticRegression
+     0                  0.9667              0.9667
+     1                  0.9667              0.9667
+     2                  0.9667              0.9667
+    >>> process_performance_data(df, mode='cv1', on='@cv')
+        DecisionTreeClassifier  LogisticRegression
+     0                  0.9667                 1.0
+     1                  0.9667                 1.0
+     2                  0.9667                 1.0
+    """
+    # Check if each cell is a list of scores
+    if not all(isinstance(i, list) for col in df.columns for i in df[col]):
+        # If the DataFrame contains only numerical values, wrap each value in a list
+        if df.applymap(lambda x: isinstance(x, (int, float))).all().all():
+            df = df.applymap(lambda x: [x])
+        else:
+            raise ValueError("DataFrame should contain lists of scores in each cell.")
+
+    if mode == 'average':
+        # Average each row array value at each index
+        if on == '@cv':
+            # Average across cross-validation folds
+            processed_data = {}
+            for col in df.columns:
+                # Transpose the list of lists to get columns of CV results
+                transposed_cv = list(zip(*df[col]))
+                processed_data[col] = [sum(cv_fold) / len(cv_fold) for cv_fold in transposed_cv]
+            return pd.DataFrame(processed_data)
+        else:
+            # Average each row array value at each index
+            processed_data = {col: df[col].apply(lambda x: sum(x) / len(x)) for col in df.columns}
+            
+        return pd.DataFrame(processed_data)
+
+    if on == '@data':
+        # Process based on row index
+        if mode.startswith('row') or mode.startswith('d'):
+            index = int(mode[3]) if mode.startswith('row') else int(mode[1])
+            if index >= len(df):
+                raise ValueError(f"Invalid row index: {index}. DataFrame only has {len(df)} rows.")
+            processed_data = {col: df[col].apply(lambda x: x[index]) for col in df.columns}
+            return pd.DataFrame(processed_data)
+
+    if on == '@cv':
+        # Process based on column index
+        if mode.startswith('cv') or mode.startswith('c'):
+            index = int(mode[2]) if mode.startswith('cv') else int(mode[1])
+            max_len = max(df[col].apply(len).max() for col in df.columns)
+            if index >= max_len:
+                raise ValueError(
+                    f"Invalid column index: {index}. DataFrame columns have"
+                    f" a maximum of {max_len} values.")
+            processed_data = {col: [row[index] for row in df[col]] for col in df.columns}
+            return pd.DataFrame(processed_data)
+
+    raise ValueError("Invalid parameters for 'mode' or 'on'")
+    
+
+def update_if_higher(
+    results_dict, 
+    estimator_name, 
+    new_score, 
+    result_data, 
+    best_params_dict=None
+    ):
+    """
+    Updates the results dictionary with the new score if it is higher than the 
+    current score and updates the best_params dictionary accordingly.
+
+    Parameters
+    ----------
+    results_dict : dict
+        The dictionary containing the results of each estimator.
+    estimator_name : str
+        The key in the dictionary to update (name of the estimator).
+    new_score : float
+        The new score to compare and potentially update.
+    result_data : dict
+        The result dictionary containing additional details to update.
+    best_params_dict : dict, optional
+        The dictionary containing the best parameters for each estimator.
+
+    Returns
+    -------
+    results_dict : dict
+        The updated results dictionary.
+    best_params_dict : dict
+        The updated best parameters dictionary.
+
+    Notes
+    -----
+    This function ensures that the `results_dict` and `best_params_dict` are 
+    updated only if the new score is higher than the existing score for a 
+    given estimator. If the estimator is not already in the `results_dict`, it 
+    adds the estimator and its corresponding result data.
+
+    Examples
+    --------
+    >>> results = {}
+    >>> best_params = {}
+    >>> estimator_name = 'RandomForest'
+    >>> new_score = 0.85
+    >>> result_data = {
+    ...     'RandomForest': {
+    ...         'best_estimator_': rf_best_estimator,
+    ...         'best_params_': rf_best_params,
+    ...         'best_score_': 0.85,
+    ...         'scoring': 'accuracy',
+    ...         'strategy': 'GridSearchCV',
+    ...         'cv_results_': rf_cv_results,
+    ...     }
+    ... }
+    >>> update_if_higher(results, estimator_name, new_score, result_data, best_params)
+    """
+    best_params_dict = best_params_dict or {}
+    if estimator_name in results_dict:
+        if new_score > results_dict[estimator_name]['best_score_']:
+            results_dict[estimator_name] = result_data[estimator_name]
+            best_params_dict[estimator_name] = result_data[estimator_name]['best_params_']
+    else:
+        results_dict[estimator_name] = result_data[estimator_name]
+        best_params_dict[estimator_name] = result_data[estimator_name]['best_params_']
+        
+    return results_dict, best_params_dict
+
+

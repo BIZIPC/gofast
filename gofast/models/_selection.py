@@ -13,6 +13,7 @@ from sklearn.model_selection._search import BaseSearchCV
 from sklearn.base import  clone
 
 from ..tools.validator import _is_numeric_dtype 
+from .utils import apply_param_types 
 # from gofast.models.utils import params_combinations
 
 class PSOBaseSearch(BaseSearchCV):
@@ -264,6 +265,39 @@ class PSOBaseSearch(BaseSearchCV):
         return velocity
 
     def _evaluate_particle(self, particle, X, y):
+        """
+        Evaluate the fitness of a particle's position.
+    
+        Parameters
+        ----------
+        particle : dict
+            A particle representing a set of hyperparameters.
+    
+        X : array-like of shape (n_samples, n_features)
+            Training vectors.
+    
+        y : array-like of shape (n_samples,)
+            Target values.
+    
+        Returns
+        -------
+        score : float
+            The fitness score of the particle's position.
+        """
+        #estimator_name = self.estimator.__class__.__name__
+        estimator = clone(self.estimator)
+        
+        # Apply parameter types to particle['position']
+        particle['position'] = apply_param_types(estimator, particle['position'])
+        
+        estimator.set_params(**particle['position'])
+        score = np.mean(cross_val_score(
+            estimator, X, y, cv=self.cv,
+            scoring=self.scoring, n_jobs=self.n_jobs)
+        )
+        return score
+    
+    def _evaluate_particle0(self, particle, X, y):
         """
         Evaluate the fitness of a particle's position.
     
@@ -574,6 +608,7 @@ class GradientBaseSearch(BaseSearchCV):
             Dictionary containing the mean and standard deviation of the 
             cross-validation scores.
         """
+        params = apply_param_types (self.estimator, params)
         estimator = clone(self.estimator).set_params(**params)
         scores = cross_val_score(estimator, X, y, cv=self.cv, 
                                  scoring=self.scoring, n_jobs=self.n_jobs
@@ -861,6 +896,7 @@ class AnnealingBaseSearch(BaseSearchCV):
             The mean cross-validation score of the estimator with the given 
             hyperparameters.
         """
+        hyperparameters = apply_param_types(self.estimator, hyperparameters)
         estimator = clone(self.estimator).set_params(**hyperparameters)
         score = np.mean(cross_val_score(
             estimator, self.X, self.y, cv=self.cv, scoring=self.scoring, 

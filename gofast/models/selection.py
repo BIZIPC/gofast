@@ -13,6 +13,7 @@ from sklearn.model_selection._search import BaseSearchCV, ParameterSampler
 
 from ._selection import PSOBaseSearch, GeneticBaseSearch  
 from ._selection import GradientBaseSearch, AnnealingBaseSearch
+from .utils import apply_param_types 
 
 __all__=["SwarmSearchCV", "GradientSearchCV", "AnnealingSearchCV", 
          "GeneticSearchCV", "EvolutionarySearchCV", "SequentialSearchCV", 
@@ -84,7 +85,7 @@ class SwarmSearchCV(PSOBaseSearch):
         computational complexity. The optimal number depends on the 
         dimensionality and complexity of the hyperparameter space.
 
-    max_iter : int, default=100
+    max_iter : int, default=10
         Maximum number of iterations for the optimization process. This defines 
         how many times the swarm will update the particles' positions. More 
         iterations allow more opportunities for finding better solutions but 
@@ -194,6 +195,7 @@ class SwarmSearchCV(PSOBaseSearch):
     Attributes
     ----------
     cv_results_ : dict of numpy (masked) ndarrays
+        A record of each particle's position and score at each iteration.
         A dict with keys as column headers and values as columns, that can be
         imported into a pandas ``DataFrame``.
 
@@ -313,19 +315,6 @@ class SwarmSearchCV(PSOBaseSearch):
         parameter for more details) and that `best_estimator_` exposes
         `feature_names_in_` when fit.
 
-    Attributes
-    ----------
-    best_params_ : dict
-        The best parameter setting found during the optimization process.
-
-    best_score_ : float
-        The score of the best_params_.
-
-    best_estimator_ : estimator object
-        Estimator fitted with the best_params_.
-
-    cv_results_ : list of dicts
-        A record of each particle's position and score at each iteration.
         
     Examples
     --------
@@ -356,7 +345,7 @@ class SwarmSearchCV(PSOBaseSearch):
         scoring=None, 
         cv=3, 
         n_particles=30, 
-        max_iter=100, 
+        max_iter=10, 
         inertia_weight=0.9, 
         cognitive_coeff=2.0, 
         social_coeff=2.0,
@@ -368,47 +357,6 @@ class SwarmSearchCV(PSOBaseSearch):
         error_score=np.nan, 
         return_train_score=True, 
         ):
-        """
-        Initialize the PSOSearchCV with the given parameters.
-
-        Parameters
-        ----------
-        estimator : estimator object
-            The machine learning estimator to be optimized.
-
-        param_space : dict
-            Dictionary with parameters names as keys and lists or tuples as values.
-            Each entry specifies the hyperparameter search space.
-
-        scoring : str, callable, list, tuple, dict, or None, default=None
-            A string or a scorer callable object / function with signature 
-            scorer(estimator, X, y). If None, the estimator's default scorer 
-            is used.
-
-        cv : int, cross-validation generator or an iterable, default=3
-            Determines the cross-validation splitting strategy.
-
-        n_particles : int, default=30
-            Number of particles in the swarm.
-
-        max_iter : int, default=100
-            Maximum number of iterations for the optimization process.
-
-        inertia_weight : float, default=0.9
-            Inertia weight that influences the particle's velocity.
-
-        cognitive_coeff : float, default=2.0
-            Cognitive coefficient to guide particles towards their own best 
-            known position.
-
-        social_coeff : float, default=2.0
-            Social coefficient to guide particles towards the swarm's best 
-            known position.
-
-        random_state : int, RandomState instance or None, default=None
-            Controls the randomness of the estimator and the algorithm.
-            
-        """
         super().__init__(
             estimator=estimator, 
             param_space=param_space, 
@@ -457,8 +405,8 @@ class SwarmSearchCV(PSOBaseSearch):
         global_best_position = None
         global_best_score = -np.inf
         global_best_candidates = []
-    
-        for iteration in range(self.max_iter):
+
+        for iteration in range(self.max_iter): 
             for particle in particles:
                 # Evaluate the current position using a separate method
                 current_score = self._evaluate_particle(particle, self.X, self.y)
@@ -479,6 +427,7 @@ class SwarmSearchCV(PSOBaseSearch):
                     print(f"Particle velocity: {particle['velocity']}")
                     print(f"Particle current score: {current_score}")
     
+      
             # Add the best candidate of this iteration
             global_best_candidates.append(global_best_position)
     
@@ -490,7 +439,7 @@ class SwarmSearchCV(PSOBaseSearch):
                 print(f"Iteration {iteration + 1}/{self.max_iter},"
                       f" Best position: {global_best_position},"
                       f" Best Score: {global_best_score}")
-    
+   
         # Re-evaluate candidates to prevent IndexError and update test scores
         if global_best_candidates:
             evaluate_candidates(global_best_candidates)
@@ -503,6 +452,7 @@ class SwarmSearchCV(PSOBaseSearch):
             print("Optimization completed.")
             print(f"Best score: {global_best_score:.4f}")
             print(f"Best parameters: {global_best_position}")
+
     
     def _store_search_results(self, particles):
         """
@@ -944,7 +894,9 @@ class GradientSearchCV(GradientBaseSearch):
             increased_params, decreased_params = self._create_param_variants(
                 current_params, param, delta
                 )
-
+            increased_params = apply_param_types(self.estimator, increased_params)
+            decreased_params = apply_param_types(self.estimator, decreased_params)
+            print(increased_params)
             evaluate_candidates([increased_params])
             evaluate_candidates([decreased_params])
 
@@ -1812,10 +1764,12 @@ class GeneticSearchCV(GeneticBaseSearch):
             out = evaluate_candidates(candidate_params)
             # Extract scores and update best parameters and estimator
             scores = out["mean_test_score"]
-            for idx, score in enumerate(scores):
-                if score > self.best_score_:
+            params= out["params"]
+            #print(len(params), len(scores))
+            for score, candidate_param in zip(scores, params):
+                if score >= self.best_score_:
                     self.best_score_ = score
-                    self.best_params_ = candidate_params[idx]
+                    self.best_params_ = candidate_param #s[idx]
                     self.best_estimator_ = clone(self.estimator).set_params(
                         **self.best_params_)
 
@@ -2389,7 +2343,7 @@ class EvolutionarySearchCV(GeneticBaseSearch):
             out = evaluate_candidates(candidate_params)
             # Extract scores
             scores = out["mean_test_score"]
-            
+            params= out["params"]
             # Check if scores array is empty
             if len(scores) == 0:
                 if self.verbose: 
@@ -2398,13 +2352,18 @@ class EvolutionarySearchCV(GeneticBaseSearch):
                 continue
     
             # Find the index of the best score
-            best_idx = np.argmax(scores)
-            if scores[best_idx] > self.best_score_:
-                self.best_score_ = scores[best_idx]
-                self.best_params_ = candidate_params[best_idx]
-                self.best_estimator_ = clone(self.estimator).set_params(
-                    **self.best_params_)
-    
+            # best_idx = np.argmax(scores)
+            # if scores[best_idx] > self.best_score_:
+            #     self.best_score_ = scores[best_idx]
+            #     self.best_params_ = candidate_params[best_idx]
+            #     self.best_estimator_ = clone(self.estimator).set_params(
+            #         **self.best_params_)
+            for score, candidate_param in zip(scores, params):
+                if score >= self.best_score_:
+                    self.best_score_ = score
+                    self.best_params_ = candidate_param #s[idx]
+                    self.best_estimator_ = clone(self.estimator).set_params(
+                        **self.best_params_)
             # Store results for the generation
             self.cv_results_.append({
                 'params': candidate_params,
@@ -3048,4 +3007,3 @@ class SequentialSearchCV (BaseSearchCV):
                 self.param_space, self.n_iter, random_state=self.random_state
             )
         )
- 

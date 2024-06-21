@@ -4,6 +4,8 @@ decorators tests
 =================
 Created on Sat Feb 17 07:27:47 2024
 @author: LKouadio a.k.a  Daniel
+
+# tests/test_decorators.py
 """
 import os
 import sys
@@ -16,8 +18,8 @@ import pandas as pd
 import numpy as np
 
 from gofast._gofastlog import gofastlog 
-from gofast.decorators import DynamicMethod  
-from gofast.decorators import ExportData , df_if, Dataify
+from gofast.decorators import DynamicMethod , SmartProcessor 
+from gofast.decorators import ExportData , isdf, Dataify
 from gofast.decorators import Temp2D, CheckGDALData 
 from gofast.decorators import SignalFutureChange, RedirectToNew  
 from gofast.decorators  import AppendDocReferences, Deprecated
@@ -25,9 +27,111 @@ from gofast.decorators import PlotPrediction, PlotFeatureImportance
 from gofast.decorators import AppendDocSection, SuppressOutput
 from gofast.decorators import AppendDocFrom, NumpyDocstringFormatter
 from gofast.decorators import NumpyDocstring, sanitize_docstring
+from gofast.decorators import DataTransformer, Extract1dArrayOrSeries
+
 # Define a logger mock to capture warnings
 _logger = gofastlog.get_gofast_logger(__name__)
 # Source function with a comprehensive docstring
+
+
+# Function to be decorated
+@SmartProcessor(param_name='columns', to_dataframe=True)
+def normalize_data(data, columns=None):
+    return (data - np.mean(data, axis=0)) / np.std(data, axis=0)
+
+# Test DataFrame
+df = pd.DataFrame({
+    'A': [1, 2, 3],
+    'B': [4, 5, 6],
+    'C': [7, 8, 9]
+})
+# Function to be decorated with no possibility to convert to a dataframe before. 
+@SmartProcessor(param_name='columns')
+def normalize_data2(data, columns=None):
+    return (data - np.mean(data, axis=0)) / np.std(data, axis=0)
+
+def test_normalize_data_with_columns():
+    result = normalize_data(df, columns=['C'])
+    expected_columns = ['A', 'B', 'C']
+    # Check if all columns are present
+    assert all(col in result.columns for col in expected_columns)
+    # Check if the 'C' column remains unchanged
+    assert all(result['C'] == df['C'])
+    # Check if the processed columns are actually normalized
+    np.testing.assert_almost_equal(result['A'].mean(), 0)
+    np.testing.assert_almost_equal(result['A'].std(), 1, decimal= 0)
+
+def test_normalize_data_without_columns():
+    result = normalize_data(df)
+    expected_columns = ['A', 'B', 'C']
+    # Check if all columns are present and processed
+    assert all(col in result.columns for col in expected_columns)
+    # Check normalization
+    np.testing.assert_almost_equal(result.mean().mean(), 0)
+    np.testing.assert_almost_equal(result.std().mean(), 1, decimal= 0)
+
+def test_normalize_data_with_invalid_columns():
+    with pytest.raises(ValueError):
+        normalize_data(df, columns=['D'])  # 'D' does not exist
+
+def test_normalize_data_with_numpy_array():
+    arr = df.values
+    result = normalize_data2(arr, columns=[2])  # Assuming column index 2 corresponds to 'C'
+    # Check if the shape is correct and 'C' column is unchanged
+    assert result.shape == arr.shape
+    assert all(result[:, 2] == arr[:, 2])
+    # Check normalization of other columns
+    np.testing.assert_almost_equal(np.mean(result[:, :2], axis=0), [0, 0])
+    np.testing.assert_almost_equal(np.std(result[:, :2], axis=0), [.8, .8], decimal=1)
+
+def test_data_transformer_dataframe():
+    @DataTransformer(rename_columns=True, verbose=True, mode='hardworker')
+    def process_data():
+        # This function intentionally returns a DataFrame with different column names
+        # than those specified in the original_attrs for testing purposes.
+        return pd.DataFrame([[1, 2], [3, 4]], columns=['X', 'Y'])
+    # Mocking original attributes to check if columns are renamed
+    # In principle, it should be False since, decorator wait unfil 
+    # the final execution of tthe decorated function to rename 
+    # the result data frame in 'hw' mode. 
+    process_data.original_attrs = {'columns': ['A', 'B']}
+    
+    df = process_data()
+    # assert list(df.columns) == ['A', 'B'], "DataTransformer failed to rename columns"
+    assert list (df.columns) ==['X', 'Y'], ( 
+        "Columns are renamed while is not possible outside the decorator") 
+
+def test_data_transformer_series():
+    @DataTransformer(set_index=True, verbose=True, mode='hard-worker')
+    def process_series():
+        return pd.Series([10, 20, 30])
+    
+    # Mocking original attributes to check if index is set
+    # Idem for the `process_data`. 
+    process_series.original_attrs = {'index': [1, 2, 3]}
+    
+    series = process_series()
+    assert list(series.index) != [1, 2, 3], "Expect DataTransformer fails to set index"
+
+def test_extract_1d_array_or_series_from_dataframe():
+    df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    
+    @Extract1dArrayOrSeries(column='A', as_series=True)
+    def summarize_data(data):
+        return data.mean()
+
+    result = summarize_data(df)
+    assert result == 2, "Extract1dArrayOrSeries failed to extract column and calculate mean"
+
+def test_extract_1d_array_or_series_from_ndarray():
+    ndarray = np.array([[1, 2, 3], [4, 5, 6]])
+    
+    @Extract1dArrayOrSeries(axis=1, column=0, as_series=False)
+    def compute_average(data):
+        return np.mean(data)
+    
+    result = compute_average(ndarray)
+    assert result == 2.5, "Extract1dArrayOrSeries failed to extract axis and calculate mean"
 
 # Test that input data is converted to a DataFrame
 def test_data_conversion():
@@ -166,7 +270,7 @@ def test_not_suppressing():
 
 # Test with DataFrame input
 def test_df_if_with_dataframe():
-    @df_if
+    @isdf
     def process_data(data):
         return data
 
@@ -176,7 +280,7 @@ def test_df_if_with_dataframe():
 
 # Test with numpy array input
 def test_df_if_with_numpy_array():
-    @df_if
+    @isdf
     def process_data(data):
         return data
 
@@ -187,7 +291,7 @@ def test_df_if_with_numpy_array():
 
 # Test with list input and columns argument
 def test_df_if_with_list_and_columns():
-    @df_if
+    @isdf
     def process_data(data, /, columns=None):
         return data
 
@@ -199,7 +303,7 @@ def test_df_if_with_list_and_columns():
 
 # Test with mismatched columns argument
 def test_df_if_with_mismatched_columns():
-    @df_if
+    @isdf
     def process_data(data, /, columns=None):
         return data
 
@@ -210,7 +314,7 @@ def test_df_if_with_mismatched_columns():
 
 # Test with invalid input data type
 def test_df_if_with_invalid_input():
-    @df_if
+    @isdf
     def process_data(data):
         return data
 
@@ -582,8 +686,6 @@ def test_signal_future_change_warning():
     # Verify that the warning was issued
     assert len(record) == 1
     assert "This function will be deprecated in future releases." in str(record[0].message)
-
-
 
 @pytest.fixture
 def mock_plot_data():

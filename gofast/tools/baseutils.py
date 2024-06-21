@@ -1,810 +1,1752 @@
 # -*- coding: utf-8 -*-
-#   License: BSD-3-Clause
-#   Author: LKouadio <etanoyau@gmail.com>
-from __future__ import annotations, print_function 
-import os
-import re
-import h5py
-import copy
+from __future__ import annotations 
+import os 
+import copy 
 import time
-import shutil 
+import shutil
+import inspect
 import pathlib
-import warnings 
-import threading
-import subprocess
-from scipy import stats
-from six.moves import urllib 
-from joblib import Parallel, delayed
+import warnings
+import functools 
+import threading 
+import subprocess 
 import numpy as np 
 import pandas as pd 
-import matplotlib.pyplot as plt 
-import seaborn as sns 
 from tqdm import tqdm
+from datetime import datetime
+import matplotlib.pyplot as plt 
+from joblib import Parallel, delayed
+from scipy.signal import argrelextrema 
+from scipy.interpolate import interp1d, griddata
+from matplotlib.ticker import FixedLocator
+from sklearn.utils import all_estimators 
+from collections.abc import Iterable as IterableInstance
 
-from .._typing import Any,  List, NDArray, DataFrame, Optional, Series 
-from .._typing import Dict, Union, TypeGuard, Tuple, ArrayLike
-from .._typing import BeautifulSoupTag 
-from ..decorators import Deprecated, df_if, Dataify 
-from ..exceptions import FileHandlingError 
-from ..property import  Config
-from .coreutils import is_iterable, ellipsis2false,smart_format, validate_url 
-from .coreutils import to_numeric_dtypes, assert_ratio, exist_features
-from .coreutils import normalize_string
-from .funcutils import ensure_pkg 
+from ..api.property import  Config
+from ..api.types import Union, List, Optional, Tuple, Iterable, Any, Set 
+from ..api.types import _T, _F, DataFrame, ArrayLike, Series, NDArray
+from ..compat.scipy import check_scipy_interpolate
+from ..decorators import Dataify 
+from ..exceptions import FileHandlingError
+from ._dependency import import_optional_dependency
+from .coreutils import is_iterable , ellipsis2false, smart_format  
+from .coreutils import to_numeric_dtypes, validate_feature
+from .coreutils import _assert_all_types, exist_features, reshape
+from .validator import check_consistent_length, get_estimator_name
+from .validator import _is_arraylike_1d, array_to_frame, build_data_if
+from .validator import _is_numeric_dtype, check_y, check_consistency_size 
+from .validator import is_categorical, is_valid_policies, contains_nested_objects 
+from .validator import parameter_validator, normalize_array
 
-from .validator import array_to_frame, build_data_if, is_frame 
-from .validator import check_consistent_length
+__all__= [ 
+    'array2hdf5',
+    'binning_statistic',
+    'categorize_target',
+    'category_count',
+    'denormalizer',
+    'extract_target',
+    'fancier_downloader',
+    'fillNaN',
+    'get_target',
+    'interpolate_grid',
+    'interpolate_data', 
+    'labels_validator',
+    'normalizer',
+    'remove_outliers',
+    'remove_target_from_array',
+    'rename_labels_in',
+    'save_or_load',
+    'scale_y',
+    'select_features',
+    'select_features',
+    'smooth1d',
+    'smoothing',
+    'soft_bin_stat',
+    'speed_rowwise_process'
+    ]
 
-def summarize_text_columns(
-    data: DataFrame, /, 
-    text_columns: List[str], 
-    stop_words: str = 'english', 
-    encode: bool = False, 
-    drop_original: bool = False, 
-    compression_method: Optional[str] = None,
-    force: bool=False, 
-    ) -> TypeGuard[DataFrame]:
+def remove_outliers(
+    ar: ArrayLike|DataFrame, /, 
+    method: str = 'IQR',
+    threshold: float = 3.0,
+    fill_value: Optional[float] = None,
+    axis: int = 1,
+    interpolate: bool = False,
+    kind: str = 'linear'
+) -> ArrayLike|DataFrame:
     """
-    Applies extractive summarization to specified text columns in a pandas
-    DataFrame. 
+    Efficient strategy to remove outliers in the data. 
     
-    Each text entry in the specified columns is summarized to its most 
-    representative sentence based on TF-IDF scores, considering the provided 
-    stop words. The DataFrame is then updated with these summaries. If the 
-    text entry is too short for summarization, it remains unchanged. Optionally,
-    encodes and compresses the summaries.
+    An outlier is a data point in a sample, observation, or distribution 
+    that lies outside the overall pattern. A commonly used rule is to 
+    consider a data point an outlier if it is more than 1.5 * IQR below 
+    the first quartile or above the third quartile.
+    
+    Two approaches are used to identify and remove outliers:
+
+    - Inter Quartile Range (``IQR``)
+      IQR is the most commonly used and most trusted approach in 
+      research. Outliers are defined as points lying below Q1 - 1.5 * IQR 
+      or above Q3 + 1.5 * IQR. The quartiles and IQR are calculated as follows:
+      
+      .. math::
+          
+        Q1 = \frac{1}{4}(n + 1),\\
+        Q3 = \frac{3}{4}(n + 1),\\
+        IQR = Q3 - Q1,\\
+        \text{Upper} = Q3 + 1.5 \times IQR,\\
+        \text{Lower} = Q1 - 1.5 \times IQR.
+    
+    - Z-score 
+      Also known as a standard score, this value helps to understand how 
+      far a data point is from the mean. After setting a threshold, data 
+      points with Z-scores beyond this threshold are considered outliers.
+      
+      .. math::
+          
+          \text{Zscore} = \frac{(\text{data\_point} - \text{mean})}{\text{std\_deviation}}
+      
+    A threshold value of generally 3.0 is chosen as 99.7% of data points 
+    lie within +/- 3 standard deviations in a Gaussian Distribution.
 
     Parameters
     ----------
-    data : pd.DataFrame
-        The DataFrame containing the text data to be summarized.
-    column_names : List[str]
-        The list of column names in the DataFrame that contains the text to be 
-        summarized.
-    stop_words : str or list, optional
-        Either a string denoting the language for which to use the pre-built 
-        stop words list ('english', 'french', etc.), or a list of stop words 
-        to use for filtering during the TF-IDF vectorization (default is 'english').
-    encode : bool, default False
-        If True, adds a new column for each text column containing the TF-IDF 
-        encoding of the summary.
-    drop_original : bool, default False
-        If True, drops the original text columns after summarization and 
-        encoding.
-    compression_method : str, optional
-       Method to compress the encoded vector into a single numeric value.
-       Options include 'sum', 'mean', 'norm'. If None, the full vector is returned.
-    force: bool, default=False 
-       Construct a temporary dataFrame if the numpy array is passed instead.
+    ar : Union[np.ndarray, pd.DataFrame]
+        The input data from which to remove outliers, either a numpy array 
+        or pandas DataFrame.
+    method : str, default 'IQR'
+        Method to detect and remove outliers:
+        - ``'IQR'`` uses the Inter Quartile Range to define outliers.
+        - ``'Z-score'`` identifies outliers based on standard deviation.
+        See detailed explanation on how each method works in the function's 
+        description.
+    threshold : float, default 3.0
+        For ``'Z-score'``, this is the number of standard deviations a data point
+        must be from the mean to be considered an outlier. For 'IQR', 
+        this multiplies the IQR range.
+    fill_value : float, optional
+        Value used to replace outliers. If None, outliers are removed from 
+        the dataset.
+    axis : int, default 1
+        Specifies the axis along which to remove outliers, applicable to 
+        multi-dimensional data.
+    interpolate : bool, default False
+        Enables interpolation to estimate and replace outliers, only applicable
+        if `fill_value` is NaN.
+    kind : str, default 'linear'
+        Type of interpolation used if interpolation is True. Options include
+        ``'nearest'``, ``'linear'``, ``'cubic'``.
+    
+    Returns
+    -------
+    Union[np.ndarray, DataFrame]
+        Array or DataFrame with outliers removed or replaced.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from gofast.tools.baseutils import remove_outliers 
+    >>> np.random.seed(42)
+    >>> data = np.random.randn(7, 3)
+    >>> data_r = remove_outliers(data)
+    >>> data.shape, data_r.shape
+    (7, 3), (5, 3)
+    >>> remove_outliers(data, fill_value=np.nan)
+    array([[ 0.49671415, -0.1382643 ,  0.64768854],
+           [ 1.52302986, -0.23415337, -0.23413696],
+           [ 1.57921282,  0.76743473, -0.46947439],
+           [ 0.54256004, -0.46341769, -0.46572975],
+           [ 0.24196227,         nan,         nan],
+           [-0.56228753, -1.01283112,  0.31424733],
+           [-0.90802408,         nan,  1.46564877]])
+    >>> remove_outliers(data[:, 0], fill_value=np.nan, interpolate=True)
+    >>> import matplotlib.pyplot as plt
+    >>> plt.plot(np.arange(len(data)), data, 'r-')
+    """
+    method = str(method).lower()
+    
+    if isinstance (ar, pd.DataFrame):
+        return _remove_outliers( ar, n_std= threshold )
+    
+    is_series = isinstance ( ar, pd.Series)
+    arr =np.array (ar, dtype = float)
+
+    if method =='iqr': 
+        Q1 = np.percentile(arr[~np.isnan(arr)], 25,) 
+        Q3 = np.percentile(arr[~np.isnan(arr)], 75)
+        IQR = Q3 - Q1
+        
+        upper = Q3 + 1.5 * IQR  
+        
+        upper_arr = np.array (arr >= upper) 
+        lower = Q3 - 1.5 * IQR 
+        lower_arr =  np.array ( arr <= lower )
+        # replace the oulier by nan 
+        arr [upper_arr]= fill_value if fill_value else np.nan  
+        arr[ lower_arr]= fill_value if fill_value else np.nan 
+        
+    if method =='z-score': 
+        from scipy import stats
+        z = np.abs(stats.zscore(arr[~np.isnan(arr)]))
+        zmask  = np.array ( z > threshold )
+        arr [zmask]= fill_value if fill_value else np.nan
+        
+    if fill_value is None: 
+        # delete nan if fill value is not provided 
+        arr = arr[ ~np.isnan (arr ).any(axis =1)
+                  ]  if np.ndim (arr) > 1 else arr [~np.isnan(arr)]
+
+    if interpolate: 
+        arr = interpolate_grid (arr, method = kind)
+        
+    if is_series: 
+        arr =pd.Series (arr.squeeze(), name =ar.name )
+        
+    return arr 
+
+def _remove_outliers(data, n_std=3):
+    """Remove outliers from a dataframe."""
+    # separate cat feature and numeric features 
+    # if exists 
+    df, numf, catf = to_numeric_dtypes(
+        data , return_feature_types= True,  drop_nan_columns =True )
+    # get on;y the numeric 
+    df = df[numf]
+    for col in df.columns:
+        # print('Working on column: {}'.format(col))
+        mean = df[col].mean()
+        sd = df[col].std()
+        df = df[(df[col] <= mean+(n_std*sd))]
+    # get the index and select only the index 
+    index = df.index 
+    # get the data by index then 
+    # concatename 
+    df_cat = data [catf].iloc [ index ]
+    df = pd.concat ( [df_cat, df ], axis = 1 )
+    
+    return df
+
+def interpolate_grid (
+    arr, / , 
+    method ='cubic', 
+    fill_value='auto', 
+    view = False,
+    ): 
+    """
+    Interpolate data containing missing values. 
+
+    Parameters 
+    -----------
+    arr: ArrayLike2D 
+       Two dimensional array for interpolation 
+    method: str, default='cubic'
+      kind of interpolation. It could be ['nearest'|'linear'|'cubic']. 
+     
+    fill_value: float, str, default='auto' 
+       Fill the interpolated grid at the egdes or surrounding NaN with 
+       a filled value. The ``auto`` uses the forward and backward 
+       fill strategy. 
+       
+    view: bool, default=False, 
+       Quick visualize the interpolated grid. 
+ 
+    Returns 
+    ---------
+    arri: ArrayLike2d 
+       Interpolated 2D grid. 
+       
+    See also 
+    ---------
+    spi.griddata: 
+        Scipy interpolate Grid data 
+    fillNaN: 
+        Fill missing data strategy. 
+        
+    Examples
+    ---------
+    >>> import numpy as np
+    >>> from gofast.tools.coreutils import interpolate_grid 
+    >>> x = [28, np.nan, 50, 60] ; y = [np.nan, 1000, 2000, 3000]
+    >>> xy = np.vstack ((x, y))._T
+    >>> xyi = interpolate_grid (xy, view=True ) 
+    >>> xyi 
+    array([[  28.        ,   28.        ],
+           [  22.78880663, 1000.        ],
+           [  50.        , 2000.        ],
+           [  60.        , 3000.        ]])
+
+    """
+    spi = check_scipy_interpolate()
+    if spi is None:
+        return None
+    
+    is2d = True 
+    if not hasattr(arr, '__array__'): 
+        arr = np.array (arr) 
+    
+    if arr.ndim==1: 
+        #convert to two dimension array
+        arr = np.vstack ((arr, arr ))
+        is2d =False 
+        # raise TypeError(
+        #     "Expect two dimensional array for grid interpolation.")
+        
+    # make x, y array for mapping 
+    x = np.arange(0, arr.shape[1])
+    y = np.arange(0, arr.shape[0])
+    #mask invalid values
+    arr= np.ma.masked_invalid(arr) 
+    xx, yy = np.meshgrid(x, y)
+    #get only the valid values
+    x1 = xx[~arr.mask]
+    y1 = yy[~arr.mask]
+    newarr = arr[~arr.mask]
+    
+    arri = spi.griddata(
+        (x1, y1),
+        newarr.ravel(),
+        (xx, yy), 
+        method=method
+        )
+    
+    if fill_value =='auto': 
+        arri = fillNaN(arri, method ='both ')
+    else:
+        arri [np.isnan(arri)] = float( _assert_all_types(
+            fill_value, float, int, objname ="'fill_value'" )
+            ) 
+
+    if view : 
+        fig, ax  = plt.subplots (nrows = 1, ncols = 2 , sharey= True, )
+        ax[0].imshow(arr ,interpolation='nearest', label ='Raw Grid')
+        ax[1].imshow (arri, interpolation ='nearest', 
+                      label = 'Interpolate Grid')
+        
+        ax[0].set_title ('Raw Grid') 
+        ax[1].set_title ('Interpolate Grid') 
+        
+        plt.show () 
+        
+    if not is2d: 
+        arri = arri[0, :]
+        
+    return arri 
+
+def fillNaN(
+    arr: Union[ArrayLike, Series, DataFrame], /, 
+    method: str = 'ff'
+    ) -> Union[ArrayLike, Series, DataFrame]:
+    """
+    Fill NaN values in a numpy array, pandas Series, or pandas DataFrame 
+    using specified methods for forward filling, backward filling, or both.
+
+    Parameters
+    ----------
+    arr : Union[np.ndarray, pd.Series, pd.DataFrame]
+        The input data containing NaN values to be filled. This can be a numpy
+        array, pandas Series,  or DataFrame expected to contain numeric data
+        types.
+    method : str, optional
+        The method used for filling NaN values. Valid options are:
+        - 'ff': forward fill (default)
+        - 'bf': backward fill
+        - 'both': applies both forward and backward fill sequentially
+
+    Returns
+    -------
+    Union[np.ndarray, pd.Series, pd.DataFrame]
+        The array with NaN values filled according to the specified method. 
+        The return type matches the input type (numpy array, Series, or DataFrame).
+
+    Raises
+    ------
+    ValueError
+        If an unsupported filling method is specified.
+
+    Notes
+    -----
+    The function is designed to handle scenarios where NaN values are 
+    framed between valid numbersand at the ends of the dataset. Forward fill 
+    (``ff``) is preferred when NaNs are at the end of the data, while backward 
+    fill (``bf``) is better suited for NaNs at the beginning. The `both` method
+    combines both fills but at a higher computation cost.
+
+    Examples
+    --------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils import fillNaN 
+    >>> arr2d = np.random.randn(7, 3)
+    >>> arr2d[[0, 2, 3, 3], [0, 2, 1, 2]] = np.nan
+    >>> print(arr2d)
+    [[       nan -0.74636104  1.12731613]
+     [0.48178017 -0.18593812 -0.67673698]
+     [0.17143421 -2.15184895        nan]
+     [-0.6839212         nan        nan]]
+    >>> print(fillNaN(arr2d))
+    [[       nan -0.74636104  1.12731613]
+     [0.48178017 -0.18593812 -0.67673698]
+     [0.17143421 -2.15184895 -2.15184895]
+     [-0.6839212 -0.6839212 -0.6839212]]
+    >>> print(fillNaN(arr2d, 'bf'))
+    [[-0.74636104 -0.74636104  1.12731613]
+     [0.48178017 -0.18593812 -0.67673698]
+     [0.17143421 -2.15184895        nan]
+     [-0.6839212         nan        nan]]
+    >>> print(fillNaN(arr2d, 'both'))
+    [[-0.74636104 -0.74636104  1.12731613]
+     [0.48178017 -0.18593812 -0.67673698]
+     [0.17143421 -2.15184895 -2.15184895]
+     [-0.6839212 -0.6839212 -0.6839212]]
+
+    References
+    ----------
+    Further details can be found at:
+    https://pyquestions.com/most-efficient-way-to-forward-fill-nan-values-in-numpy-array
+    """
+    name_or_columns=None 
+    if not hasattr(arr, '__array__'): 
+        arr = np.array(arr)
+        
+    arr = _handle_non_numeric(arr, action ='fill missing values NaN')
+    
+    if isinstance (arr, (pd.Series, pd.DataFrame)): 
+        name_or_columns = arr.name if isinstance (arr, pd.Series) else arr.columns 
+        arr = arr.to_numpy() # get numpy array 
+        
+    def ffill (arr): 
+        """ Forward fill."""
+        idx = np.where (~mask, np.arange(mask.shape[1]), 0)
+        np.maximum.accumulate (idx, axis =1 , out =idx )
+        return arr[np.arange(idx.shape[0])[:, None], idx ]
+    
+    def bfill (arr): 
+        """ Backward fill """
+        idx = np.where (~mask, np.arange(mask.shape[1]) , mask.shape[1]-1)
+        idx = np.minimum.accumulate(idx[:, ::-1], axis =1)[:, ::-1]
+        return arr [np.arange(idx.shape [0])[:, None], idx ]
+    
+    method= str(method).lower().strip() 
+    
+    if arr.ndim ==1: 
+        arr = reshape(arr, axis=1)  
+        
+    if method  in ('backward', 'bf',  'bwd'):
+        method = 'bf' 
+    elif method in ('forward', 'ff', 'fwd'): 
+        method= 'ff' 
+    elif method in ('both', 'ffbf', 'fbwf', 'bff', 'full'): 
+        method ='both'
+    if method not in ('bf', 'ff', 'both'): 
+        raise ValueError ("Expect a backward <'bf'>, forward <'ff'> fill "
+                          f" or both <'bff'> not {method!r}")
+    mask = np.isnan (arr )  
+    if method =='both': 
+        arr = ffill(arr) ;
+        #mask = np.isnan (arr)  
+        arr = bfill(arr) 
+    if method in ('bf', 'ff'): 
+        arr = ffill(arr) if method =='ff' else bfill(arr)
+        
+    if name_or_columns is not None: 
+        arr = pd.Series ( arr.squeeze(), name = name_or_columns) if isinstance (
+            name_or_columns, str ) else pd.DataFrame(arr, columns = name_or_columns)
+        
+    return arr 
+
+def convert_array_dimensions(
+        *arrays, target_dim=1, new_shape=None, orient='row'):
+    """
+    Convert arrays between 1D, 2D, and higher dimensions. 
+    
+    Function dynamically adjusts the dimensions of the input arrays based on 
+    the target dimension specified and can reshape arrays according to a new 
+    shape.
+
+    Parameters:
+    -----------
+    *arrays : tuple of array-like
+        Variable number of array-like structures (lists, tuples, np.ndarray).
+    target_dim : int, optional
+        The target dimension to which the arrays should be converted. Options 
+        are primarily 1 or 2.
+        Default is 1, which flattens arrays to 1D.
+    new_shape : tuple of ints, optional
+        The new shape for the array when converting to 2D or reshaping a
+        higher-dimensional array.
+        If None, defaults are used (e.g., flattening to 1D or reshaping to 
+                                    one row per array in 2D).
+    orient : str or int, optional
+        Specifies the orientation for reshaping the array into 2D when no 
+        new_shape is provided. 
+        Accepts 'row' or 0 to reshape the array into a single row 
+        (default behavior), and 'column' or 1 
+        to reshape the array into a single column. This parameter determines 
+        the structure of the 2D array:
+        - 'row' or 0: The array is reshaped to have one row with multiple 
+          columns.
+        - 'column' or 1: The array is reshaped to have one column with 
+           multiple rows.
+        If an invalid option is provided, a ValueError is raised.
+
+    Returns:
+    --------
+    list
+        A list of arrays converted to the specified target dimension.
+
+    Raises:
+    -------
+    ValueError
+        If the target_dim is not supported or if conversion is not feasible 
+        for the given dimensions.
+        
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import convert_array_dimensions
+    >>> import numpy as np
+
+    # Example 1: Convert a 1D array to a 2D array with a specific shape
+    >>> array_1d = np.array([1, 2, 3, 4, 5])
+    >>> convert_array_dimensions(array_1d, target_dim=2, new_shape=(5, 1))
+    [array([[1],
+            [2],
+            [3],
+            [4],
+            [5]])]
+
+    # Example 2: Flatten a 2D array to 1D
+    >>> array_2d = np.array([[1, 2, 3], [4, 5, 6]])
+    >>> convert_array_dimensions(array_2d, target_dim=1)
+    [array([1, 2, 3, 4, 5, 6])]
+
+    # Example 3: Convert a 1D array to a default 2D array (one row)
+    >>> array_1d = np.array([7, 8, 9, 10])
+    >>> convert_array_dimensions(array_1d, target_dim=2)
+    [array([[ 7,  8,  9, 10]])]
+
+    # Example 4: Attempt to reshape a 1D array into an 
+    # incompatible 2D shape (should raise an error)
+    >>> array_1d = np.array([1, 2, 3, 4, 5, 6])
+    >>> convert_array_dimensions(array_1d, target_dim=2, new_shape=(2, 4))
+    Traceback (most recent call last):
+      ...
+    ValueError: Cannot reshape array of size 6 into shape (2, 4)
+    """
+    converted_arrays = []
+    for arr in arrays:
+        # Ensure input is converted to a NumPy array for manipulation
+        array = np.array(arr) 
+
+        if target_dim == 1:
+            # Flatten the array to 1D
+            converted_arrays.append(array.ravel())
+        elif target_dim == 2:
+            if new_shape is not None:
+                # Reshape according to the provided new_shape
+                try:
+                    converted_arrays.append(array.reshape(new_shape))
+                except ValueError as e:
+                    raise ValueError(f"Cannot reshape array of size {array.size}"
+                                     f" into shape {new_shape}") from e
+            else:
+                # Skip reshaping if the array is already 2D and no new shape is provided
+                if array.ndim == 2 and array.shape == (1, -1) or array.shape == (-1, 1):
+                    converted_arrays.append(array)
+                else:
+                    # Default 2D shape based on orientation
+                    if orient == 'row' or orient == 0:
+                        converted_arrays.append(array.reshape(1, -1))
+                    elif orient == 'column' or orient == 1:
+                        converted_arrays.append(array.reshape(-1, 1))
+                    else:
+                        raise ValueError("orient must be 'row', 'column', 0, or 1.")
+        else:
+            raise ValueError(
+                f"Invalid target dimension {target_dim}. Only 1 or 2 are supported.")
+
+    return converted_arrays
+
+def filter_nan_entries(
+    nan_policy, *listof, 
+    sample_weights=None, 
+    mode="strict", 
+    trim_weights=False
+    ):
+    """
+    Filters out NaN values from multiple lists of lists, or arrays, 
+    based on the specified NaN handling policy ('omit', 'propagate', 'raise'), 
+    and adjusts the sample weights accordingly if provided.
+
+    This function is particularly useful when preprocessing data for
+    machine learning algorithms that do not support NaN values or when NaN values
+    signify missing data that should be excluded from analysis.
+
+    Parameters
+    ----------
+    nan_policy : {'omit', 'propagate', 'raise'}
+        The policy for handling NaN values.
+        - 'omit': Exclude NaN values from all lists in `listof`. 
+        - 'propagate': Keep NaN values, which may result in NaN values in output.
+        - 'raise': If NaN values are detected, raise a ValueError.
+    *listof : array-like sequences
+        Variable number of list-like sequences from which NaN values are to be 
+        filtered out.  Each sequence in `listof` must have the same length.
+    sample_weights : array-like, optional
+        Weights corresponding to the elements in each sequence in `listof`.
+        Must have the same length as the sequences. If `nan_policy` is 'omit',
+        weights are adjusted to match the filtered sequences.
+    mode : str, optional
+        Specifies the mode of NaN filtering:
+        - 'strict': Indices are retained only if all corresponding elements 
+          across sequences are non-NaN.
+        - 'soft': Indices are retained if any corresponding element across 
+          sequences is non-NaN.
+    trim_weights : bool, optional
+        If True and `sample_weights` is provided, trims the sample_weights to
+        match the length of the filtered data when the 'soft' mode results in
+        fewer data points than there are weights.
+        
+    Returns
+    -------
+    tuple of lists
+        A tuple containing the filtered list-like sequences as per the specified
+        `nan_policy`.
+        If `nan_policy` is 'omit', sequences with NaN values removed are 
+        returned.
+    np.ndarray or None
+        The adjusted sample weights matching the filtered sequences if 
+        `nan_policy` is 'omit'.
+        If `sample_weights` is not provided, None is returned.
+
+    Raises
+    ------
+    ValueError
+        If `nan_policy` is 'raise' and NaN values are present in any input 
+        sequence.
+
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import filter_nan_entries
+    >>> list1 = [1, 2, np.nan, 4]
+    >>> list2 = [np.nan, 2, 3, 4]
+    >>> weights = [0.5, 1.0, 1.5, 2.0]
+    >>> filter_nan_entries('omit', list1, list2,sample_weights=weights,
+                           mode="soft" ,)
+    ([1.0, 2.0, 4.0], [2.0, 3.0, 4.0], array([0.5, 1. , 1.5, 2. ]))
+
+    >>> filter_nan_entries('omit', list1, list2,sample_weights=weights, )
+    ([2.0, 4.0], [2.0, 4.0], array([1., 2.]))
+    >>> filter_nan_entries(
+    ...     'omit', list1, list2,sample_weights=weights, mode="soft" ,
+    ... trim_weights=True)
+    ([1.0, 2.0, 4.0], [2.0, 3.0, 4.0], array([0.5, 1. , 1.5])) 
+    >>> filter_nan_entries('raise', list1, list2)
+    ValueError: NaN values present and nan_policy is 'raise'.
+
+    Notes
+    -----
+    This function is designed to work with numerical data where NaN values
+    may indicate missing data. It allows for flexible preprocessing by supporting
+    multiple NaN handling strategies, making it suitable for various machine learning
+    and data analysis workflows.
+
+    When using 'omit' in 'soft' mode, it's important to ensure that all sequences
+    in `listof`and the corresponding `sample_weights` (if provided) are 
+    correctly aligned so that filtering does not introduce misalignments in the data.
+    """
+    # Validate nan_policy and check if any list contains nested objects
+    nan_policy = is_valid_policies(nan_policy)
+    
+    for d in listof: 
+        if contains_nested_objects(d): 
+            # write a professionnal error message 
+            raise ValueError ("filter_nan_entries does not support nested items.")
+        
+    # Prepare the data arrays
+    arrays = [np.array(lst, dtype=float) for lst in listof]
+
+    # Apply NaN filtering based on the selected policy
+    filtered_arrays, non_nan_mask = _filter_nan_policies(arrays, nan_policy, mode)
+
+    # Adjust sample weights if necessary
+    if sample_weights is not None:
+        sample_weights = _adjust_weights(
+            sample_weights, non_nan_mask, mode, trim_weights, filtered_arrays
+            )
+
+    # Prepare the output to be returned
+    filtered_listof = [arr.tolist() for arr in filtered_arrays]
+    return (*filtered_listof, sample_weights
+            ) if sample_weights is not None else tuple(filtered_listof)
+
+
+def _filter_nan_policies(arrays, policy, mode):
+    """Apply the NaN policy to filter the data arrays."""
+    mode = parameter_validator("mode", target_strs={"soft", "strict"})(mode)
+    if policy == 'omit':
+        if mode == "strict":
+            non_nan_mask = np.logical_and.reduce(~np.isnan(arrays))
+            # Filter arrays using the computed mask
+            filtered_arrays = [arr[non_nan_mask] for arr in arrays]
+        elif mode == "soft":
+           non_nan_mask = np.logical_or.reduce(~np.isnan(arrays))
+           # Ensure that elements are NaN only if they are NaN across all arrays
+           filtered_arrays =[arr[~np.isnan(arr)] for arr in  arrays]
+    
+    elif policy == 'raise':
+        # Raise an error if any NaN values are detected
+        if any(np.isnan(arr).any() for arr in arrays):
+            raise ValueError("NaN values present and nan_policy is 'raise'.")
+    else:
+        # If 'propagate' is selected, return the original arrays
+        filtered_arrays = arrays
+    return filtered_arrays, non_nan_mask
+
+
+def _adjust_weights(weights, mask, mode, adjusted_weights, arrays):
+    """Adjust sample weights according to the filtered data."""
+    if mode == 'soft' and adjusted_weights:
+        # Determine the minimum length among the filtered arrays 
+        # to ensure weights consistency
+        min_length = min(len(arr) for arr in arrays)
+    
+        # Validate and adjust the non_nan_mask to ensure it aligns 
+        # with the smallest array length
+        if len(weights) > min_length:
+            # Generate a warning if the original weights exceed the size
+            # of available data
+            warnings.warn(f"Adjusting sample weights from {len(weights)}"
+                          f" to {min_length} due to mismatched data lengths.")
+            
+            # Resize the non_nan_mask to match the minimum length of the filtered data
+            #       Indices where non_nan_mask is True
+            valid_indices = np.where(mask)[0]  
+            if valid_indices.size > min_length:
+                # Truncate valid_indices to match the size of the shortest
+                # filtered array
+                valid_indices = valid_indices[:min_length]
+            
+            # Create a new mask that only includes the valid indices 
+            # adjusted to min_length
+            adjusted_non_nan_mask = np.zeros_like(mask, dtype=bool)
+            adjusted_non_nan_mask[valid_indices] = True
+            mask = adjusted_non_nan_mask
+    
+    # Update sample weights using the final adjusted non_nan_mask
+    return np.asarray(weights)[mask]
+
+def _flatten(items):
+    """Helper function to flatten complex nested structures into a flat list."""
+    for x in items:
+        if isinstance(x, IterableInstance) and not isinstance(x, (str, bytes)):
+            for sub_x in _flatten(x):
+                yield sub_x
+        else:
+            yield x
+            
+def filter_nan_values(
+        nan_policy, *data_lists, sample_weights=None, error="raise",
+        flatten=False, preserve_type=False):
+    """
+    Filters out NaN values from provided lists based on a specified policy,
+    adjusts sample weights if necessary, and can optionally flatten the input lists.
+
+    Parameters
+    ----------
+    nan_policy : {'omit', 'propagate', 'raise'}
+        Determines how NaN values are handled:
+        - 'omit': Removes NaN values from the lists.
+        - 'propagate': Keeps NaN values in the lists.
+        - 'raise': Raises an error if NaN values are found.
+    data_lists : list of lists or arrays
+        Variable number of list-like or array-like sequences from which NaN
+        values are to be filtered based on the `nan_policy`.
+    sample_weights : array-like, optional
+        Weights corresponding to each entry in `data_lists`. If provided,
+        they are adjusted to match the filtering operation.
+    error : {'raise', 'warn'}, default 'raise'
+        Error handling strategy if sample weights do not match the number
+        of entries after filtering.
+    flatten : bool, default False
+        If True, flattens each list in `data_lists` before applying the filter.
+    preserve_type : bool, default False
+        If True, preserves the original type of nested structures within `data_lists`.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the filtered lists. If `sample_weights` is provided,
+        it is included as the last element of the tuple.
+
+    Raises
+    ------
+    ValueError
+        If `nan_policy` is 'raise' and NaN values are present.
+
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import filter_nan_values
+    >>> list1 = [{2, 3}, {1, 2, np.nan}]
+    >>> list2 = [{1, 2, 3}, {1, 2, 3, np.nan}]
+    >>> weights = [0.5, 1.0, 1.5, 2.0]
+    >>> print(filter_nan_values('omit', list1, list2, sample_weights=weights,
+    ...             error="warn", flatten=True, preserve_type=True))
+    ({1, 2, 3}, {1, 2, 3}, [0.5, 1.0, 1.5, 2.0])
+
+    >>> filter_nan_values('raise', data1, error='warn')
+    ValueError: NaN values present and nan_policy is 'raise'.
+
+    Notes
+    -----
+    This function is useful for pre-processing data for algorithms that do not
+    support NaN values or require array-like input with optional weighting. The
+    `flatten` option is particularly useful for handling nested lists or arrays.
+    """
+    # Validate nan_policy
+    if nan_policy not in ['omit', 'propagate', 'raise']:
+        raise ValueError(f"Invalid nan_policy: {nan_policy}. Must be one of"
+                         " 'omit', 'propagate', 'raise'.")
+    
+    for listof in data_lists: 
+        if not contains_nested_objects(listof, strict=True):
+            raise ValueError(
+                "filter_nan_values expects each item in the data_lists"
+                " to be a nested structure (e.g., list, set, or dict)."
+                " Please ensure all elements are nested."
+                )
+
+    # Prepare arrays by flattening if requested
+    arrays = _prepare_arrays(data_lists, flatten)
+
+    # Apply NaN policy to arrays
+    filtered_arrays, non_nan_mask = _apply_nan_policy(
+        arrays, nan_policy, flatten)
+
+    # Adjust sample weights according to the filtered data
+    if sample_weights is not None:
+        sample_weights = _adjust_sample_weights(
+            sample_weights, non_nan_mask, error)
+
+    # Prepare the output list, preserving types if required
+    filtered_listof = _prepare_output(
+        filtered_arrays, preserve_type, data_lists, flatten)
+
+    # Return the filtered data, including sample weights if provided
+    return (*filtered_listof, sample_weights) if sample_weights is not None else tuple(
+        filtered_listof)
+
+def adjust_weights(
+    data_lengths, 
+    original_weights, 
+    mode="auto", 
+    fill_value=None,
+    normalize=False, 
+    normalize_method="01"
+    ):
+    """
+    Adjusts sample weights to match the lengths of filtered or transformed datasets.
+    This function can handle scenarios where the filtered data is shorter than the
+    original weights array, either by truncating or by filling the remaining weights.
+
+    Normalization can be applied to adjust the scale of the weights after 
+    adjusting their length.
+    
+    Parameters
+    ----------
+    data_lengths : list or array-like
+        A list of integers representing the lengths of the filtered datasets.
+        This is used to determine how to adjust the sample weights array.
+    original_weights : array-like
+        The original weights array that needs adjustment to match the filtered data.
+    mode : str, optional
+        Specifies the method for adjusting the weights:
+        - 'auto': Automatically decides based on the data_lengths. If any length in
+          data_lengths is less than the length of original_weights, it trims the weights;
+          otherwise, it fills or repeats weights if fill_value is not None.
+        - 'trim': Trims the weights to match the shortest length in data_lengths.
+        - 'fill': Extends the weights to match the longest length in data_lengths,
+          using fill_value for the new elements.
+    fill_value : float or None, optional
+        The value used to fill the weights array if 'fill' mode is active and the
+        weights need to be extended. If None and 'fill' is required, an error will
+        be raised.
+    normalize : bool or str, optional
+        If True normalizes the weights after adjusting their length.
+        If False, no normalization is applied.
+    normalize_method : str, optional
+        Normalization method ('01' for 0-1 scaling, 'zscore' for Z-score, or 'sum'
+        to scale by the sum of weights).
+    Returns
+    -------
+    np.ndarray
+        The adjusted weights array that matches the specified requirements based on the
+        filtered data lengths.
+
+    Raises
+    ------
+    ValueError
+        If 'fill' mode is selected but fill_value is None and the weights need
+        extending.
+
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import adjust_weights
+    >>> weights = [1, 2, 3, 4, 5]
+    >>> data_lengths = [3, 4]
+    >>> adjust_weights(data_lengths, weights, match_mode='trim')
+    array([1, 2, 3])
+
+    >>> adjust_weights(data_lengths, weights, match_mode='fill', fill_value=0)
+    array([1, 2, 3, 4, 5, 0])
+
+    >>> adjust_weights(data_lengths, weights, mode='auto', fill_value=0, 
+    ...                normalize=True, normalize_method='01')
+    array([0.2, 0.4, 0.6, 0.8, 1. , 0. ])
+    
+    Notes
+    -----
+    Normalization is applied after adjusting the weights to ensure that the 
+    processed weights are ready for use in weighted statistical analyses or models.
+    The choice between trimming and filling depends on the analysis needs and 
+    the nature of the data. Care should be taken with 'fill' mode as it 
+    introduces artificial values.
+    """
+    # Validate input types and values
+    if not isinstance(data_lengths, (list, tuple, np.ndarray)):
+        raise TypeError("data_lengths must be a list, tuple, or numpy array.")
+    if not isinstance(original_weights, (list, np.ndarray)):
+        raise TypeError("original_weights must be a list or numpy array.")
+    
+    # Convert inputs to numpy arrays for uniformity
+    data_lengths = np.array(data_lengths)
+    original_weights = np.array(original_weights)
+    
+    # Determine the required length based on the match mode
+    if mode == 'auto':
+        max_length = max(data_lengths)
+        min_length = min(data_lengths)
+        required_length = max_length if len(original_weights) < max_length else min_length
+    elif mode == 'trim':
+        required_length = min(data_lengths)
+    elif mode == 'fill':
+        required_length = max(data_lengths)
+    else:
+        raise ValueError("Invalid match_mode. Choose from 'auto', 'trim', or 'fill'.")
+
+    # Adjust weights according to the required length
+    if len(original_weights) > required_length:
+        adjusted_weights = original_weights[:required_length]
+    elif len(original_weights) < required_length and mode == 'fill':
+        if fill_value is None:
+            raise ValueError("fill_value must be provided when extending"
+                             " weights in 'fill' mode.")
+        extra_length = required_length - len(original_weights)
+        adjusted_weights = np.concatenate([original_weights, np.full(
+            extra_length, fill_value)])
+    else:
+        adjusted_weights = original_weights
+
+    # Normalize weights if requested
+    if normalize:
+        adjusted_weights = normalize_array(adjusted_weights, method=normalize_method)
+    
+    return adjusted_weights
+
+
+def _prepare_output(filtered_arrays, preserve_type, original_lists, flatten):
+    """
+    Prepares the output list from filtered arrays, optionally preserving the 
+    original data types of the nested structures.
+
+    Parameters
+    ----------
+    filtered_arrays : list of arrays
+        Arrays that have been filtered based on NaN policies.
+    preserve_type : bool
+        Whether to preserve the original types of nested structures in the output.
+    original_lists : list of lists
+        The original list of lists provided by the user, used for type reference
+        if `preserve_type` is True.
+   flatten : bool, default False
+       If True, flattens each list in `data_lists` before applying the filter.
+    Returns
+    -------
+    list
+        The list of filtered arrays, with types preserved if `preserve_type` is True.
+
+    Notes
+    -----
+    This function aids in maintaining the integrity of the data types in nested 
+    structures when required by the user. If `preserve_type` is False, all nested
+    structures are converted to lists. If True, the original data structure type 
+    (e.g., set, list) is preserved based on the type of the first element in each
+    corresponding original list.
+    """
+    filtered_listof = []
+    for arr, original in zip(filtered_arrays, original_lists):
+        original_type = type(original[0]) if original else list
+        if preserve_type and not flatten:
+            # Determine the type of the original nested structure
+            filtered_sublistof = [original_type(subarr) for subarr in arr]
+        else:
+            # Convert all sub-arrays to lists
+            filtered_sublistof = original_type(arr)
+        filtered_listof.append(filtered_sublistof)
+    return filtered_listof
+
+def _prepare_arrays(listof, flatten_lst):
+    """Prepares and converts lists to numpy arrays, handling flattening if specified."""
+    arrays = []
+    for lst in listof:
+        if flatten_lst:
+            # Flatten and then convert to numpy array
+            flattened_list = list(_flatten(lst))
+            arrays.append(np.array(flattened_list, dtype=object))
+        else:
+            # Apply filtering to each nested element directly
+            arrays.append(np.array([np.array(list(item), dtype=object) if isinstance(
+                item, (list, set)) else item for item in lst], dtype=object))
+    
+    return arrays
+
+def _apply_nan_policy(arrays, nan_policy, flatten_lst):
+    """Applies the specified NaN policy to the arrays."""
+    filtered_arrays = []
+    all_non_nan_mask = []
+    for arr in arrays:
+        if nan_policy == 'omit':
+            if flatten_lst: 
+                # Create a mask for non-NaN entries
+                if arr.dtype == object:
+                    non_nan_mask = np.array([not isinstance(
+                        x, float) or not np.isnan(x) for x in arr])
+                else:
+                    non_nan_mask = ~np.isnan(arr)
+                filtered_array = arr[non_nan_mask]
+                filtered_arrays.append(filtered_array)
+                
+            else: 
+               filtered_subarrays = []
+               for subarr in arr:
+                   if isinstance(subarr, np.ndarray):
+                       # Apply the non-NaN mask to each sub-array
+                       non_nan_mask = ~np.isnan(subarr.astype(float))
+                       filtered_subarrays.append(subarr[non_nan_mask])
+                   else:
+                       # If it's not an array, just append as is
+                       filtered_subarrays.append(subarr)
+               filtered_arrays.append(filtered_subarrays) 
+
+            all_non_nan_mask.append(non_nan_mask)
+        elif nan_policy == 'raise' and np.isnan(arr.astype(float)).any():
+            raise ValueError("NaN values present and nan_policy is 'raise'.")
+        else:
+            filtered_arrays.append(arr)
+            
+    return filtered_arrays, all_non_nan_mask
+
+def _adjust_sample_weights(sample_weights, non_nan_mask, error):
+    """Adjusts sample weights to match the filtered data's length."""
+    try: 
+        total_entries = sum(non_nan_mask) # if flatten_lst 
+    except: 
+        total_entries = sum(len(arr) for arr in non_nan_mask )
+    if len(sample_weights) == total_entries:
+        return np.asarray(sample_weights)[non_nan_mask]
+    elif error == 'warn':
+        # If the length of the sample weights does not match but is greater,
+        # reduce the sample weights array to match the filtered data length.
+        # Note: This may not always be the desired behavior, as it can lead to
+        #       unexpected results if data misalignment occurs.
+        #       Use with caution or consider whether this should raise an error instead.
+        warnings.warn("Length of sample_weights does not match the number"
+                      " of entries after NaN filtering.")
+    elif error == 'raise':
+        raise ValueError("Length of sample_weights must match the number of entries in listof.")
+    return sample_weights
+
+
+def filter_nan_from( *listof, sample_weights=None):
+    """
+    Filters out NaN values from multiple lists of lists, adjusting 
+    sample_weights accordingly.
+
+    Parameters
+    ----------
+    *listof : tuple of list of lists
+        Variable number of list of lists from which NaN values need to be 
+        filtered out.
+    sample_weights : list or np.ndarray, optional
+        Sample weights corresponding to each sublist in the input list of lists.
+        Must have the same outer length as each list in *listof.
+
+    Returns
+    -------
+    filtered_listof : tuple of list of lists
+        The input list of lists with NaN values removed.
+    adjusted_sample_weights : np.ndarray or None
+        The sample weights adjusted to match the filtered data. Same length as
+        the filtered list of lists.
+
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import filter_nan_from
+    >>> list1 = [[1, 2, np.nan], [4, np.nan, 6]]
+    >>> list2 = [[np.nan, 8, 9], [10, 11, np.nan]]
+    >>> weights = [0.5, 1.0]
+    >>> filtered_lists, adjusted_weights = filter_nan_from(
+        list1, list2, sample_weights=weights)
+    >>> print(filtered_lists)
+    ([[1, 2], [4, 6]], [[8, 9], [10, 11]])
+    >>> print(adjusted_weights)
+    [0.5 1. ]
+
+    Notes
+    -----
+    This function assumes that all lists in *listof and sample_weights have 
+    compatible shapes. Each sublist is expected to correspond to a set of 
+    sample_weights, which are adjusted based on the presence of NaNs in 
+    the sublist.
+    """
+    import math 
+    if sample_weights is not None and len(sample_weights) != len(listof[0]):
+        raise ValueError(
+            "sample_weights length must match the number of sublists in listof.")
+
+    # Convert sample_weights to a numpy array for easier manipulation
+    if sample_weights is not None:
+        sample_weights = np.asarray(sample_weights)
+
+    filtered_listof = []
+    valid_indices = set(range(len(listof[0])))  # Initialize with all indices as valid
+
+    # Identify indices with NaNs across all lists
+    for lst in listof:
+        for idx, sublist in enumerate(lst):
+            if any(math.isnan(item) if isinstance(item, (
+                    float, np.floating)) else False for item in sublist):
+                valid_indices.discard(idx)
+
+    # Filter lists based on valid indices
+    for lst in listof:
+        filtered_list = [lst[idx] for idx in sorted(valid_indices)]
+        filtered_listof.append(filtered_list)
+
+    # Adjust sample_weights based on valid indices
+    adjusted_sample_weights = sample_weights[
+        sorted(valid_indices)] if sample_weights is not None else None
+
+    return tuple(filtered_listof), adjusted_sample_weights
+
+def standardize_input(*arrays):
+    """
+    Standardizes input formats for comparison metrics, converting input data
+    into a uniform format of lists of sets. This function can handle a variety
+    of input formats, including 1D and 2D numpy arrays, lists of lists, and
+    tuples, making it versatile for tasks that involve comparing lists of items
+    like ranking or recommendation systems.
+
+    Parameters
+    ----------
+    *arrays : variable number of array-like or list of lists
+        Each array-like argument represents a set of labels or items, such as 
+        `y_true` and `y_pred`. The function is designed to handle:
+        
+        - 1D arrays where each element represents a single item.
+        - 2D arrays where rows represent samples and columns represent items
+          (for multi-output scenarios).
+        - Lists of lists or tuples, where each inner list or tuple represents 
+          a set of items for a sample.
+
+    Returns
+    -------
+    standardized : list of lists of set
+        A list containing the standardized inputs as lists of sets. Each outer
+        list corresponds to one of the input arrays, and each inner list 
+        corresponds to a sample within that array.
+
+    Raises
+    ------
+    ValueError
+        If the lengths of the input arrays are inconsistent.
+    TypeError
+        If the inputs are not array-like, lists of lists, or lists of tuples,
+        or if an ndarray has more than 2 dimensions.
+
+    Examples
+    --------
+    >>> from numpy import array
+    >>> from gofast.tools.baseutils import standardize_input
+    >>> y_true = [[1, 2], [3]]
+    >>> y_pred = array([[2, 1], [3]])
+    >>> standardized_inputs = standardize_input(y_true, y_pred)
+    >>> for standardized in standardized_inputs:
+    ...     print([list(s) for s in standardized])
+    [[1, 2], [3]]
+    [[2, 1], [3]]
+
+    >>> y_true_1d = array([1, 2, 3])
+    >>> y_pred_1d = [4, 5, 6]
+    >>> standardized_inputs = standardize_input(y_true_1d, y_pred_1d)
+    >>> for standardized in standardized_inputs:
+    ...     print([list(s) for s in standardized])
+    [[1], [2], [3]]
+    [[4], [5], [6]]
+
+    Notes
+    -----
+    The function is particularly useful for preprocessing inputs to metrics 
+    that require comparison of sets of items across samples, such as precision
+    at K, recall at K, or NDCG. By standardizing the inputs to lists of sets,
+    the function facilitates consistent handling of these computations
+    regardless of the original format of the input data. This standardization
+    is critical when working with real-world data, which can vary widely in
+    format and structure.
+    """
+    standardized = []
+    for data in arrays:
+        # Transform ndarray based on its dimensions
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                standardized.append([set([item]) for item in data])
+            elif data.ndim == 2:
+                standardized.append([set(row) for row in data])
+            else:
+                raise TypeError("Unsupported ndarray shape. Must be 1D or 2D.")
+        # Transform lists or tuples
+        elif isinstance(data, (list, tuple)):
+            if all(isinstance(item, (list, tuple, np.ndarray)) for item in data):
+                standardized.append([set(item) for item in data])
+            else:
+                standardized.append([set([item]) for item in data])
+        else:
+            raise TypeError(
+                "Inputs must be array-like, lists of lists, or lists of tuples.")
+    
+    # Check consistent length across all transformed inputs
+    if any(len(standardized[0]) != len(arr) for arr in standardized[1:]):
+        raise ValueError("All inputs must have the same length.")
+    
+    return standardized
+
+def smart_rotation(ax):
+    """
+    Automatically adjusts the rotation of x-axis tick labels on a matplotlib
+    axis object based on the overlap of labels. This function assesses the
+    overlap by comparing the horizontal extents of adjacent tick labels. If
+    any overlap is detected, it rotates the labels by 45 degrees to reduce
+    or eliminate the overlap. If no overlap is detected, labels remain
+    horizontal.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The Axes object for which to adjust the tick label rotation.
+
+    Examples
+    --------
+    # Example of creating a simple time series plot with date overlap handling
+    >>> import pandas as pd
+    >>> import matplotlib.pyplot as plt
+    >>> from matplotlib.dates import DateFormatter
+    >>> from gofast.tools.baseutils import smart_rotation
+
+    # Generate a date range and some random data
+    >>> dates = pd.date_range(start="2020-01-01", periods=100, freq='D')
+    >>> values = np.random.rand(100)
+
+    # Create a DataFrame
+    >>> df = pd.DataFrame({'Date': dates, 'Value': values})
+
+    # Create a plot
+    >>> fig, ax = plt.subplots()
+    >>> ax.plot(df['Date'], df['Value'])
+    >>> ax.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
+
+    # Apply smart rotation to adjust tick labels dynamically
+    >>> smart_rotation(ax)
+
+    # Show the plot
+    >>> plt.show()
+
+    Notes
+    -----
+    This function needs to be used in conjunction with matplotlib plots where
+    the axis ('ax') is already set up with tick labels. It is especially useful
+    in time series and other plots where the x-axis labels are dates or other
+    large strings that may easily overlap. Drawing the canvas (plt.gcf().canvas.draw())
+    is necessary to render the labels and calculate their positions, which may
+    impact performance for very large plots or in tight loops.
+    
+    """
+    
+    # Draw the canvas to get the labels rendered, which is necessary for calculating overlap
+    plt.gcf().canvas.draw()
+
+    # Retrieve the x-axis tick labels and their extents
+    labels = [label.get_text() for label in ax.get_xticklabels()]
+    tick_locs = ax.get_xticks()  # get the locations of the current ticks
+    label_extents = [label.get_window_extent() for label in ax.get_xticklabels()]
+
+    # Check for overlap by examining the extents
+    overlap = False
+    num_labels = len(label_extents)
+    for i in range(num_labels - 1):
+        if label_extents[i].xmax > label_extents[i + 1].xmin:
+            overlap = True
+            break
+
+    # Apply rotation if overlap is detected
+    rotation = 45 if overlap else 0
+
+    # Set the locator before setting labels
+    ax.xaxis.set_major_locator(FixedLocator(tick_locs))
+    ax.set_xticklabels(labels, rotation=rotation)
+    
+def select_features(
+    data: DataFrame,
+    features: Optional[List[str]] = None,
+    include: Optional[Union[str, List[str]]] = None,
+    exclude: Optional[Union[str, List[str]]] = None,
+    coerce: bool = False,
+    columns: Optional[List[str]] = None,
+    verify_integrity: bool = False,
+    parse_features: bool = False,
+    **kwd
+) -> DataFrame:
+    """
+    Selects features from a DataFrame according to specified criteria,
+    returning a new DataFrame.
+
+    Parameters
+    ----------
+    data : DataFrame
+        The DataFrame from which to select features.
+    features : List[str], optional
+        Specific feature names to select. An error is raised if any
+        feature is not present in `data`.
+    include : str or List[str], optional
+        The data type(s) to include in the selection. Possible values
+        are the same as for the pandas `include` parameter in `select_dtypes`.
+    exclude : str or List[str], optional
+        The data type(s) to exclude from the selection. Possible values
+        are the same as for the pandas `exclude` parameter in `select_dtypes`.
+    coerce : bool, default False
+        If True, numeric columns are coerced to the appropriate types without
+        selection, ignoring `features`, `include`, and `exclude` parameters.
+    columns : List[str], optional
+        Columns to construct a DataFrame if `data` is passed as a Numpy array.
+    verify_integrity : bool, default False
+        Verifies the data type integrity and converts data to the correct
+        types if necessary.
+    parse_features : bool, default False
+        Parses string features and converts them to an iterable object.
+    **kwd : dict
+        Additional keyword arguments for `pandas.DataFrame.astype`.
+
+    Returns
+    -------
+    DataFrame
+        A new DataFrame with the selected features.
+
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import select_features
+    >>> data = {"Color": ['Blue', 'Red', 'Green'],
+                "Name": ['Mary', "Daniel", "Augustine"],
+                "Price ($)": ['200', "300", "100"]}
+    >>> select_features(data, include='number')
+    Empty DataFrame
+    Columns: []
+    Index: [0, 1, 2]
+
+    >>> select_features(data, include='number', verify_integrity=True)
+        Price ($)
+    0   200.0
+    1   300.0
+    2   100.0
+
+    >>> select_features(data, features=['Color', 'Price ($)'])
+       Color Price ($)
+    0  Blue  200
+    1  Red   300
+    2  Green 100
+
+    See Also
+    --------
+    pandas.DataFrame.select_dtypes : For more information on how to use
+                                      `include` and `exclude`.
+
+    Reference
+    ---------
+    https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.astype.html
+    
+    """
+    coerce, verify_integrity, parse_features= ellipsis2false( 
+        coerce, verify_integrity, parse_features)
+    
+    data = build_data_if(data, columns = columns, )
+  
+    if verify_integrity: 
+        data = to_numeric_dtypes(data )
+        
+    if features is not None: 
+        features= list(is_iterable (
+            features, exclude_string=True, transform=True, 
+            parse_string = parse_features)
+            )
+        validate_feature(data, features, verbose ='raise')
+    # change the dataype 
+    data = data.astype (float, errors ='ignore', **kwd) 
+    # assert whether the features are in the data columns
+    if features is not None: 
+        return data [features] 
+    # raise ValueError: at least one of include or exclude must be nonempty
+    # use coerce to no raise error and return data frame instead.
+    return data if coerce else data.select_dtypes (include, exclude) 
+
+def speed_rowwise_process(
+    data, /, 
+    func, 
+    n_jobs=-1
+    ):
+    """
+    Processes a large dataset by applying a complex function to each row. 
+    
+    Function utilizes parallel processing to optimize for speed.
+
+    Parameters
+    ----------
+    data : pd.DataFrames
+        The large dataset to be processed. Assumes the 
+        dataset is a Pandas DataFrame.
+
+    func : function
+        A complex function to apply to each row of the dataset. 
+        This function should take a row of the DataFrame as 
+        input and return a processed row.
+
+    n_jobs : int, optional
+        The number of jobs to run in parallel. -1 means using 
+        all processors. Default is -1.
+
     Returns
     -------
     pd.DataFrame
-        The DataFrame with the specified columns' text summarized and 
-        optionally encoded. Original text columns are dropped if drop_original 
-        is True.
-
-    Raises
-    ------
-    ValueError
-        If any of the specified column_names do not exist in the DataFrame.
-    TypeError
-        If the input df is not a pandas DataFrame or if any of the specified 
-        columns are not of type str.
-
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import summarize_text_columns
-    >>> data = {
-    ...    'id': [1, 2],
-    ...    'column1': [
-    ...        "Sentence one. Sentence two. Sentence three.",
-    ...        "Another sentence one. Another sentence two. Another sentence three."
-    ...    ],
-    ...    'column2': [
-    ...        "More text here. Even more text here.",
-    ...        "Second example here. Another example here."
-    ...    ]
-    ... }
-    >>> df = pd.DataFrame(data)
-    >>> summarized_df = summarize_text_columns(df, ['column1', 'column2'], 
-    ...                stop_words='english', encode=True, drop_original=True, 
-    ...                compression_method='mean')
-    >>> print(summarized_df.columns)
-        id  column1_encoded  column2_encoded
-     0   1              1.0         1.000000
-     1   2              1.0         0.697271
-     Column 'column1' does not exist in the DataFrame.
-    >>> # Make sure the column name is exactly "column1"
-    >>> if "column1" in df.columns:
-    ...     summarized_df = summarize_text_columns(
-    ...      df, ['column1'], stop_words='english', encode=True, drop_original=True)
-    ... else:
-    ...    print("Column 'column1' does not exist in the DataFrame.")
-    """
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-
-    def _summarize_and_encode(text):
-        sentences = text.split('.')
-        sentences = [sentence.strip() for sentence in sentences if sentence]
-        if len(sentences) <= 1:
-            return text, None
-    
-        vectorizer = TfidfVectorizer(stop_words=stop_words)
-        tfidf_matrix = vectorizer.fit_transform(sentences)
-        similarity_matrix = cosine_similarity(tfidf_matrix, tfidf_matrix)
-        # The similarity matrix is square, so we need to avoid comparing a 
-        # sentence to itself
-        np.fill_diagonal(similarity_matrix, 0)
-        # Sum the similarities of each sentence to all others
-        sentence_scores = similarity_matrix.sum(axis=1)
-        # Identify the index of the most important sentence
-        most_important_sentence_index = np.argmax(sentence_scores)
-        summary = sentences[most_important_sentence_index]
-        encoding = tfidf_matrix[most_important_sentence_index].todense() if encode else None
-        if encoding is not None and compression_method:
-            if compression_method == 'sum':
-                encoding = np.sum(encoding)
-            elif compression_method == 'mean':
-                encoding = np.mean(encoding)
-            elif compression_method == 'norm':
-                encoding = np.linalg.norm(encoding)
-            else: 
-                raise ValueError(
-                    f"Unsupported compression method: {compression_method}")
-        return summary, encoding
-        
-    def _summarize_and_encode0(text):
-        sentences = text.split('.')
-        sentences = [sentence.strip() for sentence in sentences if sentence]
-        if len(sentences) <= 1:
-            return text, None
-        vectorizer = TfidfVectorizer(stop_words=stop_words)
-        tfidf_matrix = vectorizer.fit_transform(sentences)
-        similarity_matrix = cosine_similarity(tfidf_matrix, tfidf_matrix).flatten()
-        most_important_sentence_index = np.argmax(similarity_matrix[:-1])
-        summary = sentences[most_important_sentence_index]
-        encoding = tfidf_matrix[most_important_sentence_index].todense() if encode else None
-
-        if encoding is not None and compression_method:
-            if compression_method == 'sum':
-                encoding = np.sum(encoding)
-            elif compression_method == 'mean':
-                encoding = np.mean(encoding)
-            elif compression_method == 'norm':
-                encoding = np.linalg.norm(encoding)
-            else: raise ValueError(
-                f"Unsupported compression method: {compression_method}")
-        return summary, encoding
-
-    if not isinstance(data, pd.DataFrame):
-        if force: 
-            data = build_data_if ( data, force=force, to_frame=True, 
-                                  input_name="sum_col_", raise_warning="mute")
-        else:
-            raise TypeError("The input data must be a pandas DataFrame."
-                            " Or set force to 'True' to build a temporary"
-                            " dataFrame.")
-    
-    for column_name in text_columns:
-        if column_name not in data.columns:
-            raise ValueError(f"The column {column_name} does not exist in the DataFrame.")
-        if not pd.api.types.is_string_dtype(data[column_name]):
-            raise TypeError(f"The column {column_name} must be of type str.")
-
-        summarized_and_encoded = data[column_name].apply(
-            lambda text: _summarize_and_encode(text) if isinstance(
-                text, str) and text else (text, None))
-        data[column_name] = summarized_and_encoded.apply(lambda x: x[0])
-        
-        if encode:
-            encoded_column_name = f"{column_name}_encoded"
-            data[encoded_column_name] = summarized_and_encoded.apply(
-                lambda x: x[1] if x[1] is not None else None)
-
-    if drop_original:
-        data.drop(columns=text_columns, inplace=True)
-        data.columns = [ c.replace ("_encoded", '') for c in data.columns]
-
-    return data
-
-def simple_extractive_summary(
-        texts: List[str], raise_exception: bool = True, encode: bool = False
-    ) -> Union[str, Tuple[str, ArrayLike]]:
-    """
-    Generates a simple extractive summary from a list of texts. 
-    
-    Function selects the sentence with the highest term frequency-inverse 
-    document frequency (TF-IDF) score and optionally returns its TF-IDF 
-    encoding.
-
-    Parameters
-    ----------
-    texts : List[str]
-        A list where each element is a string representing a sentence or 
-        passage of text.
-    raise_exception : bool, default True
-        Raise ValueError if the input list contains only one sentence.
-    encode : bool, default False
-        If True, returns the TF-IDF encoding of the most representative sentence 
-        along with the sentence.
-
-    Returns
-    -------
-    Union[str, Tuple[str, np.ndarray]]
-        The sentence from the input list that has the highest TF-IDF score.
-        If 'encode' is True, also returns the sentence's TF-IDF encoded vector.
-
-    Raises
-    ------
-    ValueError
-        If the input list contains less than two sentences and raise_exception is True.
-
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import simple_extractive_summary
-    >>> messages = [
-    ...     "Further explain the background and rationale for the study. "
-    ...     "Explain DNA in simple terms for non-scientists. "
-    ...     "Explain the objectives of the study which do not seem perceptible. THANKS",
-    ...     "We think this investigation is a good thing. In our opinion, it already allows the "
-    ...     "initiators to have an idea of what the populations think of the use of DNA in forensic "
-    ...     "investigations in Burkina Faso. And above all, know, through this survey, if these "
-    ...     "populations approve of the establishment of a possible genetic database in our country."
-    ... ]
-    >>> summary, encoding = simple_extractive_summary(messages, encode=True)
-    >>> print(summary)
-    >>> print(encoding) # encoding is the TF-IDF vector of the summary
-    """
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    if len(texts) < 2:
-        if not raise_exception:
-            return (texts[0], None) if encode else texts[0]
-        raise ValueError("The input list must contain at least two "
-                         "sentences for summarization.")
-
-    vectorizer = TfidfVectorizer(stop_words='english')
-    # Create a TF-IDF Vectorizer, excluding common English stop words
-    tfidf_matrix = vectorizer.fit_transform(texts)
-    # Calculate similarity with the entire set of documents
-    similarity_matrix = cosine_similarity(tfidf_matrix[-1], tfidf_matrix).flatten()
-    # Exclude the last entry (similarity of the document with itself)
-    sorted_idx = np.argsort(similarity_matrix, axis=0)[:-1]
-    # The index of the most similar sentence
-    most_similar_idx = sorted_idx[-1]
-    
-    if encode:
-        return texts[most_similar_idx], tfidf_matrix[most_similar_idx].todense()
-
-    return texts[most_similar_idx]
-
-
-@df_if 
-def format_long_column_names(
-    data:DataFrame, /,  
-    max_length:int=10, 
-    return_mapping:bool=False, 
-    name_case:str='none'
-    )->TypeGuard[DataFrame]:
-    """
-    Modifies long column names in a DataFrame to a more concise format
-    
-    Function changes the case as specified, and optionally returns a mapping 
-    of new column names to original names.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The DataFrame with potentially long column names.
-    max_length : int, optional
-        Maximum length of the formatted column names. Default is 10.
-    return_mapping : bool, optional
-        If True, returns a mapping of new column names to original names.
-    name_case : {'capitalize', 'lowercase', 'none'}, optional
-        Case transformation to apply to the new column names. Default is 'none'.
-
-    Returns
-    -------
-    pd.DataFrame or (pd.DataFrame, dict)
-        The DataFrame with modified column names. If return_mapping is True,
-        also returns a dictionary mapping new column names to original names.
+        The processed dataset.
 
     Example
     -------
-    >>> from gofast.tools.baseutils import format_long_column_names
-    >>> data = {'VeryLongColumnNameIndeed': [1, 2, 3], 'AnotherLongColumnName': [4, 5, 6]}
-    >>> df = pd.DataFrame(data)
-    >>> new_df, mapping = format_long_column_names(
-        df, max_length=10, return_mapping=True, name_case='capitalize')
-    >>> print(new_df.columns)
-    >>> print(mapping)
+    >>> def complex_calculation(row):
+    >>>     # Example of a complex row-wise calculation
+    >>>     return row * 2  # This is a simple placeholder for demonstration.
+    >>>
+    >>> large_data = pd.DataFrame(np.random.rand(10000, 10))
+    >>> processed_data = speed_rowwise_process(large_data, complex_calculation)
+
     """
-    if not isinstance ( data, pd.DataFrame): 
-        raise TypeError ("Input data is not a pandas DataFrame.")
-    new_names = {}
-    for col in data.columns:
-        # Create a formatted name
-        new_name = col[:max_length].rstrip('_')
+    # Function to apply `func` to each row in parallel
+    def process_row(row):
+        return func(row)
 
-        # Apply case transformation
-        if name_case == 'capitalize':
-            new_name = new_name.capitalize()
-        elif name_case == 'lowercase':
-            new_name = new_name.lower()
+    # Using Joblib's Parallel and delayed to apply the function in parallel
+    results = Parallel(n_jobs=n_jobs)(delayed(process_row)(row) 
+                                      for row in data.itertuples(index=False))
 
-        new_names[new_name] = col
-        data.rename(columns={col: new_name}, inplace=True)
-
-    if return_mapping:
-        return data, new_names
-
-    return data
-
-def enrich_data_spectrum(
-    data:DataFrame, /, 
-    noise_level:float=0.01, 
-    resample_size:int=100, 
-    synthetic_size:int=100, 
-    bootstrap_size:int=100
-    )->TypeGuard[DataFrame]:
-    """
-    Augment a regression dataset using various techniques. 
+    # Converting results back to DataFrame
+    processed_data = pd.DataFrame(results, columns=data.columns)
+    return processed_data
     
-    The technique including adding noise, resampling, generating 
-    synthetic data, and bootstrapping.
+def run_shell_command(command, progress_bar_duration=30, pkg=None):
+    """
+    Run a shell command with an indeterminate progress bar.
 
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Original DataFrame with regression data. Assumes numerical features.
-    noise_level : float, optional
-        The level of Gaussian noise to add, specified as a fraction of the standard
-        deviation of each numerical feature (default is 0.01).
-    resample_size : int, optional
-        Number of data points to generate via resampling without replacement from the
-        original dataset (default is 100).
-    synthetic_size : int, optional
-        Number of synthetic data points to generate through interpolation between
-        pairs of existing data points (default is 100).
-    bootstrap_size : int, optional
-        Number of data points to generate via bootstrapping (sampling with replacement)
-        from the original dataset (default is 100).
-    Returns
-    -------
-    pd.DataFrame
-        Augmented DataFrame with the original and newly generated data points.
+    This function will display a progress bar for a predefined duration while 
+    the package installation command runs in a separate thread. The progress 
+    bar is purely for visual effect and does not reflect the actual 
+    progress of the installation.
 
-    Examples
+    Keep in mind:
+    
+    This function assumes that you have tqdm installed (pip install tqdm).
+    The actual progress of the installation isn't tracked; the progress bar 
+    is merely for aesthetics.
+    The function assumes the command is a blocking one 
+    (like most pip install commands) and waits for it to complete.
+    Adjust progress_bar_duration based on how long you expect the installation
+    to take. If the installation finishes before the progress bar, the bar
+    will stop early. If the installation takes longer, the bar will complete, 
+    but the function will continue to wait until the installation is done.
+    
+    Parameters:
+    -----------
+    command : list
+        The command to run, provided as a list of strings.
+
+    progress_bar_duration : int
+        The maximum duration to display the progress bar for, in seconds.
+        Defaults to 30 seconds.
+    pkg: str, optional 
+        The name of package to install for customizing bar description. 
+
+    Returns:
     --------
-    >>> import pandas as pd
-    >>> from sklearn.datasets import load_boston
-    >>> from gofast.tools.baseutils import enrich_data_spectrum
-    >>> boston = load_boston()
-    >>> data = pd.DataFrame(boston.data, columns=boston.feature_names)
-    >>> augmented_data = enrich_data_spectrum(
-        data, noise_level=0.02, resample_size=50, synthetic_size=50, bootstrap_size=50)
-    >>> print(augmented_data.shape)
+    None
     
-    Note 
-    ------ 
-    `enrich_data_spectrum` proposes several techniques that can be used to 
-    augment data in regression as explained: 
+    Example 
+    -------
+    >>> from gofast.tools.baseutils import run_shell_command 
+    >>> run_shell_command(["pip", "install", "gofast"])
+    """
+    def run_command(command):
+        subprocess.run(command, check=True)
+
+    def show_progress_bar(duration):
+        with tqdm(total=duration, desc="Installing{}".format( 
+                '' if pkg is None else f" {str(pkg)}"), 
+                  bar_format="{l_bar}{bar}", ncols=77, ascii=True)  as pbar:
+            for i in range(duration):
+                time.sleep(1)
+                pbar.update(1)
+
+    # Start running the command
+    thread = threading.Thread(target=run_command, args=(command,))
+    thread.start()
+
+    # Start the progress bar
+    show_progress_bar(progress_bar_duration)
+
+    # Wait for the command to finish
+    thread.join()
+
+
+def download_file(url, local_filename , dstpath =None ):
+    """download a remote file. 
+    
+    Parameters 
+    -----------
+    url: str, 
+      Url to where the file is stored. 
+    loadl_filename: str,
+      Name of the local file 
+      
+    dstpath: Optional 
+      The destination path to save the downloaded file. 
+      
+    Return 
+    --------
+    None, local_filename
+       None if the `dstpath` is supplied and `local_filename` otherwise. 
+       
+    Example 
+    ---------
+    >>> from gofast.tools.baseutils import download_file
+    >>> url = 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/gofast/datasets/data/h.h5'
+    >>> local_filename = 'h.h5'
+    >>> download_file(url, local_filename, test_directory)    
+    
+    """
+    import_optional_dependency("requests")
+    import requests 
+    print("{:-^70}".format(f" Please, Wait while {os.path.basename(local_filename)}"
+                          " is downloading. ")) 
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with open(local_filename, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+    local_filename = os.path.join( os.getcwd(), local_filename) 
+    
+    if dstpath: 
+         move_file ( local_filename,  dstpath)
+         
+    print("{:-^70}".format(" ok! "))
+    
+    return None if dstpath else local_filename
+
+
+def fancier_downloader(url, local_filename, dstpath =None ):
+    """ Download remote file with a bar progression. 
+    
+    Parameters 
+    -----------
+    url: str, 
+      Url to where the file is stored. 
+    loadl_filename: str,
+      Name of the local file 
+      
+    dstpath: Optional 
+      The destination path to save the downloaded file. 
+      
+    Return 
+    --------
+    None, local_filename
+       None if the `dstpath` is supplied and `local_filename` otherwise. 
+    Example
+    --------
+    >>> from gofast.tools.baseutils import fancier_downloader
+    >>> url = 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/gofast/datasets/data/h.h5'
+    >>> local_filename = 'h.h5'
+    >>> download_file(url, local_filename)
+
+    """
+    import_optional_dependency("requests")
+    import requests 
+    try : 
+        from tqdm import tqdm
+    except: 
+        # if tqm is not install 
+        return download_file (url, local_filename, dstpath  )
         
-    - Adding Noise: Adds Gaussian noise to each numerical feature based on a 
-      specified noise level relative to the feature's standard deviation.
-    - Data Resampling: Randomly resamples (without replacement) a specified 
-      number of data points from the original dataset.
-    - Synthetic Data Generation: Creates new data points by linear interpolation
-      between randomly chosen pairs of existing data points.
-    - Bootstrapping: Resamples (with replacement) a specified number of data 
-      points, allowing for duplicates.
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        # Get the total file size from header
+        total_size_in_bytes = int(r.headers.get('content-length', 0))
+        block_size = 1024 # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', 
+                            unit_scale=True, ncols=77, ascii=True)
+        with open(local_filename, 'wb') as f:
+            for data in r.iter_content(block_size):
+                progress_bar.update(len(data))
+                f.write(data)
+        progress_bar.close()
+        
+    local_filename = os.path.join( os.getcwd(), local_filename) 
     
-    Adjust the parameters like noise_level, resample_size, synthetic_size, 
-    and bootstrap_size according to your dataset and needs.
-    This function is quite general and may need to be tailored to fit the 
-    specific characteristics of your dataset and regression task.
-    Be cautious with the synthetic data generation step; ensure that the 
-    generated points are plausible within your problem domain.
-    Always validate the model performance with and without the augmented 
-    data to ensure that the augmentation is beneficial.
+    if dstpath: 
+         move_file ( local_filename,  dstpath)
+         
+    return local_filename
+
+
+def move_file(file_path, directory):
+    """ Move file to a directory. 
     
-    """
-    from sklearn.utils import resample
-    data = build_data_if(data,  to_frame=True, force=True, 
-                         input_name="feature_",  raise_warning='mute')
-    data = to_numeric_dtypes( data , pop_cat_features= True) 
-    if len(data.columns)==0: 
-        raise TypeError("Numeric features are expected.")
-    augmented_df = data.copy()
-
-    # Adding noise
-    for col in data.select_dtypes(include=[np.number]):
-        noise = np.random.normal(0, noise_level * data[col].std(),
-                                 size=data.shape[0])
-        augmented_df[col] += noise
-
-    # Data resampling
-    resampled_data = resample(data, n_samples=resample_size, replace=False)
-    augmented_df = pd.concat([augmented_df, resampled_data], axis=0)
-
-    # Synthetic data generation
-    for _ in range(synthetic_size):
-        idx1, idx2 = np.random.choice(data.index, 2, replace=False)
-        synthetic_point = data.loc[idx1] + np.random.rand() * (
-            data.loc[idx2] - data.loc[idx1])
-        # Create a DataFrame from synthetic_point to use with pd.concat
-        synthetic_df = pd.DataFrame([synthetic_point], columns=data.columns)
-        augmented_df = pd.concat([augmented_df, synthetic_df], ignore_index=True)
-        # append deprecated
-        # augmented_df = augmented_df.append(synthetic_point, ignore_index=True)
-
-    # Bootstrapping
-    bootstrapped_data = resample(data, n_samples=bootstrap_size, replace=True)
-    augmented_df = pd.concat([augmented_df, bootstrapped_data], axis=0)
-
-    return augmented_df.reset_index(drop=True)
-
-@df_if 
-def sanitize(
-    data:DataFrame, /, 
-    fill_missing:Optional[str]=None, 
-    remove_duplicates:bool=True, 
-    outlier_method:Optional[str]=None, 
-    consistency_transform:Optional[str]=None, 
-    threshold:float|int=3
-    )->TypeGuard[DataFrame]:
-    """
-    Perform data cleaning on a DataFrame with many options. 
+    Create a directory if not exists. 
     
-    Options consists for handling missing values, removing duplicates, 
-    detecting and removing outliers, and transforming string data for 
-    consistency.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The DataFrame to be cleaned.
-    fill_missing : {'median', 'mean', 'mode', None}, optional
-        Method to fill missing values. If None, no filling is performed.
-        - 'median': Fill missing values with the median of each column.
-        - 'mean': Fill missing values with the mean of each column.
-        - 'mode': Fill missing values with the mode of each column.
-        Suitable for datasets where missing values are present and a simple 
-        imputation is required.
-    remove_duplicates : bool, optional
-        If True, removes duplicate rows from the DataFrame. Useful in scenarios
-        where duplicate entries 
-        do not provide additional information and might skew the analysis.
-    outlier_method : {'z_score', 'iqr', None}, optional
-        Method for outlier detection and removal. If None, no outlier 
-        processing is performed.
-        - 'z_score': Identifies and removes outliers using Z-score.
-        - 'iqr': Identifies and removes outliers using the Interquartile Range.
-        Choose based on the nature of the data and the requirement of the analysis.
-    consistency_transform : {'lower', 'upper', None}, optional
-        Transformation to apply to string columns for consistency. If None,
-        no transformation is applied.
-        - 'lower': Converts strings to lowercase.
-        - 'upper': Converts strings to uppercase.
-        Useful for categorical data where case consistency is important.
-    threshold : float, optional
-        The threshold value used for outlier detection methods. Default is 3.
-        For 'z_score', it represents
-        the number of standard deviations from the mean. For 'iqr', it is the 
-        multiplier for the IQR.
-
-    Returns
-    -------
-    pd.DataFrame
-        The cleaned and processed DataFrame.
-
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from gofast.tools.baseutils import sanitize
-    >>> data = {'A': [1, 2, None, 4], 'B': ['X', 'Y', 'Y', None], 'C': [1, 1, 2, 2]}
-    >>> df = pd.DataFrame(data)
-    >>> cleaned_df = sanitize(df, fill_missing='median', remove_duplicates=True,
-                                outlier_method='z_score', 
-                                consistency_transform='lower', threshold=3)
-    >>> print(cleaned_df)
+    Parameters 
+    -----------
+    file_path: str, 
+       Path to the local file 
+    directory: str, 
+       Path to locate the directory.
+    
+    Example 
+    ---------
+    >>> from gofast.tools.baseutils import move_file
+    >>> file_path = 'path/to/your/file.txt'  # Replace with your file's path
+    >>> directory = 'path/to/your/directory'  # Replace with your directory's path
+    >>> move_file(file_path, directory)
     """
-    data = build_data_if(data, to_frame=True, force=True, input_name="feature_", 
-                         raise_warning='mute')
-    data = to_numeric_dtypes( data ) # verify integrity 
-    df_cleaned = data.copy()
-    if fill_missing:
-        fill_methods = {
-            'median': data.median(numeric_only=True),
-            'mean': data.mean(numeric_only=True),
-            'mode': data.mode().iloc[0]
-        }
-        df_cleaned.fillna(fill_methods.get(fill_missing, None), inplace=True)
+    # Create the directory if it doesn't exist
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
-    if remove_duplicates:
-        df_cleaned.drop_duplicates(inplace=True)
+    # Move the file to the directory
+    shutil.move(file_path, os.path.join(directory, os.path.basename(file_path)))
 
-    if outlier_method:
-        if outlier_method == 'z_score':
-            for col in df_cleaned.select_dtypes(include=[np.number]):
-                df_cleaned = df_cleaned[(np.abs(df_cleaned[col] - df_cleaned[col].mean()
-                                                ) / df_cleaned[col].std()) < threshold]
-        elif outlier_method == 'iqr':
-            for col in df_cleaned.select_dtypes(include=[np.number]):
-                Q1 = df_cleaned[col].quantile(0.25)
-                Q3 = df_cleaned[col].quantile(0.75)
-                IQR = Q3 - Q1
-                df_cleaned = df_cleaned[~((df_cleaned[col] < (
-                    Q1 - threshold * IQR)) | (df_cleaned[col] > (Q3 + threshold * IQR)))]
-
-    if consistency_transform:
-        transform_methods = {
-            'lower': lambda x: x.lower(),
-            'upper': lambda x: x.upper()
-        }
-        for col in df_cleaned.select_dtypes(include=[object]):
-            df_cleaned[col] = df_cleaned[col].astype(str).map(
-                transform_methods.get(consistency_transform, lambda x: x))
-
-    return df_cleaned
-
-def remove_target_from_array(arr,/,  target_indices):
+def check_file_exists(package, resource):
     """
-    Remove specified columns from a 2D array based on target indices.
+    Check if a file exists in a package's directory with 
+    importlib.resources.
 
-    This function extracts columns at specified indices from a 2D array, 
-    returning the modified array without these columns and a separate array 
-    containing the extracted columns. It raises an error if any of the indices
-    are out of bounds.
+    :param package: The package containing the resource.
+    :param resource: The resource (file) to check.
+    :return: Boolean indicating if the resource exists.
+    
+    :example: 
+        >>> from gofast.tools.baseutils import check_file_exists
+        >>> package_name = 'gofast.datasets.data'  # Replace with your package name
+        >>> file_name = 'h.h5'    # Replace with your file name
 
-    Parameters
-    ----------
-    arr : ndarray
-        A 2D numpy array from which columns are to be removed.
-    target_indices : list or ndarray
-        Indices of the columns in `arr` that need to be extracted and removed.
-
-    Returns
-    -------
-    modified_arr : ndarray
-        The array obtained after removing the specified columns.
-    target_arr : ndarray
-        An array consisting of the columns extracted from `arr`.
-
-    Raises
-    ------
-    ValueError
-        If any of the target indices are out of the range of the array dimensions.
-
-    Examples
-    --------
-    >>> arr = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-    >>> target_indices = [1, 2]
-    >>> modified_arr, target_arr = remove_target_from_array(arr, target_indices)
-    >>> modified_arr
-    array([[1],
-           [4],
-           [7]])
-    >>> target_arr
-    array([[2, 3],
-           [5, 6],
-           [7, 8]])
+        >>> file_exists = check_file_exists(package_name, file_name)
+        >>> print(f"File exists: {file_exists}")
     """
-    if any(idx >= arr.shape[1] for idx in target_indices):
-        raise ValueError("One or more indices are out of the array's bounds.")
 
-    target_arr = arr[:, target_indices]
-    modified_arr = np.delete(arr, target_indices, axis=1)
-    return modified_arr, target_arr
+    import importlib.resources as pkg_resources
+    return pkg_resources.is_resource(package, resource)
 
-def read_data (
-    f: str|pathlib.PurePath, 
-    sanitize: bool= ..., 
-    reset_index: bool=..., 
-    comments: str="#", 
-    delimiter: str=None, 
-    columns: List[str]=None,
-    npz_objkey: str= None, 
-    verbose: bool= ..., 
-    **read_kws
+def is_readable (
+        f:str, 
+        *, 
+        as_frame:bool=False, 
+        columns:List[str]=None,
+        input_name='f', 
+        **kws
  ) -> DataFrame: 
     """ Assert and read specific files and url allowed by the package
     
-    Readable files are systematically convert to a data frame.  
+    Readable files are systematically convert to a pandas frame.  
     
     Parameters 
     -----------
-    f: str, Path-like object 
-        File path or Pathlib object. Must contain a valid file name  and 
-        should be a readable file or url 
+    f: Path-like object -Should be a readable files or url  
+    columns: str or list of str 
+        Series name or columns names for pandas.Series and DataFrame. 
         
-    sanitize: bool, default=False, 
-        Push a minimum sanitization of the data such as: 
-        - replace a non-alphabetic column items with a pattern '_' 
-        - cast data values to numeric if applicable 
-        - drop full NaN columns and rows in the data 
-           
-    reset_index: bool, default=False, 
-        Reset index if full NaN columns are dropped after sanitization. 
-        Apply minimum data sanitization after reading data. 
-     
-    comments: str or sequence of str or None, default='#'
-       The characters or list of characters used to indicate the start 
-       of a comment. None implies no comments. For backwards compatibility, 
-       byte strings will be decoded as 'latin1'. 
-
-    delimiter: str, optional
-       The character used to separate the values. For backwards compatibility, 
-       byte strings will be decoded as 'latin1'. The default is whitespace.
-
-    npz_objkey: str, optional 
-       Dataset key to indentify array in multiples array storages in '.npz' 
-       format.  If key is not set during 'npz' storage, ``arr_0`` should 
-       be used.Capable to read text and numpy formats ('.npy' and '.npz') data. 
-       Note that when data is stored in compressed ".npz" format, provided the 
-        '.npz' object key  as argument of parameter `npz_objkey`. If None, 
-        only the first array should be read and ``npz_objkey='arr_0'``. 
-          
-    verbose: bool, default=0 
-       Outputs message for user guide. 
-       
-    read_kws: dict, 
-       Additional keywords arguments passed to pandas readable file keywords. 
+    to_frame: str, default=False
+        If ``True`` , reconvert the array to frame using the columns orthewise 
+        no-action is performed and return the same array.
+    input_name : str, default=""
+        The data name used to construct the error message. 
         
-    Returns 
-    -------
-    f: :class:`pandas.DataFrame` 
-        A dataframe with head contents by default.  
+    raise_warning : bool, default=True
+        If True then raise a warning if conversion is required.
+        If ``ignore``, warnings silence mode is triggered.
+    raise_exception : bool, default=False
+        If True then raise an exception if array is not symmetric.
         
-    See Also 
+    force:bool, default=False
+        Force conversion array to a frame is columns is not supplied.
+        Use the combinaison, `input_name` and `X.shape[1]` range.
+        
+    kws: dict, 
+        Pandas readableformats additional keywords arguments. 
+    Returns
     ---------
-    np.loadtxt: 
-        load text file.  
-    np.load 
-       Load uncompressed or compressed numpy `.npy` and `.npz` formats. 
-    gofast.tools.baseutils.save_or_load: 
-        Save or load numpy arrays.
-       
-    """
-    def min_sanitizer ( d, /):
-        """ Apply a minimum sanitization to the data `d`."""
-        return to_numeric_dtypes(
-            d, sanitize_columns= True, 
-            drop_nan_columns= True, 
-            reset_index=reset_index, 
-            verbose = verbose , 
-            fill_pattern='_', 
-            drop_index = True
-            )
-    sanitize, reset_index, verbose = ellipsis2false (
-        sanitize, reset_index, verbose )
-    if ( isinstance ( f, str ) 
-            and str(os.path.splitext(f)[1]).lower()in (
-                '.txt', '.npy', '.npz')
-            ): 
-        f = save_or_load(f, task = 'load', comments=comments, 
-                         delimiter=delimiter )
-        # if extension is .npz
-        if isinstance(f, np.lib.npyio.NpzFile):
-            npz_objkey = npz_objkey or "arr_0"
-            f = f[npz_objkey] 
-
-        if columns is not None: 
-            columns = is_iterable(columns, exclude_string= True, 
-                                  transform =True, parse_string =True 
-                                  )
-            if len( columns )!= f.shape [1]: 
-                warnings.warn(f"Columns expect {f.shape[1]} attributes."
-                              f" Got {len(columns)}")
-            
-        f = pd.DataFrame(f, columns=columns )
-        
-    if isinstance (f, pd.DataFrame): 
-        if sanitize: 
-            f = min_sanitizer (f)
-        return  f 
+    f: pandas dataframe 
+         A dataframe with head contents... 
     
+    """
+    def _check_readable_file (f): 
+        """ Return file name from path objects """
+        msg =(f"Expects a Path-like object or URL. Please, check your"
+              f" file: {os.path.basename(f)!r}")
+        if not os.path.isfile (f): # force pandas read html etc 
+            if not ('http://'  in f or 'https://' in f ):  
+                raise TypeError (msg)
+        elif not isinstance (f,  (str , pathlib.PurePath)): 
+             raise TypeError (msg)
+        if isinstance(f, str): f =f.strip() # for consistency 
+        return f 
+    
+    if hasattr (f, '__array__' ) : 
+        f = array_to_frame(
+            f, 
+            to_frame= True , 
+            columns =columns, 
+            input_name=input_name , 
+            raise_exception= True, 
+            force= True, 
+            )
+        return f 
+
     cpObj= Config().parsers 
+    
     f= _check_readable_file(f)
     _, ex = os.path.splitext(f) 
     if ex.lower() not in tuple (cpObj.keys()):
-        raise TypeError(f"Can only parse the {smart_format(cpObj.keys(), 'or')} files"
-                        )
+        raise TypeError(f"Can only parse the {smart_format(cpObj.keys(), 'or')} "
+                        f" files not {ex!r}.")
     try : 
-        f = cpObj[ex](f, **read_kws)
+        f = cpObj[ex](f, **kws)
     except FileNotFoundError:
         raise FileNotFoundError (
             f"No such file in directory: {os.path.basename (f)!r}")
-    except BaseException as e : 
+    except: 
         raise FileHandlingError (
-            f"Cannot parse the file : {os.path.basename (f)!r}. "+  str(e))
-    if sanitize: 
-        f = min_sanitizer (f)
-        
-    return f 
-    
-def _check_readable_file (f): 
-    """ Return file name from path objects """
-    msg =(f"Expects a Path-like object or URL. Please, check your"
-          f" file: {os.path.basename(f)!r}")
-    if not os.path.isfile (f): # force pandas read html etc 
-        if not ('http://'  in f or 'https://' in f ):  
-            raise TypeError (msg)
-    elif not isinstance (f,  (str , pathlib.PurePath)): 
-         raise TypeError (msg)
-    if isinstance(f, str): f =f.strip() # for consistency 
-    return f 
+            f" Can not parse the file : {os.path.basename (f)!r}")
 
-@ensure_pkg("h5py")
-def array2hdf5 (
-    filename: str, /, 
-    arr: NDArray=None , 
-    dataname: str='data',  
-    task: str='store', 
-    as_frame: bool =..., 
-    columns: List[str]=None, 
-)-> NDArray | DataFrame: 
-    """ Load or write array to hdf5
-    
-    Parameters 
-    -----------
-    arr: Arraylike ( m_samples, n_features) 
-      Data to load or write 
-    filename: str, 
-      Hdf5 disk file name whether to write or to load 
-    task: str, {"store", "load", "save", default='store'}
-       Action to perform. user can use ['write'|'store'] interchnageably. Both 
-       does the same task. 
-    as_frame: bool, default=False 
-       Concert loaded array to data frame. `Columns` can be supplied 
-       to construct the datafame. 
-    columns: List, Optional 
-       Columns used to construct the dataframe. When its given, it must be 
-       consistent with the shape of the `arr` along axis 1 
-       
-    Returns 
-    ---------
-    None| data: ArrayLike or pd.DataFrame 
-    
-    Examples 
-    ----------
-    >>> import numpy as np 
-    >>> from gofast.tools.baseutils import array2hdf5
-    >>> data = np.random.randn (100, 27 ) 
-    >>> array2hdf5 ('test.h5', data   )
-    >>> load_data = array2hdf5 ( 'test.h5', data, task ='load')
-    >>> load_data.shape 
-    Out[177]: (100, 27)
-    """
-    import h5py 
-    
-    arr = is_iterable( arr, exclude_string =True, transform =True )
-    act = copy.deepcopy(task)
-    task = str(task).lower().strip() 
-    
-    if task in ("write", "store", "save"): 
-        task ='store'
-    assert task in {"store", "load"}, ("Expects ['store'|'load'] as task."
-                                         f" Got {act!r}")
-    # for consistency 
-    arr = np.array ( arr )
-    h5fname = str(filename).replace ('.h5', '')
-    if task =='store': 
-        if arr is None: 
-            raise TypeError ("Array cannot be None when the task"
-                             " consists to write a file.")
-        with h5py.File(h5fname + '.h5', 'w') as hf:
-            hf.create_dataset(dataname,  data=arr)
-            
-    elif task=='load': 
-        with h5py.File(h5fname +".h5", 'r') as hf:
-            data = hf[dataname][:]
-            
-        if  ellipsis2false( as_frame )[0]: 
-            data = pd.DataFrame ( data , columns = columns )
-            
-    return data if task=='load' else None 
+    return f 
 
 def lowertify(
     *values,
@@ -874,6 +1816,7 @@ def lowertify(
             return tuple(processed_values)
     else:
         return tuple(lowered for lowered, _ in processed_values)
+
 
 def save_or_load(
     fname:str, /,
@@ -996,3155 +1939,2452 @@ def save_or_load(
             arr = np.load(fname,**kws )
          
     return arr if task=='load' else None 
- 
-@ensure_pkg("requests")
-def request_data(
-    url: str, 
-    method: str = 'get',
-    data: Optional[Any] = None, 
-    as_json: bool = ..., 
-    as_text: bool = ..., 
-    stream: bool = ..., 
-    raise_status: bool = ..., 
-    save_to_file: bool = ..., 
-    filename: Optional[str] = None, 
-    show_progress: bool = ...,
-    **kwargs
-) -> Union[str, dict, ...]:
-    """
-    Perform an HTTP request to a specified URL and process the response, with 
-    optional progress bar visualization.
 
-    Parameters
-    ----------
-    url : str
-        The URL to which the HTTP request is sent.
-    method : str, optional
-        The HTTP method to use for the request. Supported values are 'get' 
-        and 'post'. Default is 'get'.
-    data : Any, optional
-        The data to send in the body of the request, used with 'post' method.
-    as_json : bool, optional
-        If True, parses the response as JSON. Default is False.
-    as_text : bool, optional
-        If True, returns the response as a string. Default is False.
-    stream : bool, optional
-        If True, streams the response. Useful for large file downloads.
-        Default is False.
-    raise_status : bool, optional
-        If True, raises an HTTPError for bad HTTP responses. 
-        Default is False.
-    save_to_file : bool, optional
-        If True, saves the response content to a file. Default is False.
-    filename : str, optional
-        File path for saving response content. Required if 
-        `save_to_file` is True.
-    show_progress : bool, optional
-        If True, displays a progress bar during file download. 
-        Default is False.
-    **kwargs
-        Additional keyword arguments passed to the requests method
-        (e.g., headers, cookies).
-
-    Returns
-    -------
-    Union[str, dict, requests.Response]
-        The server's response. Depending on the flags, this can be a string,
-        a dictionary, or a raw Response object.
-
-    Raises
-    ------
-    ValueError
-        If `save_to_file` is True but no `filename` is provided.
-        If an invalid HTTP method is specified.
-
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import request_data
-    >>> response = request_data('https://api.github.com/user',
-                                auth=('user', 'pass'), as_json=True)
-    >>> print(response)
-    """
-
-    import requests 
-    
-    (as_text, as_json, stream, raise_status, save_to_file,
-     show_progress) = ellipsis2false(
-        as_text, as_json,  stream, raise_status , save_to_file,
-        show_progress)
-    
-    if save_to_file and not filename:
-        raise ValueError("A filename must be provided when "
-                         "'save_to_file' is True.")
-
-    request_method = getattr(requests, method.lower(), None)
-    if not request_method:
-        raise ValueError(f"Invalid HTTP method: {method}")
-
-    response = request_method(url, data=data, stream=stream, **kwargs)
-
-    if save_to_file:
-        with open(filename, 'wb') as file:
-            if show_progress:
-                total_size = int(response.headers.get('content-length', 0))
-                progress_bar = tqdm(total=total_size, unit='iB',ascii=True,
-                                    unit_scale=True, ncols=97)
-            for chunk in response.iter_content(chunk_size=1024):
-                if show_progress:
-                    progress_bar.update(len(chunk))
-                file.write(chunk)
-            if show_progress:
-                progress_bar.close()
-
-    if raise_status:
-        response.raise_for_status()
-
-    return response.text if as_text else ( 
-        response.json () if as_json else response )
-
-@Deprecated("Deprecated function. Should be remove next release."
-            "Use `gofast.tools.fetch_remote_data` instead.")
-def get_remote_data(
-    remote_file: str, 
-    save_path: Optional[str] = None, 
-    raise_exception: bool = True
-) -> bool:
-    """
-    Retrieve data from a remote location and optionally save it to a 
-    specified path.
-
-    Parameters
-    ----------
-    remote_file : str
-        The full path URL to the remote file to be downloaded.
-    
-    save_path : str, optional
-        The local file system path where the downloaded file should be saved.
-        If None, the file is saved in the current directory. Default is None.
-    
-    raise_exception : bool, default True
-        If True, raises a ConnectionRefusedError when the connection fails.
-        Otherwise, prints the error message.
-
-    Returns
-    -------
-    bool
-        True if the file was successfully downloaded; False otherwise.
-
-    Raises
-    ------
-    ConnectionRefusedError
-        If the connection fails and `raise_exception` is True.
-
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import get_remote_data
-    >>> status = get_remote_data('https://example.com/file.csv', save_path='/local/path')
-    >>> print(status)
-    """
-
-    connect_reason = (
-        "ConnectionRefusedError: Failed to connect to the remote server. "
-        "Possible reasons include:\n"
-        "1. The server is not running, thus not listening to the port.\n"
-        "2. The server is running, but the port is blocked by a firewall.\n"
-        "3. A security program on the PC is blocking several ports."
-    )
-    validate_url(remote_file)
-    print(f"---> Fetching {remote_file!r}...")
-
-    try:
-        # Setting up the progress bar
-        with tqdm(total=3, ascii=True, desc=f'Fetching {os.path.basename(remote_file)}', 
-                  ncols=97) as pbar:
-            _ , rfile = os.path.dirname(remote_file), os.path.basename(remote_file)
-            status = False
-
-            for k in range(3):
-                try:
-                    response = urllib.request.urlopen(remote_file)
-                    data = response.read() # a `bytes` object
-
-                    # Save the data to file
-                    with open(rfile, 'wb') as out_file:
-                        out_file.write(data)
-                    status = True
-                    break
-                except TimeoutError:
-                    if k == 2:
-                        print("---> Connection timed out.")
-                except Exception as e:
-                    print(f"---> An error occurred: {e}")
-                finally:
-                    pbar.update(1)
-
-            if status:
-                # Move the file to the specified save_path
-                if save_path is not None:
-                    os.makedirs(save_path, exist_ok=True)
-                    shutil.move(os.path.realpath(rfile),
-                                os.path.join(save_path, rfile))
-            else:
-                print(f"\n---> Failed to download {remote_file!r}.")
-                if raise_exception:
-                    raise ConnectionRefusedError(connect_reason)
-
-            return status
-
-    except Exception as e:
-        print(f"An error occurred during the download: {e}")
-        if raise_exception:
-            raise e
-        return False
-
-def fetch_remote_data(
-    remote_file_url: str, 
-    save_path: Optional[str] = None, 
-    raise_exception: bool = True
- ) -> bool:
-    """
-    Download a file from a remote URL and optionally save it to a specified location.
-
-    This function attempts to download a file from the given URL. If `save_path` is 
-    provided, it saves the file to that location, otherwise, it saves it in the 
-    current working directory. If the download fails, it can optionally raise an 
-    exception or return False.
-
-    Parameters
-    ----------
-    remote_file_url : str
-        The URL of the remote file to be downloaded.
-    save_path : str, optional
-        The local directory path where the downloaded file should be saved. 
-        If None, the file is saved in the current directory. Default is None.
-    raise_exception : bool, default True
-        If True, raises an exception upon failure. Otherwise, returns False.
-
-    Returns
-    -------
-    bool
-        True if the file was successfully downloaded, False otherwise.
-
-    Raises
-    ------
-    ConnectionRefusedError
-        If the download fails and `raise_exception` is True.
-
-    Examples
-    --------
-    >>> status = get_remote_data('https://example.com/file.csv', save_path='/local/path')
-    >>> print(status)
-
-    """
-    def handle_download_error(e: Exception, message: str) -> None:
-        """
-        Handle download errors, either by raising an exception or printing 
-        an error message.
-
-        Parameters
-        ----------
-        e : Exception
-            The exception that was raised.
-        message : str
-            The error message to be printed or included in the raised exception.
-
-        Raises
-        ------
-        Exception
-            The original exception, if `raise_exception` is True.
-        """
-        print(message)
-        if raise_exception:
-            raise e
-
-    def move_file_to_save_path(file_name: str) -> None:
-        """
-        Move the downloaded file to the specified save path.
-
-        Parameters
-        ----------
-        file_name : str
-            The name of the file to be moved.
-        """
-        if save_path is not None:
-            os.makedirs(save_path, exist_ok=True)
-            shutil.move(os.path.realpath(file_name), os.path.join(
-                save_path, file_name))
-
-    try:
-        file_name = os.path.basename(remote_file_url)
-        print(f"---> Fetching '{remote_file_url}'...")
-
-        with tqdm(total=3, ascii=True, desc=f'Fetching {file_name}',
-                  ncols=97) as progress_bar:
-            for attempt in range(3):
-                try:
-                    response = urllib.request.urlopen(remote_file_url)
-                    data = response.read()
-
-                    with open(file_name, 'wb') as file:
-                        file.write(data)
-
-                    move_file_to_save_path(file_name)
-                    return True
-
-                except TimeoutError:
-                    if attempt == 2:
-                        handle_download_error(
-                            TimeoutError(), "Connection timed out while"
-                            f" downloading '{remote_file_url}'.")
-                except Exception as e:
-                    handle_download_error(
-                        e, f"An error occurred while downloading '{remote_file_url}': {e}")
-                finally:
-                    progress_bar.update(1)
-
-            # If all attempts fail
-            return False
-
-    except Exception as e:
-        handle_download_error(e, f"An unexpected error occurred during the download: {e}")
-        return False
-
-@ensure_pkg("requests")
-def download_file(url, local_filename , dstpath =None ):
-    """download a remote file. 
+def array2hdf5 (
+    filename: str, /, 
+    arr: NDArray=None , 
+    dataname: str='data',  
+    task: str='store', 
+    as_frame: bool =..., 
+    columns: List[str]=None, 
+)-> NDArray | DataFrame: 
+    """ Load or write array to hdf5
     
     Parameters 
     -----------
-    url: str, 
-      Url to where the file is stored. 
-    loadl_filename: str,
-      Name of the local file 
-      
-    dstpath: Optional 
-      The destination path to save the downloaded file. 
-      
-    Return 
-    --------
-    None, local_filename
-       None if the `dstpath` is supplied and `local_filename` otherwise. 
+    arr: Arraylike ( m_samples, n_features) 
+      Data to load or write 
+    filename: str, 
+      Hdf5 disk file name whether to write or to load 
+    task: str, {"store", "load", "save", default='store'}
+       Action to perform. user can use ['write'|'store'] interchnageably. Both 
+       does the same task. 
+    as_frame: bool, default=False 
+       Concert loaded array to data frame. `Columns` can be supplied 
+       to construct the datafame. 
+    columns: List, Optional 
+       Columns used to construct the dataframe. When its given, it must be 
+       consistent with the shape of the `arr` along axis 1 
        
-    Example 
+    Returns 
     ---------
-    >>> from gofast.tools.baseutils import download_file
-    >>> url = 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/gofast/datasets/data/h.h5'
-    >>> local_filename = 'h.h5'
-    >>> download_file(url, local_filename, test_directory)    
+    None| data: ArrayLike or pd.DataFrame 
     
+    Examples 
+    ----------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils import array2hdf5
+    >>> data = np.random.randn (100, 27 ) 
+    >>> array2hdf5 ('test.h5', data   )
+    >>> load_data = array2hdf5 ( 'test.h5', data, task ='load')
+    >>> load_data.shape 
+    Out[177]: (100, 27)
     """
-    import requests 
-    print("{:-^70}".format(f" Please, Wait while {os.path.basename(local_filename)}"
-                          " is downloading. ")) 
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(local_filename, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-    local_filename = os.path.join( os.getcwd(), local_filename) 
+    import_optional_dependency("h5py")
+    import h5py 
     
-    if dstpath: 
-         move_file ( local_filename,  dstpath)
-         
-    print("{:-^70}".format(" ok! "))
+    arr = is_iterable( arr, exclude_string =True, transform =True )
+    act = copy.deepcopy(task)
+    task = str(task).lower().strip() 
     
-    return None if dstpath else local_filename
+    if task in ("write", "store", "save"): 
+        task ='store'
+    assert task in {"store", "load"}, ("Expects ['store'|'load'] as task."
+                                         f" Got {act!r}")
+    # for consistency 
+    arr = np.array ( arr )
+    h5fname = str(filename).replace ('.h5', '')
+    if task =='store': 
+        if arr is None: 
+            raise TypeError ("Array cannot be None when the task"
+                             " consists to write a file.")
+        with h5py.File(h5fname + '.h5', 'w') as hf:
+            hf.create_dataset(dataname,  data=arr)
+            
+    elif task=='load': 
+        with h5py.File(h5fname +".h5", 'r') as hf:
+            data = hf[dataname][:]
+            
+        if  ellipsis2false( as_frame )[0]: 
+            data = pd.DataFrame ( data , columns = columns )
+            
+    return data if task=='load' else None 
 
-@ensure_pkg("requests")
-def fancier_downloader(url, local_filename, dstpath =None ):
-    """ Download remote file with a bar progression. 
-    
-    Parameters 
-    -----------
-    url: str, 
-      Url to where the file is stored. 
-    loadl_filename: str,
-      Name of the local file 
-      
-    dstpath: Optional 
-      The destination path to save the downloaded file. 
-      
-    Return 
-    --------
-    None, local_filename
-       None if the `dstpath` is supplied and `local_filename` otherwise. 
-    Example
-    --------
-    >>> from gofast.tools.baseutils import fancier_downloader
-    >>> url = 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/gofast/datasets/data/h.h5'
-    >>> local_filename = 'h.h5'
-    >>> download_file(url, local_filename)
-
+def remove_target_from_array(arr,/,  target_indices):
     """
-    
-    import requests 
-    try : 
-        from tqdm import tqdm
-    except: 
-        # if tqm is not install 
-        return download_file (url, local_filename, dstpath  )
-        
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        # Get the total file size from header
-        total_size_in_bytes = int(r.headers.get('content-length', 0))
-        block_size = 1024 # 1 Kibibyte
-        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', 
-                            unit_scale=True, ncols=77, ascii=True)
-        with open(local_filename, 'wb') as f:
-            for data in r.iter_content(block_size):
-                progress_bar.update(len(data))
-                f.write(data)
-        progress_bar.close()
-        
-    local_filename = os.path.join( os.getcwd(), local_filename) 
-    
-    if dstpath: 
-         move_file ( local_filename,  dstpath)
-         
-    return local_filename
+    Remove specified columns from a 2D array based on target indices.
 
-
-def move_file(file_path, directory):
-    """ Move file to a directory. 
-    
-    Create a directory if not exists. 
-    
-    Parameters 
-    -----------
-    file_path: str, 
-       Path to the local file 
-    directory: str, 
-       Path to locate the directory.
-    
-    Example 
-    ---------
-    >>> from gofast.tools.baseutils import move_file
-    >>> file_path = 'path/to/your/file.txt'  # Replace with your file's path
-    >>> directory = 'path/to/your/directory'  # Replace with your directory's path
-    >>> move_file(file_path, directory)
-    """
-    # Create the directory if it doesn't exist
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-    # Move the file to the directory
-    shutil.move(file_path, os.path.join(directory, os.path.basename(file_path)))
-
-def check_file_exists(package, resource):
-    """
-    Check if a file exists in a package's directory with 
-    importlib.resources.
-
-    :param package: The package containing the resource.
-    :param resource: The resource (file) to check.
-    :return: Boolean indicating if the resource exists.
-    
-    :example: 
-        >>> from gofast.tools.baseutils import check_file_exists
-        >>> package_name = 'gofast.datasets.data'  # Replace with your package name
-        >>> file_name = 'h.h5'    # Replace with your file name
-
-        >>> file_exists = check_file_exists(package_name, file_name)
-        >>> print(f"File exists: {file_exists}")
-    """
-
-    import importlib.resources as pkg_resources
-    return pkg_resources.is_resource(package, resource)
-
-def _is_readable (
-        f:str, 
-        *, 
-        as_frame:bool=False, 
-        columns:List[str]=None,
-        input_name='f', 
-        **kws
- ) -> DataFrame: 
-    """ Assert and read specific files and url allowed by the package
-    
-    Readable files are systematically convert to a pandas frame.  
-    
-    Parameters 
-    -----------
-    f: Path-like object -Should be a readable files or url  
-    columns: str or list of str 
-        Series name or columns names for pandas.Series and DataFrame. 
-        
-    to_frame: str, default=False
-        If ``True`` , reconvert the array to frame using the columns orthewise 
-        no-action is performed and return the same array.
-    input_name : str, default=""
-        The data name used to construct the error message. 
-        
-    raise_warning : bool, default=True
-        If True then raise a warning if conversion is required.
-        If ``ignore``, warnings silence mode is triggered.
-    raise_exception : bool, default=False
-        If True then raise an exception if array is not symmetric.
-        
-    force:bool, default=False
-        Force conversion array to a frame is columns is not supplied.
-        Use the combinaison, `input_name` and `X.shape[1]` range.
-        
-    kws: dict, 
-        Pandas readableformats additional keywords arguments. 
-    Returns
-    ---------
-    f: pandas dataframe 
-         A dataframe with head contents... 
-    
-    """
-    if hasattr (f, '__array__' ) : 
-        f = array_to_frame(
-            f, 
-            to_frame= True , 
-            columns =columns, 
-            input_name=input_name , 
-            raise_exception= True, 
-            force= True, 
-            )
-        return f 
-
-    cpObj= Config().parsers 
-    
-    f= _check_readable_file(f)
-    _, ex = os.path.splitext(f) 
-    if ex.lower() not in tuple (cpObj.keys()):
-        raise TypeError(f"Can only parse the {smart_format(cpObj.keys(), 'or')} "
-                        f" files not {ex!r}.")
-    try : 
-        f = cpObj[ex](f, **kws)
-    except FileNotFoundError:
-        raise FileNotFoundError (
-            f"No such file in directory: {os.path.basename (f)!r}")
-    except: 
-        raise FileHandlingError (
-            f" Can not parse the file : {os.path.basename (f)!r}")
-
-    return f 
-
-@ensure_pkg("bs4", " Needs `BeautifulSoup` from `bs4` package" )
-@ensure_pkg("requests")
-def scrape_web_data(
-    url: str, 
-    element: str, 
-    class_name: Optional[str] = None, 
-    attributes: Optional[dict] = None, 
-    parser: str = 'html.parser'
-    ) -> List[BeautifulSoupTag[str]]:
-    """
-    Scrape data from a web page using BeautifulSoup.
+    This function extracts columns at specified indices from a 2D array, 
+    returning the modified array without these columns and a separate array 
+    containing the extracted columns. It raises an error if any of the indices
+    are out of bounds.
 
     Parameters
     ----------
-    url : str
-        The URL of the web page to scrape.
-    element : str
-        The HTML element to search for.
-    class_name : str, optional
-        The class attribute of the HTML element to narrow down the search.
-        Default is None.
-    attributes : dict, optional
-        Additional attributes of the HTML element to narrow down the search. 
-        Default is None.
-    parser : str, optional
-        The parser used by BeautifulSoup. Default is 'html.parser'.
+    arr : ndarray
+        A 2D numpy array from which columns are to be removed.
+    target_indices : list or ndarray
+        Indices of the columns in `arr` that need to be extracted and removed.
 
     Returns
     -------
-    list of bs4.element.Tag
-        A list of BeautifulSoup Tag objects that match the search query.
-
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import scrape_web_data
-    >>> url = 'https://example.com'
-    >>> element = 'div'
-    >>> class_name = 'content'
-    >>> data = scrape_web_data(url, element, class_name)
-    >>> for item in data:
-    ...     print(item.text)
-
-    >>> url = 'https://example.com/articles'
-    >>> element = 'h1'
-    >>> data = scrape_web_data(url, element)
-    >>> for header in data:
-    ...    print(header.text)  # prints the text of each <h1> tag
-
-    >>> url = 'https://example.com/products'
-    >>> element = 'section'
-    >>> attributes = {'id': 'featured-products'}
-    >>> data = scrape_web_data(url, element, attributes=attributes)
-    >>> # prints the text of each section with id 'featured-products'
-    >>> for product in data:
-    ...     print(product.text)  
-    """
-
-    import requests
-    from bs4 import BeautifulSoup
-    response = requests.get(url)
-    if response.status_code == 200:
-        html_content = response.text
-        soup = BeautifulSoup(html_content, parser)
-        if class_name:
-            elements = soup.find_all(element, class_=class_name)
-        elif attributes:
-            elements = soup.find_all(element, **attributes)
-        else:
-            elements = soup.find_all(element)
-        return elements
-    else:
-        response.raise_for_status()
-
-def speed_rowwise_process(
-    data, /, 
-    func, 
-    n_jobs=-1
-    ):
-    """
-    Processes a large dataset by applying a complex function to each row. 
-    
-    Function utilizes parallel processing to optimize for speed.
-
-    Parameters
-    ----------
-    data : pd.DataFrames
-        The large dataset to be processed. Assumes the 
-        dataset is a Pandas DataFrame.
-
-    func : function
-        A complex function to apply to each row of the dataset. 
-        This function should take a row of the DataFrame as 
-        input and return a processed row.
-
-    n_jobs : int, optional
-        The number of jobs to run in parallel. -1 means using 
-        all processors. Default is -1.
-
-    Returns
-    -------
-    pd.DataFrame
-        The processed dataset.
-
-    Example
-    -------
-    >>> def complex_calculation(row):
-    >>>     # Example of a complex row-wise calculation
-    >>>     return row * 2  # This is a simple placeholder for demonstration.
-    >>>
-    >>> large_data = pd.DataFrame(np.random.rand(10000, 10))
-    >>> processed_data = speed_rowwise_process(large_data, complex_calculation)
-
-    """
-    # Function to apply `func` to each row in parallel
-    def process_row(row):
-        return func(row)
-
-    # Using Joblib's Parallel and delayed to apply the function in parallel
-    results = Parallel(n_jobs=n_jobs)(delayed(process_row)(row) 
-                                      for row in data.itertuples(index=False))
-
-    # Converting results back to DataFrame
-    processed_data = pd.DataFrame(results, columns=data.columns)
-    return processed_data
-    
-def run_shell_command(command, progress_bar_duration=30, pkg=None):
-    """
-    Run a shell command with an indeterminate progress bar.
-
-    This function will display a progress bar for a predefined duration while 
-    the package installation command runs in a separate thread. The progress 
-    bar is purely for visual effect and does not reflect the actual 
-    progress of the installation.
-
-    Keep in mind:
-    
-    This function assumes that you have tqdm installed (pip install tqdm).
-    The actual progress of the installation isn't tracked; the progress bar 
-    is merely for aesthetics.
-    The function assumes the command is a blocking one 
-    (like most pip install commands) and waits for it to complete.
-    Adjust progress_bar_duration based on how long you expect the installation
-    to take. If the installation finishes before the progress bar, the bar
-    will stop early. If the installation takes longer, the bar will complete, 
-    but the function will continue to wait until the installation is done.
-    
-    Parameters:
-    -----------
-    command : list
-        The command to run, provided as a list of strings.
-
-    progress_bar_duration : int
-        The maximum duration to display the progress bar for, in seconds.
-        Defaults to 30 seconds.
-    pkg: str, optional 
-        The name of package to install for customizing bar description. 
-
-    Returns:
-    --------
-    None
-    
-    Example 
-    -------
-    >>> from gofast.tools.baseutils import run_shell_command 
-    >>> run_shell_command(["pip", "install", "gofast"])
-    """
-    def run_command(command):
-        subprocess.run(command, check=True)
-
-    def show_progress_bar(duration):
-        with tqdm(total=duration, desc="Installing{}".format( 
-                '' if pkg is None else f" {str(pkg)}"), 
-                  bar_format="{l_bar}{bar}", ncols=77, ascii=True)  as pbar:
-            for i in range(duration):
-                time.sleep(1)
-                pbar.update(1)
-
-    # Start running the command
-    thread = threading.Thread(target=run_command, args=(command,))
-    thread.start()
-
-    # Start the progress bar
-    show_progress_bar(progress_bar_duration)
-
-    # Wait for the command to finish
-    thread.join()
-
-def handle_datasets_in_h5(
-    file_path: str,
-    datasets: Optional[Dict[str, ArrayLike]] = None, 
-    operation: str = 'store'
-    ) -> Union[None, Dict[str, ArrayLike]]:
-    """
-    Handles storing or retrieving multiple datasets in an HDF5 file.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the HDF5 file where datasets will be stored or from which 
-        datasets will be retrieved.
-    datasets : dict, optional
-        A dictionary where keys are dataset names and values are the 
-        datasets (numpy arrays).
-        Required if operation is 'store'. Default is None.
-    operation : str
-        The operation to perform - 'store' for storing datasets, 'retrieve' 
-        for retrieving datasets.
-
-    Returns
-    -------
-    dict or None
-        If operation is 'retrieve', returns a dictionary where keys are dataset
-        names and values are the datasets (numpy arrays).
-        If operation is 'store', returns None.
+    modified_arr : ndarray
+        The array obtained after removing the specified columns.
+    target_arr : ndarray
+        An array consisting of the columns extracted from `arr`.
 
     Raises
     ------
     ValueError
-        If an invalid operation is specified.
-    OSError
-        If the file cannot be opened or created.
+        If any of the target indices are out of the range of the array dimensions.
 
     Examples
     --------
-    Storing datasets:
-    >>> data1 = np.random.rand(100, 10)
-    >>> data2 = np.random.rand(200, 5)
-    >>> handle_datasets_in_h5('my_datasets.h5', 
-                              {'dataset1': data1, 'dataset2': data2}, operation='store')
-
-    Retrieving datasets:
-    >>> datasets = handle_datasets_in_h5('my_datasets.h5', operation='retrieve')
-    >>> print(datasets.keys())
+    >>> arr = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+    >>> target_indices = [1, 2]
+    >>> modified_arr, target_arr = remove_target_from_array(arr, target_indices)
+    >>> modified_arr
+    array([[1],
+           [4],
+           [7]])
+    >>> target_arr
+    array([[2, 3],
+           [5, 6],
+           [7, 8]])
     """
-    if operation not in ['store', 'retrieve']:
-        raise ValueError("Invalid operation. Please choose 'store' or 'retrieve'.")
+    if any(idx >= arr.shape[1] for idx in target_indices):
+        raise ValueError("One or more indices are out of the array's bounds.")
 
-    if operation == 'store':
-        if datasets is None:
-            raise ValueError("Datasets parameter is required for storing data.")
+    target_arr = arr[:, target_indices]
+    modified_arr = np.delete(arr, target_indices, axis=1)
+    return modified_arr, target_arr
 
-        with h5py.File(file_path, 'w') as h5file:
-            for name, data in datasets.items():
-                h5file.create_dataset(name, data=data)
-
-    elif operation == 'retrieve':
-        datasets_retrieved = {}
-        with h5py.File(file_path, 'r') as h5file:
-            for name in h5file.keys():
-                datasets_retrieved[name] = h5file[name][...]
-                
-        return datasets_retrieved
-
-def handle_datasets_with_hdfstore(
-    file_path: str, 
-    datasets: Optional[Dict[str, DataFrame]] = None, 
-    operation: str = 'store') -> Union[None, Dict[str, DataFrame]]:
+def extract_target(
+    data: Union[ArrayLike, DataFrame],/, 
+    target_names: Union[str, int, List[Union[str, int]]],
+    drop: bool = True,
+    columns: Optional[List[str]] = None,
+) -> Tuple[Union[ArrayLike, Series, DataFrame], Union[ArrayLike, DataFrame]]:
     """
-    Handles storing or retrieving multiple Pandas DataFrames in an HDF5 
-    file using pd.HDFStore.
+    Extracts specified target column(s) from a multidimensional numpy array
+    or pandas DataFrame. 
+    
+    with options to rename columns in a DataFrame and control over whether the 
+    extracted columns are dropped from the original data.
 
     Parameters
     ----------
-    file_path : str
-        Path to the HDF5 file where datasets will be stored or from which 
-        datasets will be retrieved.
-    datasets : dict, optional
-        A dictionary where keys are dataset names and values are the datasets
-        (Pandas DataFrames).
-        Required if operation is 'store'. Default is None.
-    operation : str
-        The operation to perform - 'store' for storing datasets, 'retrieve' 
-        for retrieving datasets.
+    data : Union[np.ndarray, pd.DataFrame]
+        The input data from which target columns are to be extracted. Can be a 
+        NumPy array or a pandas DataFrame.
+    target_names : Union[str, int, List[Union[str, int]]]
+        The name(s) or integer index/indices of the column(s) to extract. 
+        If `data` is a DataFrame, this can be a mix of column names and indices. 
+        If `data` is a NumPy array, only integer indices are allowed.
+    drop : bool, default True
+        If True, the extracted columns are removed from the original `data`. 
+        If False, the original `data` remains unchanged.
+    columns : Optional[List[str]], default None
+        If provided and `data` is a DataFrame, specifies new names for the 
+        columns in `data`. The length of `columns` must match the number of 
+        columns in `data`. This parameter is ignored if `data` is a NumPy array.
 
     Returns
     -------
-    dict or None
-        If operation is 'retrieve', returns a dictionary where keys are dataset 
-        names and values are the datasets (Pandas DataFrames).
-        If operation is 'store', returns None.
+    Tuple[Union[np.ndarray, pd.Series, pd.DataFrame], Union[np.ndarray, pd.DataFrame]]
+        A tuple containing two elements:
+        - The extracted column(s) as a NumPy array or pandas Series/DataFrame.
+        - The original data with the extracted columns optionally removed, as a
+          NumPy array or pandas DataFrame.
 
     Raises
     ------
     ValueError
-        If an invalid operation is specified.
-    OSError
-        If the file cannot be opened or created.
+        If `columns` is provided and its length does not match the number of 
+        columns in `data`.
+        If any of the specified `target_names` do not exist in `data`.
+        If `target_names` includes a mix of strings and integers for a NumPy 
+        array input.
 
     Examples
     --------
     >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import handle_datasets_with_hdfstore
-    
-    Storing datasets:
-    >>> df1 = pd.DataFrame(np.random.rand(100, 10), columns=[f'col_{i}' for i in range(10)])
-    >>> df2 = pd.DataFrame(np.random.randint(0, 100, size=(200, 5)), columns=['A', 'B', 'C', 'D', 'E'])
-    >>> handle_datasets_with_hdfstore('my_datasets.h5', {'df1': df1, 'df2': df2}, operation='store')
-
-    Retrieving datasets:
-    >>> datasets = handle_datasets_with_hdfstore('my_datasets.h5', operation='retrieve')
-    >>> print(datasets.keys())
+    >>> from gofast.tools.baseutils import extract_target
+    >>> df = pd.DataFrame({
+    ...     'A': [1, 2, 3],
+    ...     'B': [4, 5, 6],
+    ...     'C': [7, 8, 9]
+    ... })
+    >>> target, remaining = extract_target(df, 'B', drop=True)
+    >>> print(target)
+    0    4
+    1    5
+    2    6
+    Name: B, dtype: int64
+    >>> print(remaining)
+       A  C
+    0  1  7
+    1  2  8
+    2  3  9
+    >>> arr = np.random.rand(5, 3)
+    >>> target, modified_arr = extract_target(arr, 2, )
+    >>> print(target)
+    >>> print(modified_arr)
     """
-    if operation not in ['store', 'retrieve']:
-        raise ValueError("Invalid operation. Please choose 'store' or 'retrieve'.")
-
-    if operation == 'store':
-        if datasets is None:
-            raise ValueError("Datasets parameter is required for storing data.")
-
-        with pd.HDFStore(file_path, 'w') as store:
-            for name, df in datasets.items():
-                store.put(name, df)
-
-    elif operation == 'retrieve':
-        datasets_retrieved = {}
-        with pd.HDFStore(file_path, 'r') as store:
-            for name in store.keys():
-                datasets_retrieved[name.strip('/')] = store[name]
-        return datasets_retrieved
+    if isinstance (data, pd.Series): 
+        data = data.to_frame() 
+    if _is_arraylike_1d(data): 
+        # convert to 2d array 
+        data = data.reshape (-1, 1)
     
-def store_or_retrieve_data(
-    file_path: str,
-    datasets: Optional[Dict[str, Union[ArrayLike, DataFrame]]] = None,
-    operation: str = 'store'
-) -> Optional[Dict[str, Union[ArrayLike, DataFrame]]]:
+    is_frame = isinstance(data, pd.DataFrame)
+    
+    if is_frame and columns is not None:
+        if len(columns) != data.shape[1]:
+            raise ValueError("`columns` must match the number of columns in"
+                             f" `data`. Expected {data.shape[1]}, got {len(columns)}.")
+        data.columns = columns
+
+    if isinstance(target_names, (int, str)):
+        target_names = [target_names]
+
+    if all(isinstance(name, int) for name in target_names):
+        if max(target_names, default=-1) >= data.shape[1]:
+            raise ValueError("All integer indices must be within the"
+                             " column range of the data.")
+    elif any(isinstance(name, int) for name in target_names) and is_frame:
+        target_names = [data.columns[name] if isinstance(name, int) 
+                        else name for name in target_names]
+
+    if is_frame:
+        missing_cols = [name for name in target_names 
+                        if name not in data.columns]
+        if missing_cols:
+            raise ValueError(f"Column names {missing_cols} do not match "
+                             "any column in the DataFrame.")
+        target = data.loc[:, target_names]
+        if drop:
+            data = data.drop(columns=target_names)
+    else:
+        if any(isinstance(name, str) for name in target_names):
+            raise ValueError("String names are not allowed for target names"
+                             " when data is a NumPy array.")
+        target = data[:, target_names]
+        if drop:
+            data = np.delete(data, target_names, axis=1)
+            
+    if  isinstance (target, np.ndarray): # squeeze the array 
+        target = np.squeeze (target)
+        
+    return target, data
+
+def _extract_target(
+        X, target: Union[ArrayLike, int, str, List[Union[int, str]]]):
     """
-    Handles storing or retrieving multiple datasets (numpy arrays or Pandas
-    DataFrames) in an HDF5 file.
+    Extracts and validates the target variable(s) from the dataset.
 
     Parameters
     ----------
-    file_path : str
-        Path to the HDF5 file for storing or retrieving datasets.
-    datasets : dict, optional
-        A dictionary with dataset names as keys and datasets 
-        (numpy arrays or Pandas DataFrames) as values.
-        Required if operation is 'store'.
-    operation : str
-        The operation to perform - 'store' for storing datasets, 'retrieve' 
-        for retrieving datasets.
+    X : pd.DataFrame or np.ndarray
+        The dataset from which to extract the target variable(s).
+    target : ArrayLike, int, str, or list of int/str
+        The target variable(s) to be used. If an array-like or DataFrame, 
+        it's directly used as `y`. If an int or str (or list of them), it 
+        indicates the column(s) in `X` to be used as `y`.
 
     Returns
     -------
-    Optional[Dict[str, Union[np.ndarray, pd.DataFrame]]]
-        If operation is 'retrieve', returns a dictionary with dataset names 
-        as keys and datasets as values. If operation is 'store', returns None.
-
-    Raises
-    ------
-    ValueError
-        If an invalid operation is specified or required parameters are missing.
-    TypeError
-        If provided datasets are not in supported formats 
-        (numpy arrays or pandas DataFrames).
+    X : pd.DataFrame or np.ndarray
+        The dataset without the target column(s).
+    y : pd.Series, np.ndarray, pd.DataFrame
+        The target variable(s).
+    target_names : list of str
+        The names of the target variable(s) for labeling purposes.
     """
+    target_names = []
 
-    valid_operations = {'store', 'retrieve'}
-    if operation not in valid_operations:
-        raise ValueError(f"Invalid operation '{operation}'. "
-                         f"Choose from {valid_operations}.")
-
-    with pd.HDFStore(file_path, mode='a' if operation == 'store' else 'r') as store:
-        if operation == 'store':
-            if not datasets:
-                raise ValueError("Datasets are required for the 'store' operation.")
-
-            for name, data in datasets.items():
-                if not isinstance(data, (pd.DataFrame, np.ndarray)):
-                    raise TypeError("Unsupported data type. Only numpy arrays "
-                                    "and pandas DataFrames are supported.")
+    if isinstance(target, (list, pd.DataFrame)) or (
+            isinstance(target, pd.Series) and not isinstance(X, np.ndarray)):
+        if isinstance(target, list):  # List of column names or indexes
+            if all(isinstance(t, str) for t in target):
+                y = X[target]
+                target_names = target
+            elif all(isinstance(t, int) for t in target):
+                y = X.iloc[:, target]
+                target_names = [X.columns[i] for i in target]
+            X = X.drop(columns=target_names)
+        elif isinstance(target, pd.DataFrame):
+            y = target
+            target_names = target.columns.tolist()
+            # Assuming target DataFrame is not part of X
+        elif isinstance(target, pd.Series):
+            y = target
+            target_names = [target.name] if target.name else ["target"]
+            if target.name and target.name in X.columns:
+                X = X.drop(columns=target.name)
                 
-                store[name] = pd.DataFrame(data) if isinstance(data, np.ndarray) else data
-
-        elif operation == 'retrieve':
-            return {name.replace ("/", ""): store[name] for name in store.keys()}
-        
-def base_storage(
-    file_path: str,
-    datasets: Optional[Dict[str, Union[ArrayLike, DataFrame]]] = None, 
-    operation: str = 'store'
-) -> Union[None, Dict[str, Union[ArrayLike, DataFrame]]]:
-    """
-    Handles storing or retrieving multiple datasets (numpy arrays or Pandas 
-    DataFrames) in an HDF5 file.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the HDF5 file where datasets will be stored or from which 
-        datasets will be retrieved.
-    datasets : dict, optional
-        A dictionary where keys are dataset names and values are the 
-        datasets (numpy arrays or Pandas DataFrames).
-        Required if operation is 'store'. 
-    operation : str
-        The operation to perform - 'store' for storing datasets, 'retrieve' 
-        for retrieving datasets.
-
-    Returns
-    -------
-    dict or None
-        If operation is 'retrieve', returns a dictionary where keys are dataset
-        names and values are the datasets (numpy arrays or Pandas DataFrames).
-        If operation is 'store', returns None.
-
-    Raises
-    ------
-    ValueError
-        If an invalid operation is specified.
-    OSError
-        If the file cannot be opened or created.
-
-    Examples
-    --------
-    Storing datasets:
-    >>> data1 = np.random.rand(100, 10)
-    >>> df1 = pd.DataFrame(np.random.randint(0, 100, size=(200, 5)),
-                           columns=['A', 'B', 'C', 'D', 'E'])
-    >>> store_data('my_datasets.h5', {'dataset1': data1, 'df1': df1},
-                              operation='store')
-
-    Retrieving datasets:
-    >>> datasets = store_data('my_datasets.h5', operation='retrieve')
-    >>> print(datasets.keys())
-    """
-    if operation not in ['store', 'retrieve']:
-        raise ValueError("Invalid operation. Please choose 'store' or 'retrieve'.")
-
-    if operation == 'store':
-        if datasets is None:
-            raise ValueError("Datasets parameter is required for storing data.")
-
-        with h5py.File(file_path, 'w') as h5file:
-            for name, data in datasets.items():
-                if isinstance(data, pd.DataFrame):
-                    data.to_hdf(file_path, key=name, mode='a')
-                elif isinstance(data, np.ndarray):
-                    h5file.create_dataset(name, data=data)
-                else:
-                    raise TypeError("Unsupported data type. Only numpy arrays "
-                                    "and pandas DataFrames are supported.")
-
-    elif operation == 'retrieve':
-        datasets_retrieved = {}
-        with h5py.File(file_path, 'r') as h5file:
-            for name in h5file.keys():
-                try:
-                    datasets_retrieved[name] = pd.read_hdf(file_path, key=name)
-                except (KeyError, TypeError):
-                    datasets_retrieved[name] = h5file[name][...]
-
-        return datasets_retrieved
-    
-def verify_data_integrity(data: DataFrame, /) -> Tuple[bool, dict]:
-    """
-    Verifies the integrity of data within a DataFrame. 
-    
-    Data integrity checks are crucial in data analysis and machine learning 
-    to ensure the reliability and correctness of any conclusions drawn from 
-    the data. This function performs several checks including looking for 
-    missing values, detecting duplicates, and identifying outliers, which
-    are common issues that can lead to misleading analysis or model training 
-    results.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame to verify.
-
-    Returns
-    -------
-    Tuple[bool, dict]
-        A tuple containing:
-        - A boolean indicating if the data passed all integrity checks 
-          (True if no issues are found).
-        - A dictionary with the details of the checks, including counts of 
-        missing values, duplicates, and outliers by column.
-
-    Example
-    -------
-    >>> data = pd.DataFrame({'A': [1, 2, None], 'B': [4, 5, 6], 'C': [7, 8, 8]})
-    >>> is_valid, report = verify_data_integrity(data)
-    >>> print(f"Data is valid: {is_valid}\nReport: {report}")
-
-    Notes
-    -----
-    Checking for missing values is essential as they can indicate data 
-    collection issues or errors in data processing. Identifying duplicates is 
-    important to prevent skewed analysis results, especially in cases where 
-    data should be unique (e.g., unique user IDs). Outlier detection is 
-    critical in identifying data points that are significantly different from 
-    the majority of the data, which might indicate data entry errors or other 
-    anomalies.
-    
-    - The method used for outlier detection in this function is the 
-      Interquartile Range (IQR) method. It's a simple approach that may not be
-      suitable for all datasets, especially those with non-normal distributions 
-      or where more sophisticated methods are required.
-    - The function does not modify the original DataFrame.
-    """
-    report = {}
-    is_valid = True
-    # check whether dataframe is passed
-    is_frame (data, df_only=True, raise_exception=True )
-    data = to_numeric_dtypes(data)
-    # Check for missing values
-    missing_values = data.isnull().sum()
-    report['missing_values'] = missing_values
-    if missing_values.any():
-        is_valid = False
-
-    # Check for duplicates
-    duplicates = data.duplicated().sum()
-    report['duplicates'] = duplicates
-    if duplicates > 0:
-        is_valid = False
-
-    # Check for potential outliers
-    outlier_report = {}
-    for col in data.select_dtypes(include=['number']).columns:
-        Q1 = data[col].quantile(0.25)
-        Q3 = data[col].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        outliers = data[(data[col] < lower_bound) | (data[col] > upper_bound)]
-        outlier_report[col] = len(outliers)
-        if len(outliers) > 0:
-            is_valid = False
-
-    report['outliers'] = outlier_report
-
-    return is_valid, report
-
-def audit_data(
-    data: DataFrame,/,  
-    dropna_threshold: float = 0.5, 
-    categorical_threshold: int = 10, 
-    handle_outliers: bool = False,
-    handle_missing: bool = True, 
-    handle_scaling: bool = False, 
-    handle_date_features: bool = False, 
-    handle_categorical: bool = False, 
-    replace_with: str = 'median', 
-    lower_quantile: float = 0.01, 
-    upper_quantile: float = 0.99,
-    fill_value: Optional[Any] = None,
-    scale_method: str = "minmax",
-    missing_method: str = 'drop_cols', 
-    outliers_method: str = "clip", 
-    date_features: Optional[List[str]] = None,
-    day_of_week: bool = False, 
-    quarter: bool = False, 
-    format_date: Optional[str] = None, 
-    return_report: bool = False, 
-    view: bool = False, 
-    cmap: str = 'viridis', 
-    fig_size: Tuple[int, int] = (12, 5)
-) -> Union[DataFrame, Tuple[DataFrame, dict]]:
-    """
-    Audits and preprocesses a DataFrame for analytical consistency. 
-    
-    This function streamlines the data cleaning process by handling various 
-    aspects of data quality, such as outliers, missing values, and data scaling. 
-    It provides flexibility to choose specific preprocessing steps according 
-    to the needs of the analysis or modeling.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame to be audited and preprocessed. It should be a pandas 
-        DataFrame containing the data to be cleaned.
-
-    dropna_threshold : float, optional
-        Specifies the threshold for dropping columns or rows with missing 
-        values. It determines the proportion of missing values above which 
-        a column or row will be dropped from the DataFrame. 
-        The default value is 0.5 (50%).
-
-    categorical_threshold : int, optional
-        Defines the maximum number of unique values a column can have to be 
-        considered as a categorical variable. Columns with unique values 
-        less than or equal to this threshold will be converted to categorical
-        type.
-
-    handle_outliers : bool, optional
-        Determines whether to apply outlier handling on numerical columns. 
-        If set to True, outliers in the data will be addressed according 
-        to the specified method.
-
-    handle_missing : bool, optional
-        If True, the function will handle missing data in the DataFrame based 
-        on the specified missing data handling method.
-
-    handle_scaling : bool, optional
-        Indicates whether to scale numerical columns using the specified 
-        scaling method. Scaling is essential for certain analyses and modeling 
-        techniques, especially when variables are on different scales.
-
-    handle_date_features : bool, optional
-        If True, columns specified as date features will be converted to 
-        datetime format, and additional date-related features 
-        (like day of the week, quarter) will be extracted.
-
-    handle_categorical : bool, optional
-        Enables the handling of categorical features. If set to True, 
-        numerical columns with a number of unique values below the categorical
-        threshold will be treated as categorical.
-
-    replace_with : str, optional
-        For outlier handling, specifies the method of replacement 
-        ('mean' or 'median') for the 'replace' outlier method. It determines 
-        how outliers will be replaced in the dataset.
-
-    lower_quantile : float, optional
-        The lower quantile value used for clipping outliers. It sets the 
-        lower boundary for outlier detection and handling.
-
-    upper_quantile : float, optional
-        The upper quantile value for clipping outliers. It sets the upper 
-        boundary for outlier detection and handling.
-
-    fill_value : Any, optional
-        Specifies the value to be used for filling missing data when the 
-        missing data handling method is set to 'fill_value'.
-
-    scale_method : str, optional
-        Determines the method for scaling numerical data. Options include 
-        'minmax' (scales data to a range of [0, 1]) and 'standard' 
-        (scales data to have zero mean and unit variance).
-
-    missing_method : str, optional
-        The method used to handle missing data in the DataFrame. Options 
-        include 'drop_cols' (drop columns with missing data) and other 
-        methods based on specified criteria such as 'drop_rows', 'fill_mean',
-        'fill_median', 'fill_value'. 
-
-    outliers_method : str, optional
-        The method used for handling outliers in the dataset. Options 
-        include 'clip' (limits the extreme values to specified quantiles) and 
-        other outlier handling methods such as 'remove' and 'replace'.
-
-    date_features : List[str], optional
-        A list of column names in the DataFrame to be treated as date features. 
-        These columns will be converted to datetime and additional date-related
-        features will be extracted.
-
-    day_of_week : bool, optional
-        If True, adds a column representing the day of the week for each 
-        date feature column.
-
-    quarter : bool, optional
-        If True, adds a column representing the quarter of the year for 
-        each date feature column.
-
-    format_date : str, optional
-        Specifies the format of the date columns if they are not in standard 
-        datetime format.
-
-    return_report : bool, optional
-        If True, the function returns a detailed report summarizing the 
-        preprocessing steps performed on the DataFrame.
-
-    view : bool, optional
-        Enables visualization of the data's state before and after 
-        preprocessing. If True, displays comparative heatmaps for each step.
-
-    cmap : str, optional
-        The colormap for the heatmap visualizations, enhancing the clarity 
-        and aesthetics of the plots.
-
-    fig_size : Tuple[int, int], optional
-        Determines the size of the figure for the visualizations, allowing 
-        customization of the plot dimensions.
-
-    Returns
-    -------
-    Union[pd.DataFrame, Tuple[pd.DataFrame, dict]]
-        The audited and preprocessed DataFrame. If return_report is True, 
-        also returns a comprehensive report detailing the transformations 
-        applied.
-
-    Example
-    -------
-    >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import audit_data
-    >>> data = pd.DataFrame({'A': [1, 2, 3, 100], 'B': [4, 5, 6, -50]})
-    >>> audited_data, report = audit_data(data, handle_outliers=True, return_report=True)
-    """
-    is_frame (data, df_only=True, raise_exception=True, 
-              objname="Data for auditing" )
-    report = {}
-    data_copy = data.copy()
-
-    def update_report(new_data, step_report):
-        nonlocal data, report
-        if return_report:
-            data, step_report = new_data
-            report = {**report, **step_report}
-        else:
-            data = new_data
-
-    # Handling outliers
-    if handle_outliers:
-        update_report(handle_outliers_in_data(
-            data, method=outliers_method, replace_with=replace_with,
-            lower_quantile=assert_ratio(lower_quantile),
-            upper_quantile=assert_ratio(upper_quantile),
-            return_report=return_report),
-            {})
-
-    # Handling missing data
-    if handle_missing:
-        update_report(handle_missing_data(
-            data, method=missing_method, dropna_threshold=assert_ratio(
-                dropna_threshold), fill_value=fill_value, 
-            return_report=return_report), {})
-
-    # Handling date features
-    if handle_date_features and date_features:
-        update_report(convert_date_features(
-            data, date_features, day_of_week=day_of_week, quarter=quarter, 
-            format=format_date, return_report=return_report), {})
-
-    # Scaling data
-    if handle_scaling:
-        update_report(scale_data(
-            data, method=scale_method, return_report=return_report), {})
-
-    # Handling categorical features
-    if handle_categorical:
-        update_report(handle_categorical_features(
-            data, categorical_threshold=categorical_threshold, 
-            return_report=return_report), {})
-
-    # Compare initial and final data if view is enabled
-    if view:
-        plt.figure(figsize=(fig_size[0], fig_size[1] * 2))
-        plt.subplot(2, 1, 1)
-        sns.heatmap(data_copy.isnull(), yticklabels=False,
-                    cbar=False, cmap=cmap)
-        plt.title('Data Before Auditing')
-
-        plt.subplot(2, 1, 2)
-        sns.heatmap(data.isnull(), yticklabels=False, cbar=False,
-                    cmap=cmap)
-        plt.title('Data After Auditing')
-        plt.show()
-
-    return (data, report) if return_report else data
-
-def handle_categorical_features(
-    data: DataFrame, /, 
-    categorical_threshold: int = 10,
-    return_report: bool = False,
-    view: bool = False,
-    cmap: str = 'viridis', 
-    fig_size: Tuple[int, int] = (12, 5)
-) -> Union[DataFrame, Tuple[DataFrame, dict]]:
-    """
-    Converts numerical columns with a limited number of unique values 
-    to categorical columns in the DataFrame and optionally visualizes the 
-    data distribution before and after the conversion.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame to process.
-    categorical_threshold : int, optional
-        Maximum number of unique values in a column for it to be considered 
-        categorical.
-    return_report : bool, optional
-        If True, returns a report summarizing the categorical feature handling.
-    view : bool, optional
-        If True, displays a heatmap of the data distribution before and after 
-        handling.
-    cmap : str, optional
-        The colormap for the heatmap visualization.
-
-    Returns
-    -------
-    Union[pd.DataFrame, Tuple[pd.DataFrame, dict]]
-        DataFrame with categorical features handled and optionally a report.
-
-    Example
-    -------
-    >>> from gofast.tools.baseutils import handle_categorical_features
-    >>> data = pd.DataFrame({'A': [1, 2, 1, 3], 'B': range(10)})
-    >>> updated_data, report = handle_categorical_features(
-        data, categorical_threshold=3, return_report=True, view=True)
-    """
-    is_frame (data, df_only=True, raise_exception=True)
-    original_data = data.copy()
-    report = {'converted_columns': []}
-    numeric_cols = data.select_dtypes(include=['number']).columns
-
-    for col in numeric_cols:
-        if data[col].nunique() <= categorical_threshold:
-            data[col] = data[col].astype('category')
-            report['converted_columns'].append(col)
-
-    # Visualization of data distribution before and after handling
-    if view:
-        plt.figure(figsize=fig_size)
-        plt.subplot(1, 2, 1)
-        sns.heatmap(original_data[numeric_cols].nunique().to_frame().T, 
-                    annot=True, cbar=False, cmap=cmap)
-        plt.title('Unique Values Before Categorization')
-
-        plt.subplot(1, 2, 2)
-        sns.heatmap(data[numeric_cols].nunique().to_frame().T, annot=True,
-                    cbar=False, cmap=cmap)
-        plt.title('Unique Values After Categorization')
-        plt.show()
-
-    return (data, report) if return_report else data
-
-def convert_date_features(
-    data: DataFrame, /, 
-    date_features: List[str], 
-    day_of_week: bool = False, 
-    quarter: bool = False,
-    format: Optional[str] = None,
-    return_report: bool = False,
-    view: bool = False,
-    cmap: str = 'viridis', 
-    fig_size: Tuple[int, int] = (12, 5)
-) -> Union[DataFrame, Tuple[DataFrame, dict]]:
-    """
-    Converts specified columns in the DataFrame to datetime and extracts 
-    relevant features. 
-    
-    Optionally Function returns a report of the transformations and 
-    visualizing the data distribution  before and after conversion.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame containing the date columns.
-    date_features : List[str]
-        List of column names to be converted into datetime and to extract 
-        features from.
-    day_of_week : bool, optional
-        If True, adds a column representing the day of the week. Default is False.
-    quarter : bool, optional
-        If True, adds a column representing the quarter of the year.
-        Default is False.
-    format : str, optional
-        The specific format of the date columns if they are not in a standard
-        datetime format.
-    return_report : bool, optional
-        If True, returns a report summarizing the date feature transformations.
-    view : bool, optional
-        If True, displays a comparative heatmap of the data distribution 
-        before and after the conversion.
-    cmap : str, optional
-        The colormap for the heatmap visualization.
-    fig_size : Tuple[int, int], optional
-        The size of the figure for the heatmap.
-    Returns
-    -------
-    Union[pd.DataFrame, Tuple[pd.DataFrame, dict]]
-        DataFrame with additional date-related features and optionally a report.
-
-    Example
-    -------
-    >>> from gofast.tools.baseutils import convert_date_features
-    >>> data = pd.DataFrame({'date': ['2021-01-01', '2021-01-02']})
-    >>> updated_data, report = convert_date_features(
-        data, ['date'], day_of_week=True, quarter=True, return_report=True, view=True)
-    """
-    is_frame (data, df_only=True, raise_exception=True)
-    original_data = data.copy()
-    report = {'converted_columns': date_features, 'added_features': []}
-
-    for feature in date_features:
-        data[feature] = pd.to_datetime(data[feature], format=format)
-        year_col = f'{feature}_year'
-        month_col = f'{feature}_month'
-        day_col = f'{feature}_day'
-        data[year_col] = data[feature].dt.year
-        data[month_col] = data[feature].dt.month
-        data[day_col] = data[feature].dt.day
-        report['added_features'].extend([year_col, month_col, day_col])
-
-        if day_of_week:
-            dow_col = f'{feature}_dayofweek'
-            data[dow_col] = data[feature].dt.dayofweek
-            report['added_features'].append(dow_col)
-
-        if quarter:
-            quarter_col = f'{feature}_quarter'
-            data[quarter_col] = data[feature].dt.quarter
-            report['added_features'].append(quarter_col)
-
-    # Visualization of data distribution before and after conversion
-    if view:
-        plt.figure(figsize=fig_size)
-        plt.subplot(1, 2, 1)
-        sns.heatmap(original_data[date_features].nunique().to_frame().T,
-                    annot=True, cbar=False, cmap=cmap)
-        plt.title('Unique Values Before Conversion')
-
-        plt.subplot(1, 2, 2)
-        sns.heatmap(data[date_features + report['added_features']
-                         ].nunique().to_frame().T, annot=True, cbar=False,
-                    cmap=cmap)
-        plt.title('Unique Values After Conversion')
-        plt.show()
-
-    return (data, report) if return_report else data
-
-@df_if 
-def scale_data(
-    data: DataFrame, /, 
-    method: str = 'norm',
-    return_report: bool = False,
-    use_sklearn: bool = False,
-    view: bool = False,
-    cmap: str = 'viridis',
-    fig_size: Tuple[int, int] = (12, 5)
-) -> Union[DataFrame, Tuple[DataFrame, dict]]:
-    """
-    Scales numerical columns in the DataFrame using the specified scaling 
-    method. 
-    
-    Optionally returns a report on the scaling process along with 
-    visualization.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame to be scaled.
-    method : str
-        Scaling method - 'minmax', 'norm', or 'standard'.
-    return_report : bool, optional
-        If True, returns a report summarizing the scaling process.
-    use_sklearn: bool, optional 
-        If True and scikit-learn is installed, use its scaling utilities.
-    view : bool, optional
-        If True, displays a heatmap of the data distribution before and 
-        after scaling.
-    cmap : str, optional
-        The colormap for the heatmap visualization.
-    fig_size : Tuple[int, int], optional
-        The size of the figure for the heatmap.
-
-    Returns
-    -------
-    Union[pd.DataFrame, Tuple[pd.DataFrame, dict]]
-        The scaled DataFrame and optionally a report.
-
-    Raises
-    ------
-    ValueError
-        If an invalid scaling method is provided.
-        
-    Note 
-    -----
-    Scaling method - 'minmax' or 'standard'.
-    'minmax' scales data to the [0, 1] range using the formula:
-        
-    .. math:: 
-        X_std = (X - X.min()) / (X.max() - X.min())
-        X_scaled = X_std * (max - min) + min
-        
-    'standard' scales data to zero mean and unit variance using the formula:
-        
-    .. math:: 
-        X_scaled = (X - X.mean()) / X.std()
-        
-    Example
-    -------
-    >>> from gofast.tools.baseutils import scale_data
-    >>> data = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
-    >>> scaled_data, report = scale_data(data, 'minmax', return_report=True, view=True)
-    """
-    is_frame (data, df_only=True, raise_exception=True, 
-              objname="Exceptionnaly, scaling data")
-    numeric_cols = data.select_dtypes(include=['number']).columns
-    report = {'method_used': method, 'columns_scaled': list(numeric_cols)}
-    
-    original_data = data.copy()
-    method=normalize_string (method, target_strs=('minmax', "standard", "norm"),
-                             match_method='contains', return_target_only=True)
-    # Determine which scaling method to use
-    if method not in ['minmax', 'norm', 'standard']:
-        raise ValueError("Invalid scaling method. Choose 'minmax',"
-                         " 'norm', or 'standard'.")
-    if use_sklearn:
-        try:
-            from sklearn.preprocessing import MinMaxScaler, StandardScaler
-            scaler = MinMaxScaler() if method == 'minmax' else StandardScaler()
-            data[numeric_cols] = scaler.fit_transform(data[numeric_cols])
-        except ImportError:
-            use_sklearn = False
-
-    if not use_sklearn:
-        minmax_scale = lambda col: (col - col.min()) / (col.max() - col.min())
-        standard_scale = lambda col: (col - col.mean()) / col.std()
-        scaling_func = minmax_scale if method == 'minmax' else standard_scale
-        data[numeric_cols] = data[numeric_cols].apply(scaling_func)
-
-    # Visualization of data distribution before and after scaling
-    if view:
-        plt.figure(figsize=fig_size)
-        plt.subplot(1, 2, 1)
-        sns.heatmap(original_data[numeric_cols], annot=True, cbar=False, 
-                    cmap=cmap)
-        plt.title('Before Scaling')
-
-        plt.subplot(1, 2, 2)
-        sns.heatmap(data[numeric_cols], annot=True, cbar=False, cmap=cmap)
-        plt.title('After Scaling')
-        plt.show()
-
-    return (data, report) if return_report else data
-
-def handle_outliers_in_data(
-    data: DataFrame, /, 
-    method: str = 'clip', 
-    replace_with: str = 'median', 
-    lower_quantile: float = 0.01, 
-    upper_quantile: float = 0.99,
-    return_report: bool = False, 
-    view: bool = False,
-    cmap: str = 'viridis', 
-    fig_size: Tuple[int, int] = (12, 5)
-) -> DataFrame:
-    """
-    Handles outliers in numerical columns of the DataFrame using various 
-    methods. 
-    
-    Optionally, function displays a comparative plot showing the data 
-    distribution before and after outlier handling.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame with potential outliers.
-    method : str, optional
-        Method to handle outliers ('clip', 'remove', 'replace'). 
-        Default is 'clip'.
-    replace_with : str, optional
-        Specifies replacement method ('mean' or 'median') for 'replace'.
-        Default is 'median'.
-    lower_quantile : float, optional
-        Lower quantile for clipping outliers. Default is 0.01.
-    upper_quantile : float, optional
-        Upper quantile for clipping outliers. Default is 0.99.
-    return_report : bool, optional
-        If True, returns a report summarizing the outlier handling process.
-    view : bool, optional
-        If True, displays a comparative plot of the data distribution before 
-        and after handling outliers.
-    cmap : str, optional
-        The colormap for the heatmap visualization. Default is 'viridis'.
-    fig_size : Tuple[int, int], optional
-        The size of the figure for the heatmap.
-        
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with outliers handled and optionally a report dictionary.
-
-    Example
-    -------
-    >>> from gofast.tools.baseutils import handle_outliers_in_data
-    >>> data = pd.DataFrame({'A': [1, 2, 3, 100], 'B': [4, 5, 6, -50]})
-    >>> data, report = handle_outliers_in_data(data, method='clip', view=True, 
-                                               cmap='plasma', return_report=True)
-    """
-    is_frame (data, df_only=True, raise_exception=True)
-    numeric_cols = data.select_dtypes(include=['number']).columns
-    data_before = data.copy()  # Copy of the original data for comparison
-    report = {}
-
-    # Handling outliers
-    if method == 'clip':
-        lower = data[numeric_cols].quantile(lower_quantile)
-        upper = data[numeric_cols].quantile(upper_quantile)
-        data[numeric_cols] = data[numeric_cols].clip(lower, upper, axis=1)
-        report['method'] = 'clip'
-    elif method == 'remove':
-        # Removing outliers based on quantiles
-        lower = data[numeric_cols].quantile(lower_quantile)
-        upper = data[numeric_cols].quantile(upper_quantile)
-        data = data[(data[numeric_cols] >= lower) & (data[numeric_cols] <= upper)]
-        report['method'] = 'remove'
-    elif method == 'replace':
-        if replace_with not in ['mean', 'median']:
-            raise ValueError("Invalid replace_with option. Choose 'mean' or 'median'.")
-        replace_func = ( data[numeric_cols].mean if replace_with == 'mean' 
-                        else data[numeric_cols].median)
-        data[numeric_cols] = data[numeric_cols].apply(lambda col: col.where(
-            col.between(col.quantile(lower_quantile), col.quantile(upper_quantile)),
-            replace_func(), axis=0))
-        report['method'] = 'replace'
+    elif isinstance(target, (int, str)):
+        if isinstance(target, str):
+            y = X.pop(target)
+            target_names = [target]
+        elif isinstance(target, int):
+            y = X.iloc[:, target]
+            target_names = [X.columns[target]]
+            X = X.drop(columns=X.columns[target])
+    elif isinstance(target, np.ndarray) or (
+            isinstance(target, pd.Series) and isinstance(X, np.ndarray)):
+        y = np.array(target)
+        target_names = ["target"]
     else:
-        raise ValueError("Invalid method for handling outliers.")
-    
-    report['lower_quantile'] = lower_quantile
-    report['upper_quantile'] = upper_quantile
-
-    if view:
-        # Visualize data distribution before and after handling outliers
-        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=fig_size)
-        
-        sns.heatmap(data_before[numeric_cols].isnull(), yticklabels=False, 
-                    cbar=False, cmap=cmap, ax=axes[0])
-        axes[0].set_title('Before Outlier Handling')
-
-        sns.heatmap(data[numeric_cols].isnull(), yticklabels=False,
-                    cbar=False, cmap=cmap, ax=axes[1])
-        axes[1].set_title('After Outlier Handling')
-
-        plt.suptitle('Comparative Missing Value Heatmap')
-        plt.show()
-
-    return (data, report) if return_report else data
-
-@df_if
-def handle_missing_data(
-    data:DataFrame, /, 
-    method: Optional[str] = None,  
-    fill_value: Optional[Any] = None,
-    dropna_threshold: float = 0.5, 
-    return_report: bool = False,
-    view: bool = False, 
-    cmap: str = 'viridis',
-    fig_size: Tuple[int, int] = (12, 5)
-) -> Union[DataFrame, Tuple[DataFrame, dict]]:
-    """
-    Analyzes patterns of missing data in the DataFrame. 
-    
-    Optionally, function displays a heatmap before and after handling missing 
-    data, and handles missing data based on the specified method.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame to analyze and handle missing data.
-    method : str, optional
-        Method to handle missing data. Options: 'drop_rows', 'drop_cols', 'fill_mean',
-        'fill_median', 'fill_value'. If None, no handling is performed.
-    fill_value : Any, optional
-        Value to use when filling missing data for 'fill_value' method.
-    dropna_threshold : float, optional
-        Threshold for dropping rows/columns with missing data. 
-        Only used with 'drop_rows' or 'drop_cols' method.
-    return_report : bool, optional
-        If True, returns a tuple of the DataFrame and a report dictionary.
-    view : bool, optional
-        If True, displays a heatmap of missing data before and after handling.
-    cmap : str, optional
-        The colormap for the heatmap visualization.
-    fig_size : Tuple[int, int], optional
-        The size of the figure for the heatmap.
-        
-    Returns
-    -------
-    Union[pd.DataFrame, Tuple[pd.DataFrame, dict]]
-        DataFrame after handling missing data and optionally a report dictionary.
-
-    Example
-    -------
-    >>> from gofast.tools.baseutils import handle_missing_data
-    >>> data = pd.DataFrame({'A': [1, np.nan, 3], 'B': [np.nan, 5, 6]})
-    >>> updated_data, report = handle_missing_data(
-        data, view=True, method='fill_mean', return_report=True)
-    """
-    is_frame (data, df_only=True, raise_exception=True)
-    # Analyze missing data
-    original_data = data.copy()
-    missing_data = pd.DataFrame(data.isnull().sum(), columns=['missing_count'])
-    missing_data['missing_percentage'] = (missing_data['missing_count'] / len(data)) * 100
-
-    # Handling missing data based on method
-    handling_methods = {
-        'drop_rows': lambda d: d.dropna(thresh=int(dropna_threshold * len(d.columns))),
-        'drop_cols': lambda d: d.dropna(axis=1, thresh=int(dropna_threshold * len(d))),
-        'fill_mean': lambda d: d.fillna(d.mean()),
-        'fill_median': lambda d: d.fillna(d.median()),
-        'fill_value': lambda d: d.fillna(fill_value)
-    }
-
-    if method in handling_methods:
-        if method == 'fill_value' and fill_value is None:
-            raise ValueError("fill_value must be specified for 'fill_value' method.")
-        data = handling_methods[method](data)
-    elif method:
-        raise ValueError(f"Invalid method specified: {method}")
-
-    # Visualization of missing data before and after handling
-    if view:
-        plt.figure(figsize=fig_size)
-        plt.subplot(1, 2, 1)
-        sns.heatmap(original_data.isnull(), yticklabels=False, cbar=False, 
-                    cmap=cmap)
-        plt.title('Before Handling Missing Data')
-        
-        plt.subplot(1, 2, 2)
-        sns.heatmap(data.isnull(), yticklabels=False, cbar=False, cmap=cmap)
-        plt.title('After Handling Missing Data')
-        plt.show()
-
-    # Data report
-    data_report = {
-        "missing_data_before": original_data.isnull().sum(),
-        "missing_data_after": data.isnull().sum(),
-        "stats": {
-            "method_used": method,
-            "fill_value": fill_value if method == 'fill_value' else None,
-            "dropna_threshold": dropna_threshold if method in [
-                'drop_rows', 'drop_cols'] else None
-        },
-        "describe": missing_data.describe()
-    }
-    
-    return (data, data_report) if return_report else data
-
-def inspect_data(
-    data: DataFrame, /, 
-    correlation_threshold: float = 0.8, 
-    categorical_threshold: float = 0.75
-) -> None:
-    """
-    Performs an exhaustive inspection of a DataFrame. 
-    
-    Funtion evaluates data integrity,provides detailed statistics, and offers
-    tailored recommendations to ensure data quality for analysis or modeling.
-
-    This function is integral for identifying and understanding various aspects
-    of data quality such as missing values, duplicates, outliers, imbalances, 
-    and correlations. It offers insights into the data's distribution, 
-    variability, and potential issues, guiding users towards effective data 
-    cleaning and preprocessing strategies.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The DataFrame to be inspected.
-
-    correlation_threshold : float, optional
-        The threshold for flagging high correlation between numeric features.
-        Features with a correlation above this threshold will be highlighted.
-        Default is 0.8.
-
-    categorical_threshold : float, optional
-        The threshold for detecting imbalance in categorical variables. If the
-        proportion of the most frequent category exceeds this threshold, it will
-        be flagged as imbalanced. Default is 0.75.
-
-    Returns
-    -------
-    None
-        Prints a comprehensive report including data integrity assessment, 
-        statistics, and recommendations for data preprocessing.
-
-    Example
-    -------
-    >>> from gofast.tools.baseutils import inspect_data
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> data = pd.DataFrame({
-    >>>     'A': np.random.normal(0, 1, 100),
-    >>>     'B': np.random.normal(5, 2, 100),
-    >>>     'C': np.random.randint(0, 100, 100)
-    >>> })
-    >>> data.iloc[0, 0] = np.nan  # Introduce a missing value
-    >>> data.iloc[1] = data.iloc[0]  # Introduce a duplicate row
-    >>> inspect_data(data)
-    """
-    def format_report_section(title, content):
-        """
-        Formats and prints a section of the report.
-        """
-        print(f"\033[1m{title}:\033[0m")
-        if ( title.lower().find('report')>=0 or title.lower(
-           ).find('recomm')>=0): print("-" * (len(title)+1)) 
-        if isinstance(content, dict):
-            for key, value in content.items():
-                print(f"  {key}: {value}")
-        else:
-            print(f"  {content}")
-        print()
-        
-    def calculate_statistics(d: DataFrame) -> Dict[str, Any]:
-        """
-        Calculates various statistics for the numerical columns of 
-        the DataFrame.
-        """
-        stats = {}
-        numeric_cols = d.select_dtypes(include=[np.number])
-
-        stats['mean'] = numeric_cols.mean()
-        stats['std_dev'] = numeric_cols.std()
-        stats['percentiles'] = numeric_cols.quantile([0.25, 0.5, 0.75]).T
-        stats['min'] = numeric_cols.min()
-        stats['max'] = numeric_cols.max()
-
-        return stats
-    
-    is_frame( data, df_only=True, raise_exception=True,
-             objname="Data for inspection")
-    is_valid, integrity_report = verify_data_integrity(data)
-    stats_report = calculate_statistics(data)
-    
-    # Display the basic integrity report
-    format_report_section("Data Integrity Report", "")
-    format_report_section("Missing Values", integrity_report['missing_values'])
-    format_report_section("Duplicate Rows", integrity_report['duplicates'])
-    format_report_section("Potential Outliers", integrity_report['outliers'])
-
-    # Display the statistics report
-    format_report_section("Data Statistics Report", "")
-    for stat_name, values in stats_report.items():
-        format_report_section(stat_name.capitalize(), values)
-
-    # Recommendations based on the report
-    if not is_valid:
-        format_report_section("Recommendations", "")
-        if integrity_report['missing_values'].any():
-            print("- Consider handling missing values using imputation or removal.")
-        if integrity_report['duplicates'] > 0:
-            print("- Check for and remove duplicate rows to ensure data uniqueness.")
-        if any(count > 0 for count in integrity_report['outliers'].values()):
-            print("- Investigate potential outliers. Consider removal or transformation.\n")
-        
-        # Additional checks and recommendations
-        # Check for columns with a single unique value
-        single_value_columns = [col for col in data.columns if 
-                                data[col].nunique() == 1]
-        if single_value_columns:
-            print("- Columns with a single unique value detected:"
-                  f" {single_value_columns}. Consider removing them"
-                  " as they do not provide useful information for analysis.")
-    
-        # Check for data imbalance in categorical variables
-        categorical_cols = data.select_dtypes(include=['category', 'object']).columns
-        for col in categorical_cols:
-            if data[col].value_counts(normalize=True).max() > categorical_threshold:
-                print(f"- High imbalance detected in categorical column '{col}'."
-                      " Consider techniques to address imbalance, like sampling"
-                      " methods or specialized models.")
-    
-        # Check for skewness in numeric columns
-        numeric_cols = data.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            if abs(data[col].skew()) > 1:
-                print(f"- High skewness detected in numeric column '{col}'."
-                      " Consider transformations like log, square root, or "
-                      "Box-Cox to normalize the distribution.")
-        # Normalization for numerical columns
-        print("- Evaluate if normalization (scaling between 0 and 1) is "
-              "necessary for numerical features, especially for distance-based"
-              " algorithms.")
-    
-        # Correlation check
-        correlation_threshold = correlation_threshold  # Arbitrary threshold
-        corr_matrix = data[numeric_cols].corr().abs()
-        upper_triangle = corr_matrix.where(np.triu(np.ones(
-            corr_matrix.shape), k=1).astype(bool))
-        high_corr_pairs = [(col1, col2) for col1, col2 in zip(
-            *np.where(upper_triangle > correlation_threshold))]
-    
-        if high_corr_pairs:
-            print("- Highly correlated features detected:")
-            for idx1, idx2 in high_corr_pairs:
-                col1, col2 = numeric_cols[idx1], numeric_cols[idx2]
-                print(f"  {col1} and {col2} (Correlation > {correlation_threshold})")
-        
-        # Data type conversions
-        print("- Review data types of columns for appropriate conversions"
-              " (e.g., converting float to int where applicable).")
-                 
-def augment_data(
-    X: Union[DataFrame, ArrayLike], 
-    y: Optional[Union[pd.Series, np.ndarray]] = None, 
-    augmentation_factor: int = 2, 
-    shuffle: bool = True
-) -> Union[Tuple[Union[DataFrame, ArrayLike], Optional[Union[
-    Series, ArrayLike]]], Union[DataFrame, ArrayLike]]:
-    """
-    Augment a dataset by repeating it with random variations to enhance 
-    training diversity.
-
-    This function is useful in scenarios with limited data, helping improve the 
-    generalization of machine learning models by creating a more diverse training set.
-
-    Parameters
-    ----------
-    X : Union[pd.DataFrame, np.ndarray]
-        Input data, either as a Pandas DataFrame or a NumPy ndarray.
-
-    y : Optional[Union[pd.Series, np.ndarray]], optional
-        Target labels, either as a Pandas Series or a NumPy ndarray. If `None`, 
-        the function only processes the `X` data. This is useful in unsupervised 
-        learning scenarios where target labels may not be applicable.
-    augmentation_factor : int, optional
-        The multiplier for data augmentation. Defaults to 2 (doubling the data).
-    shuffle : bool, optional
-        If True, shuffle the data after augmentation. Defaults to True.
-
-    Returns
-    -------
-    X_augmented : pd.DataFrame or np.ndarray
-        Augmented input data in the same format as `X`.
-    y_augmented : pd.Series, np.ndarray, or None
-        Augmented target labels in the same format as `y`, if `y` is not None.
-        Otherwise, None.
-
-    Raises
-    ------
-    ValueError
-        If `augmentation_factor` is less than 1 or if the lengths of `X` and `y` 
-        are mismatched when `y` is not None.
-
-    Raises
-    ------
-    ValueError
-        If `augmentation_factor` is less than 1 or if `X` and `y` have mismatched lengths.
-
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import augment_data 
-    >>> X, y = np.array([[1, 2], [3, 4]]), np.array([0, 1])
-    >>> X_aug, y_aug = augment_data(X, y)
-    >>> X_aug.shape, y_aug.shape
-    ((4, 2), (4,))
-    >>> X = np.array([[1, 2], [3, 4]])
-    >>> X_aug = augment_data(X, y=None)
-    >>> X_aug.shape
-    (4, 2)
-    """
-    from sklearn.utils import shuffle as shuffle_data
-    if augmentation_factor < 1:
-        raise ValueError("Augmentation factor must be at least 1.")
-
-    is_X_df = isinstance(X, pd.DataFrame)
-    is_y_series = isinstance(y, pd.Series) if y is not None else False
-
-    if is_X_df:
-        # Separating numerical and categorical columns
-        num_columns = X.select_dtypes(include=['number']).columns
-        cat_columns = X.select_dtypes(exclude=['number']).columns
-
-        # Augment only numerical columns
-        X_num = X[num_columns]
-        X_num_augmented = np.concatenate([X_num] * augmentation_factor)
-        X_num_augmented += np.random.normal(loc=0.0, scale=0.1 * X_num.std(axis=0), 
-                                            size=X_num_augmented.shape)
-        # Repeat categorical columns without augmentation
-        X_cat_augmented = pd.concat([X[cat_columns]] * augmentation_factor
-                                    ).reset_index(drop=True)
-
-        # Combine numerical and categorical data
-        X_augmented = pd.concat([pd.DataFrame(
-            X_num_augmented, columns=num_columns), X_cat_augmented], axis=1)
-   
-    else:
-        # If X is not a DataFrame, it's treated as a numerical array
-        X_np = np.asarray(X, dtype= float) 
-        X_augmented = np.concatenate([X_np] * augmentation_factor)
-        X_augmented += np.random.normal(
-            loc=0.0, scale=0.1 * X_np.std(axis=0), size=X_augmented.shape)
-
-    y_np = np.asarray(y) if y is not None else None
-    
-    # Shuffle if required
-    if y_np is not None:
-        check_consistent_length(X, y_np )
-        y_augmented = np.concatenate([y_np] * augmentation_factor)
-        if shuffle:
-            X_augmented, y_augmented = shuffle_data(X_augmented, y_augmented)
-        if is_y_series:
-            y_augmented = pd.Series(y_augmented, name=y.name)
-            
-        return X_augmented, y_augmented
-
-    else:
-        if shuffle:
-            X_augmented = shuffle_data(X_augmented)
-            
-        return X_augmented
-
-def _is_categorical(y: Union[pd.Series, pd.DataFrame]) -> bool:
-    """
-    Determine if the target variable(s) is categorical.
-
-    Parameters
-    ----------
-    y : Union[pd.Series, pd.DataFrame]
-        Target variable(s).
-
-    Returns
-    -------
-    bool
-        True if the target variable(s) is categorical, False otherwise.
-    """
-    if isinstance(y, pd.DataFrame):
-        return all(y.dtypes.apply(lambda dtype: dtype.kind in 'iOc'))
-    return y.dtype.kind in 'iOc'
-
-def _encode_target(y: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
-    """
-    Encode the target variable(s) if it is categorical.
-
-    Parameters
-    ----------
-    y : Union[pd.Series, pd.DataFrame]
-        Target variable(s).
-
-    Returns
-    -------
-    Union[pd.Series, pd.DataFrame]
-        Encoded target variable(s).
-    """
-    from sklearn.preprocessing import LabelEncoder
-    
-    if isinstance(y, pd.DataFrame):
-        encoder = LabelEncoder()
-        return y.apply(lambda col: encoder.fit_transform(col))
-    elif y.dtype.kind == 'O':
-        encoder = LabelEncoder()
-        return pd.Series(encoder.fit_transform(y), index=y.index)
-    return y
-
-def _prepare_data(
-        data: pd.DataFrame, 
-        target_column: Union[str, List[str], pd.Series, np.ndarray]
-        ) -> Tuple[pd.DataFrame, Union[pd.Series, pd.DataFrame]]:
-    """
-    Prepare the feature matrix X and target vector y from the input DataFrame.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The input DataFrame containing features and a target variable.
-    target_column : Union[str, List[str], pd.Series, np.ndarray]
-        The target variable's identifier(s) or the target variable itself.
-
-    Returns
-    -------
-    X : pd.DataFrame
-        The feature matrix after removing the target column(s) if specified by name.
-    y : Union[pd.Series, pd.DataFrame]
-        The target vector or DataFrame for multiple labels.
-
-    Raises
-    ------
-    ValueError
-        If the target_column length does not match the number of samples in data.
-    KeyError
-        If the target_column specified by name is not found in data.
-    """
-    if isinstance(target_column, (str, list)):
-        target_column= list(is_iterable(
-            target_column, exclude_string= True, transform =True )
-            )
-        exist_features(data, features= target_column )
-        y = data[target_column]
-        X = data.drop(target_column, axis=1)
-    elif isinstance(target_column, (pd.Series, np.ndarray)):
-        # if len(target_column) != len(data):
-        #     raise ValueError("Length of the target array/Series must 
-        #    match the number of samples in 'data'.")
-        y = pd.Series(target_column, index=data.index) if isinstance(
-            target_column, np.ndarray) else target_column
-        X = data
-    else:
-        raise ValueError("Invalid type for 'target_column'. Must be str,"
-                         " list, pd.Series, or np.ndarray.")
+        raise ValueError("Unsupported target type or target does not match X dimensions.")
     
     check_consistent_length(X, y)
     
-    return X, y
+    return X, y, target_names
 
-def assess_outlier_impact(
-    data: pd.DataFrame, /, 
-    target_column: Union[str, List[str], pd.Series, np.ndarray],
-    test_size: float = 0.2, 
-    random_state: int = 42, 
-    verbose: bool = False) -> Tuple[float, float]:
-    """
-    Assess the impact of outliers on the predictive performance of a model. 
+def categorize_target(
+    arr : Union [ArrayLike , Series] , /, 
+    func: _F = None,  
+    labels: Union [int, List[int]] = None, 
+    rename_labels: Optional[str] = None, 
+    coerce:bool=False,
+    order:str='strict',
+    ): 
+    """ Categorize array to hold the given identifier labels. 
     
-    Applicable for both regression and classification tasks, including 
-    multi-label targets.
+    Classifier numerical values according to the given label values. Labels 
+    are a list of integers where each integer is a group of unique identifier  
+    of a sample in the dataset. 
+    
+    Parameters 
+    -----------
+    arr: array-like |pandas.Series 
+        array or series containing numerical values. If a non-numerical values 
+        is given , an errors will raises. 
+    func: Callable, 
+        Function to categorize the target y.  
+    labels: int, list of int, 
+        if an integer value is given, it should be considered as the number 
+        of category to split 'y'. For instance ``label=3`` applied on 
+        the first ten number, the labels values should be ``[0, 1, 2]``. 
+        If labels are given as a list, items must be self-contain in the 
+        target 'y'.
+    rename_labels: list of str; 
+        list of string or values to replace the label integer identifier. 
+    coerce: bool, default =False, 
+        force the new label names passed to `rename_labels` to appear in the 
+        target including or not some integer identifier class label. If 
+        `coerce` is ``True``, the target array holds the dtype of new_array. 
+
+    Return
+    --------
+    arr: Arraylike |pandas.Series
+        The category array with unique identifer labels 
+        
+    Examples 
+    --------
+
+    >>> from gofast.tools.baseutils import categorize_target 
+    >>> def binfunc(v): 
+            if v < 3 : return 0 
+            else : return 1 
+    >>> arr = np.arange (10 )
+    >>> arr 
+    ... array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    >>> target = categorize_target(arr, func =binfunc)
+    ... array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1], dtype=int64)
+    >>> categorize_target(arr, labels =3 )
+    ... array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
+    >>> array([2, 2, 2, 2, 1, 1, 1, 0, 0, 0]) 
+    >>> categorize_target(arr, labels =3 , order =None )
+    ... array([0, 0, 0, 0, 1, 1, 1, 2, 2, 2])
+    >>> categorize_target(arr[::-1], labels =3 , order =None )
+    ... array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2]) # reverse does not change
+    >>> categorize_target(arr, labels =[0 , 2,  4]  )
+    ... array([0, 0, 0, 2, 2, 4, 4, 4, 4, 4])
+
+    """
+    arr = _assert_all_types(arr, np.ndarray, pd.Series) 
+    is_arr =False 
+    if isinstance (arr, np.ndarray ) :
+        arr = pd.Series (arr  , name = 'none') 
+        is_arr =True 
+        
+    if func is not None: 
+        if not  inspect.isfunction (func): 
+            raise TypeError (
+                f'Expect a function but got {type(func).__name__!r}')
+            
+        arr= arr.apply (func )
+        
+        return  arr.values  if is_arr else arr   
+    
+    name = arr.name 
+    arr = arr.values 
+
+    if labels is not None: 
+        arr = _cattarget (arr , labels, order =order)
+        if rename_labels is not None: 
+            arr = rename_labels_in( arr , rename_labels , coerce =coerce ) 
+
+    return arr  if is_arr else pd.Series (arr, name =name  )
+
+def rename_labels_in (
+        arr, new_names, coerce = False): 
+    """ Rename label by a new names 
+    
+    :param arr: arr: array-like |pandas.Series 
+         array or series containing numerical values. If a non-numerical values 
+         is given , an errors will raises. 
+    :param new_names: list of str; 
+        list of string or values to replace the label integer identifier. 
+    :param coerce: bool, default =False, 
+        force the 'new_names' to appear in the target including or not some 
+        integer identifier class label. `coerce` is ``True``, the target array 
+        hold the dtype of new_array; coercing the label names will not yield 
+        error. Consequently can introduce an unexpected results.
+    :return: array-like, 
+        An array-like with full new label names. 
+    """
+    
+    if not is_iterable(new_names): 
+        new_names= [new_names]
+    true_labels = np.unique (arr) 
+    
+    if labels_validator(arr, new_names, return_bool= True): 
+        return arr 
+
+    if len(true_labels) != len(new_names):
+        if not coerce: 
+            raise ValueError(
+                "Can't rename labels; the new names and unique label" 
+                " identifiers size must be consistent; expect {}, got " 
+                "{} label(s).".format(len(true_labels), len(new_names))
+                             )
+        if len(true_labels) < len(new_names) : 
+            new_names = new_names [: len(new_names)]
+        else: 
+            new_names = list(new_names)  + list(
+                true_labels)[len(new_names):]
+            warnings.warn("Number of the given labels '{}' and values '{}'"
+                          " are not consistent. Be aware that this could "
+                          "yield an expected results.".format(
+                              len(new_names), len(true_labels)))
+            
+    new_names = np.array(new_names)
+    # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    # hold the type of arr to operate the 
+    # element wise comparaison if not a 
+    # ValueError:' invalid literal for int() with base 10' 
+    # will appear. 
+    if not np.issubdtype(np.array(new_names).dtype, np.number): 
+        arr= arr.astype (np.array(new_names).dtype)
+        true_labels = true_labels.astype (np.array(new_names).dtype)
+
+    for el , nel in zip (true_labels, new_names ): 
+        # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        # element comparison throws a future warning here 
+        # because of a disagreement between Numpy and native python 
+        # Numpy version ='1.22.4' while python version = 3.9.12
+        # this code is brittle and requires these versions above. 
+        # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        # suppress element wise comparison warning locally 
+        with warnings.catch_warnings():
+            warnings.simplefilter(action='ignore', category=FutureWarning)
+            arr [arr == el ] = nel 
+            
+    return arr 
+
+    
+def _cattarget (ar , labels , order=None): 
+    """ A shadow function of :func:`gofast.tools.baseutils.cattarget`. 
+    
+    :param ar: array-like of numerical values 
+    :param labels: int or list of int, 
+        the number of category to split 'ar'into. 
+    :param order: str, optional, 
+        the order of label to be categorized. If None or any other values, 
+        the categorization of labels considers only the length of array. 
+        For instance a reverse array and non-reverse array yield the same 
+        categorization samples. When order is set to ``strict``, the 
+        categorization  strictly considers the value of each element. 
+        
+    :return: array-like of int , array of categorized values.  
+    """
+    # assert labels
+    if is_iterable (labels):
+        labels =[int (_assert_all_types(lab, int, float)) 
+                 for lab in labels ]
+        labels = np.array (labels , dtype = np.int32 ) 
+        cc = labels 
+        # assert whether element is on the array 
+        s = set (ar).intersection(labels) 
+        if len(s) != len(labels): 
+            mv = set(labels).difference (s) 
+            
+            fmt = [f"{'s' if len(mv) >1 else''} ", mv,
+                   f"{'is' if len(mv) <=1 else'are'}"]
+            warnings.warn("Label values must be array self-contain item. "
+                           "Label{0} {1} {2} missing in the array.".format(
+                               *fmt)
+                          )
+            raise ValueError (
+                "label value{0} {1} {2} missing in the array.".format(*fmt))
+    else : 
+        labels = int (_assert_all_types(labels , int, float))
+        labels = np.linspace ( min(ar), max (ar), labels + 1 ) #+ .00000001 
+        #array([ 0.,  6., 12., 18.])
+        # split arr and get the range of with max bound 
+        cc = np.arange (len(labels)) #[0, 1, 3]
+        # we expect three classes [ 0, 1, 3 ] while maximum 
+        # value is 18 . we want the value value to be >= 12 which 
+        # include 18 , so remove the 18 in the list 
+        labels = labels [:-1] # remove the last items a
+        # array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+        # array([0, 0, 0, 0, 1, 1, 1, 2, 2, 2]) # 3 classes 
+        #  array([ 0.        ,  3.33333333,  6.66666667, 10. ]) + 
+    # to avoid the index bound error 
+    # append nan value to lengthen arr 
+    r = np.append (labels , np.nan ) 
+    new_arr = np.zeros_like(ar) 
+    # print(labels)
+    ar = ar.astype (np.float32)
+
+    if order =='strict': 
+        for i in range (len(r)):
+            if i == len(r) -2 : 
+                ix = np.argwhere ( (ar >= r[i]) & (ar != np.inf ))
+                new_arr[ix ]= cc[i]
+                break 
+            
+            if i ==0 : 
+                ix = np.argwhere (ar < r[i +1])
+                new_arr [ix] == cc[i] 
+                ar [ix ] = np.inf # replace by a big number than it was 
+                # rather than delete it 
+            else :
+                ix = np.argwhere( (r[i] <= ar) & (ar < r[i +1]) )
+                new_arr [ix ]= cc[i] 
+                ar [ix ] = np.inf 
+    else: 
+        l= list() 
+        for i in range (len(r)): 
+            if i == len(r) -2 : 
+                l.append (np.repeat ( cc[i], len(ar))) 
+                
+                break
+            ix = np.argwhere ( (ar < r [ i + 1 ] ))
+            l.append (np.repeat (cc[i], len (ar[ix ])))  
+            # remove the value ready for i label 
+            # categorization 
+            ar = np.delete (ar, ix  )
+            
+        new_arr= np.hstack (l).astype (np.int32)  
+        
+    return new_arr.astype (np.int32)    
+   
+
+def labels_validator(
+    target: ArrayLike, 
+    labels: Union[int, str, List[Union[int, str]]], 
+    return_bool: bool = False
+    ) -> Union[bool, List[Union[int, str]]]:
+    """
+    Validates if specified labels are present in the target array and 
+    optionally returns a boolean indicating the presence of all labels or 
+    the list of labels themselves.
+    
+    Parameters
+    ----------
+    target : np.ndarray
+        The target array expected to contain the labels.
+    labels : int, str, or list of int or str
+        The label(s) supposed to be in the target array.
+    return_bool : bool, default=False
+        If True, returns a boolean indicating whether all specified 
+        labels are present. If False, returns the list of labels.
+
+    Returns
+    -------
+    bool or List[Union[int, str]]
+        If `return_bool` is True, returns True if all labels are present, 
+        False otherwise.
+        If `return_bool` is False, returns the list of labels if all are present.
+    
+    Raises
+    ------
+    ValueError
+        If any of the specified labels are missing in the target array and 
+        `return_bool` is False.
+    
+    Examples
+    --------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils import labels_validator
+    >>> target = np.array([1, 2, 3, 4, 5])
+    >>> labels_validator(target, [1, 2, 3])
+    [1, 2, 3]
+    >>> labels_validator(target, [0, 1], return_bool=True)
+    False
+    >>> labels_validator(target, 1)
+    [1]
+    >>> labels_validator(target, [6], return_bool=True)
+    False
+    """
+    if isinstance(labels, (int, str)):
+        labels = [labels]
+    
+    labels_present = np.unique([label for label in labels if label in target])
+    missing_labels = [label for label in labels if label not in labels_present]
+
+    if missing_labels:
+        if return_bool:
+            return False
+        raise ValueError(f"Label{'s' if len(missing_labels) > 1 else ''}"
+                        f" {', '.join(map(str, missing_labels))}"
+                        f" {'are' if len(missing_labels) > 1 else 'is'}"
+                        " missing in the target."
+                    )
+
+    return True if return_bool else labels
+
+def generate_placeholders(
+        iterable_obj: Iterable[_T]) -> List[str]:
+    """
+    Generates a list of string placeholders for each item in the input
+    iterable. This can be useful for creating formatted string
+    representations where each item's index is used within braces.
+
+    :param iterable_obj: An iterable object (e.g., list, set, or any
+        iterable collection) whose length determines the number of
+        placeholders generated.
+    :return: A list of strings, each representing a placeholder in
+        the format "{n}", where n is the index of the placeholder.
+        
+    :Example:
+        >>> from gofast.tools.baseutils import generate_placeholders
+        >>> generate_placeholders_for_iterable({'ohmS', 'lwi', 'power', 'id', 
+        ...                                     'sfi', 'magnitude'})
+        ['{0}', '{1}', '{2}', '{3}', '{4}', '{5}']
+    """
+    return [f"{{{index}}}" for index in range(len(iterable_obj))]
+
+
+def compute_set_operation( 
+    iterable1: Iterable[Any],
+    iterable2: Iterable[Any],
+    operation: str = "intersection"
+) -> Set[Any]:
+    """
+    Computes the intersection or difference between two iterable objects,
+    returning the result as a set. This function is flexible and works
+    with any iterable types, including lists, sets, and dictionaries.
 
     Parameters
     ----------
-    data : pd.DataFrame
-        The input DataFrame containing features and a target variable.
-        
-    target_column : Union[str, List[str], pd.Series, np.ndarray]
-        The name of the target variable column(s) in the DataFrame, or the target 
-        variable array/Series itself. If a string or list of strings is provided, 
-        the column(s) will be used as the target variable and removed from the data.
-        
-    test_size : float, optional (default=0.2)
-        The proportion of the dataset to include in the test split.
-        
-    random_state : int, optional (default=42)
-        The random state to use for reproducible train-test splits.
-    
-    verbose : bool
-        If True, prints the evaluation metric with and without outliers, 
-        and the impact message.
-        
+    iterable1 : Iterable[Any]
+        The first iterable object from which to compute the operation.
+    iterable2 : Iterable[Any]
+        The second iterable object.
+    operation : str, optional
+        The operation to perform, either 'intersection' or 'difference'.
+        Defaults to 'intersection'.
+
     Returns
     -------
-    Tuple[float, float]
-        A tuple containing the evaluation metric (MSE for regression or 
-                                                  accuracy for classification)
-        of the model's predictions on the test set with outliers present and 
-        with outliers removed.
-        
-     Raises:
-     -------
-     KeyError
-         If the target column is not present in the DataFrame.
-         
-     ValueError
-         If the test size is not between 0 and 1.
-         
-    Examples:
-    ---------
-    >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import assess_outlier_impact
-    >>> df = pd.DataFrame({
-    ...     'feature1': np.random.rand(100),
-    ...     'feature2': np.random.rand(100),
-    ...     'target': np.random.rand(100)
-    ... })
-    >>> mse_with_outliers, mse_without_outliers = assess_outlier_impact(df, 'target')
-    >>> print('MSE with outliers:', mse_with_outliers)
-    >>> print('MSE without outliers:', mse_without_outliers)
+    Set[Any]
+        A set of either common elements (intersection) or unique elements
+        (difference) from the two iterables.
 
+    Examples
+    --------
+    Intersection example:
+    >>> compute_set_operation(
+    ...     ['a', 'b', 'c'], 
+    ...     {'b', 'c', 'd'}
+    ... )
+    {'b', 'c'}
+
+    Difference example:
+    >>> compute_set_operation(
+    ...     ['a', 'b', 'c'], 
+    ...     {'b', 'c', 'd'},
+    ...     operation='difference'
+    ... )
+    {'a', 'd'}
+
+    Notes
+    -----
+    The function supports only 'intersection' and 'difference' operations.
+    It ensures the result is always returned as a set, regardless of the
+    input iterable types.
     """
-    from sklearn.metrics import accuracy_score, mean_squared_error
-    from sklearn.model_selection import train_test_split
-    from sklearn.linear_model import LogisticRegression, LinearRegression
     
-    is_frame (data, df_only= True, raise_exception= True )
-    X, y = _prepare_data(data, target_column)
-    # Determine if the task is regression or classification
-    is_categorical = _is_categorical(y)
-    if is_categorical:
-        model = LogisticRegression()
-        metric = accuracy_score
-        metric_name = "Accuracy"
-        y = _encode_target(y)
+    set1 = set(iterable1)
+    set2 = set(iterable2)
+
+    if operation == "intersection":
+        return set1 & set2  # Using & for intersection
+    elif operation == "difference":
+        # Returning symmetric difference
+        return set1 ^ set2  # Using ^ for symmetric difference
     else:
-        model = LinearRegression()
-        metric = mean_squared_error
-        metric_name = "MSE"
-    # Ensure y is a np.ndarray for model fitting
-    y = y if isinstance(y, np.ndarray) else y.values
+        raise ValueError("Invalid operation specified. Choose either"
+                         " 'intersection' or 'difference'.")
 
-    # Split the data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state)
-
-    # Define an internal function for model evaluation to keep the main logic clean
-    def _evaluate_model(X_train: pd.DataFrame, y_train: np.ndarray,
-                        X_test: pd.DataFrame, y_test: np.ndarray, 
-                        model, metric) -> float:
-        """ Train the model and evaluate its performance on the test set."""
-        model.fit(X_train, y_train)
-        predictions = model.predict(X_test)
-        return metric(y_test, predictions)
-
-    # Evaluate the model on the original data
-    original_metric = _evaluate_model(X_train, y_train, X_test, y_test, model, metric)
-
-    # Identify and remove outliers using the IQR method
-    Q1 = X_train.quantile(0.25)
-    Q3 = X_train.quantile(0.75)
-    IQR = Q3 - Q1
-    is_not_outlier = ~((X_train < (Q1 - 1.5 * IQR)) | (X_train > (Q3 + 1.5 * IQR))).any(axis=1)
-    X_train_filtered = X_train[is_not_outlier]
-    y_train_filtered = y_train[is_not_outlier]
-
-    # Evaluate the model on the filtered data
-    filtered_metric = _evaluate_model(X_train_filtered, y_train_filtered, X_test, y_test, model, metric)
-
-    # Print results if verbose is True
-    if verbose:
-        print(f'{metric_name} with outliers in the training set: {original_metric}')
-        print(f'{metric_name} without outliers in the training set: {filtered_metric}')
-        # Check the impact
-        if not is_categorical and filtered_metric < original_metric or \
-           is_categorical and filtered_metric > original_metric:
-            print('Outliers appear to have a negative impact on the model performance.')
-        else:
-            print('Outliers do not appear to have a significant negative'
-                  ' impact on the model performance.')
-
-    return original_metric, filtered_metric
-
-def transform_dates(
-    data: DataFrame, /, 
-    transform: bool = True, 
-    fmt: Optional[str] = None, 
-    return_dt_columns: bool = False,
-    include_columns: Optional[List[str]] = None,
-    exclude_columns: Optional[List[str]] = None,
-    force: bool = False,
-    errors: str = 'coerce',
-    **dt_kws
-) -> Union[pd.DataFrame, List[str]]:
+def find_intersection(
+    iterable1: Iterable[Any],
+    iterable2: Iterable[Any]
+) -> Set[Any]:
     """
-    Detects and optionally transforms columns in a DataFrame that can be 
-    interpreted as dates. 
-    
-    Funtion uses advanced parameters for greater control over the 
-    conversion process.
+    Computes the intersection of two iterable objects, returning a set
+    of elements common to both. This function is designed to work with
+    various iterable types, including lists, sets, and dictionaries.
 
     Parameters
     ----------
-    data : pd.DataFrame
-        The DataFrame to inspect and process.
-    transform : bool, optional
-        Determines whether to perform the conversion of detected datetime 
-        columns. Defaults to True.
-    fmt : str or None, optional
-        Specifies the datetime format string to use for conversion. If None, 
-        pandas will infer the format.
-    return_dt_columns : bool, optional
-        If True, the function returns a list of column names detected 
-        (and potentially converted) as datetime. 
-        Otherwise, it returns the modified DataFrame or the original DataFrame
-        if no transformation is performed.
-    include_columns : List[str] or None, optional
-        Specifies a list of column names to consider for datetime conversion. 
-        If None, all columns are considered.
-    exclude_columns : List[str] or None, optional
-        Specifies a list of column names to exclude from datetime conversion. 
-        This parameter is ignored if `include_columns` is provided.
-    force : bool, optional
-        If True, forces the conversion of columns to datetime objects, even 
-        for columns with mixed or unexpected data types.
-    errors : str, optional
-        Determines how to handle conversion errors. Options are 'raise', 
-        'coerce', and 'ignore' (default is 'coerce').
-        'raise' will raise an exception for any errors, 'coerce' will convert 
-        problematic data to NaT, and 'ignore' will
-        return the original data without conversion.
-    **dt_kws : dict
-        Additional keyword arguments to be passed to `pd.to_datetime`.
+    iterable1 : Iterable[Any]
+        The first iterable object.
+    iterable2 : Iterable[Any]
+        The second iterable object.
 
     Returns
     -------
-    Union[pd.DataFrame, List[str]]
-        Depending on `return_dt_columns`, returns either a list of column names 
-        detected as datetime or the DataFrame with the datetime conversions 
-        applied.
+    Set[Any]
+        A set of elements common to both `iterable1` and `iterable2`.
 
-    Examples
-    --------
-    >>> from gofast.tools.baseutils import transform_dates
-    >>> data = pd.DataFrame({
-    ...     'date': ['2021-01-01', '2021-01-02'],
-    ...     'value': [1, 2],
-    ...     'timestamp': ['2021-01-01 12:00:00', None],
-    ...     'text': ['Some text', 'More text']
-    ... })
-    >>> transform_dates(data, fmt='%Y-%m-%d', return_dt_columns=True)
-    ['date', 'timestamp']
+    Example
+    -------
+    >>> from gofast.tools.baseutils import find_intersection_between_generics
+    >>> compute_intersection(
+    ...     ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'], 
+    ...     {'ohmS', 'lwi', 'power'}
+    ... )
+    {'ohmS', 'lwi', 'power'}
 
-    >>> transform_dates(data, include_columns=['date', 'timestamp'], 
-    ...                    errors='ignore').dtypes
-    date          datetime64[ns]
-    value                  int64
-    timestamp     datetime64[ns]
-    text                  object
-    dtype: object
+    Notes
+    -----
+    The result is always a set, regardless of the input types, ensuring
+    that each element is unique and present in both iterables.
     """
-    # Use the helper function to identify potential datetime columns
-    potential_dt_columns = detect_datetime_columns(data)
-    
-    # Filter columns based on include/exclude lists if provided
-    if include_columns is not None:
-        datetime_columns = [col for col in include_columns 
-                            if col in potential_dt_columns]
-    elif exclude_columns is not None:
-        datetime_columns = [col for col in potential_dt_columns 
-                            if col not in exclude_columns]
+
+    # Utilize set intersection operation (&) for clarity and conciseness
+    return set(iterable1) & set(iterable2)
+
+def find_unique_elements(
+    iterable1: Iterable[Any],
+    iterable2: Iterable[Any]
+) -> Optional[Set[Any]]:
+    """
+    Computes the difference between two iterable objects, returning a set
+    containing elements unique to the iterable with more unique elements.
+    If both iterables contain an equal number of unique elements, the function
+    returns None.
+
+    This function is designed to work with various iterable types, including
+    lists, sets, and dictionaries. The focus is on the count of unique elements
+    rather than the total length, which allows for more consistent results
+    across different types of iterables.
+
+    Parameters
+    ----------
+    iterable1 : Iterable[Any]
+        The first iterable object.
+    iterable2 : Iterable[Any]
+        The second iterable object.
+
+    Returns
+    -------
+    Optional[Set[Any]]
+        A set of elements unique to the iterable with more unique elements,
+        or None if both have an equal number of unique elements.
+
+    Example
+    -------
+    >>> find_unique_elements(
+    ...     ['a', 'b', 'c', 'c'],
+    ...     {'a', 'b'}
+    ... )
+    {'c'}
+
+    Notes
+    -----
+    The comparison is based on the number of unique elements, not the
+    iterable size. This approach ensures a more meaningful comparison
+    when the iterables are of different types or when duplicates are present.
+    """
+
+    set1 = set(iterable1)
+    set2 = set(iterable2)
+
+    # Adjust the logic to focus on the uniqueness rather than size
+    if len(set1) == len(set2):
+        return None
+    elif len(set1) > len(set2):
+        return set1 - set2
     else:
-        datetime_columns = potential_dt_columns
+        return set2 - set1
 
-    df = data.copy()
-    
-    if transform:
-        for col in datetime_columns:
-            if force or col in datetime_columns:
-                df[col] = pd.to_datetime(df[col], format=fmt,
-                                         errors=errors, **dt_kws)
-    
-    if return_dt_columns:
-        return datetime_columns
-    
-    return df
-    
-def detect_datetime_columns(data: DataFrame, / ) -> List[str]:
+def validate_feature_existence(supervised_features: Iterable[_T], 
+                               features: Iterable[_T]) -> None:
     """
-    Detects columns in a DataFrame that can be interpreted as date and time,
-    with an improved check to avoid false positives on purely numeric columns.
+    Validates the existence of supervised features within a list of all features.
+    This is typically used to ensure that certain expected features (columns) are
+    present in a pandas DataFrame.
 
     Parameters
     ----------
-    data : pandas.DataFrame
-        The DataFrame to inspect.
-
-    Returns
-    -------
-    List[str]
-        A list of column names that can potentially be formatted as datetime objects.
-
-    Examples
-    --------
-    >>> data = pd.DataFrame({
-    ...     'date': ['2021-01-01', '2021-01-02'],
-    ...     'value': [1, 2],
-    ...     'timestamp': ['2021-01-01 12:00:00', None],
-    ...     'text': ['Some text', 'More text']
-    ... })
-    >>> detect_datetime_columns(data)
-    ['date', 'timestamp']
-    """
-    datetime_columns = []
-
-    for col in data.columns:
-        if pd.api.types.is_numeric_dtype(data[col]) and data[col].dropna().empty:
-            # Skip numeric columns with no values, as they cannot be dates
-            continue
-        if pd.api.types.is_string_dtype(data[col]) or pd.api.types.is_object_dtype(data[col]):
-            try:
-                # Attempt conversion on columns with string-like or mixed types
-                _ = pd.to_datetime(data[col], errors='raise')
-                datetime_columns.append(col)
-            except (ValueError, TypeError):
-                # If conversion fails, skip the column.
-                continue
-
-    return datetime_columns
-
-def merge_frames_on_index(
-    *data: DataFrame, 
-    index_col: str, 
-    join_type: str = 'outer', 
-    axis: int = 1, 
-    ignore_index: bool = False, 
-    sort: bool = False
-    ) -> DataFrame:
-    """
-    Merges multiple DataFrames based on a specified column set as the index.
-
-    Parameters
-    ----------
-    *data : pd.DataFrame
-        Variable number of pandas DataFrames to merge.
-    index_col : str
-        The name of the column to set as the index in each DataFrame before merging.
-    join_type : str, optional
-        The type of join to perform. One of 'outer', 'inner', 'left', or 'right'.
-        Defaults to 'outer'.
-    axis : int, optional
-        The axis to concatenate along. {0/'index', 1/'columns'}, default 1/'columns'.
-    ignore_index : bool, optional
-        If True, the resulting axis will be labeled 0, 1, …, n - 1. Default False.
-    sort : bool, optional
-        Sort non-concatenation axis if it is not already aligned. Default False.
-
-    Returns
-    -------
-    pd.DataFrame
-        A single DataFrame resulting from merging the input DataFrames based 
-        on the specified index.
-
-    Examples
-    --------
-    >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import merge_frames_on_index
-    >>> df1 = pd.DataFrame({'A': [1, 2, 3], 'Key': ['K0', 'K1', 'K2']})
-    >>> df2 = pd.DataFrame({'B': [4, 5, 6], 'Key': ['K0', 'K1', 'K2']})
-    >>> merged_df = merge_frames_on_index(df1, df2, index_col='Key')
-    >>> print(merged_df)
-
-    Note: This function sets the specified column as the index for each 
-    DataFrame if it is not already.
-    If the column specified is not present in any of the DataFrames,
-    a KeyError will be raised.
-    """
-    # Ensure all provided data are pandas DataFrames
-    if not all(isinstance(df, pd.DataFrame) for df in data):
-        raise TypeError("All data provided must be pandas DataFrames.")
+    supervised_features : Iterable[_T]
+        An iterable of features presumed to be controlled or supervised.
         
-    # Check if the specified index column exists in all DataFrames
-    for df in data:
-        if index_col not in df.columns:
-            raise KeyError(f"The column '{index_col}' was not found in DataFrame.")
-
-    # Set the specified column as the index for each DataFrame
-    indexed_dfs = [df.set_index(index_col) for df in data]
-
-    # Concatenate the DataFrames based on the provided parameters
-    merged_df = pd.concat(indexed_dfs, axis=axis, join=join_type,
-                          ignore_index=ignore_index, sort=sort)
-
-    return merged_df
-
-def apply_tfidf_vectorization(
-    data: DataFrame,/,
-    text_columns: Union[str, List[str]],
-    max_features: int = 100,
-    stop_words: Union[str, List[str]] = 'english',
-    missing_value_handling: str = 'fill',
-    fill_value: str = '',
-    drop_text_columns: bool = True
-  ) -> DataFrame:
-    """
-    Applies TF-IDF (Term Frequency-Inverse Document Frequency) vectorization 
-    to one or more text columns in a pandas DataFrame. 
-    
-    Function concatenates the resulting features back into the original 
-    DataFrame.
-    
-    TF-IDF method weighs the words based on their occurrence in a document 
-    relative to their frequency across all documents, helping to highlight 
-    words that are more interesting, i.e., frequent in a document but not 
-    across documents.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The input DataFrame containing the text data to vectorize.
-    text_columns : Union[str, List[str]]
-        The name(s) of the column(s) in `data` containing the text data.
-    max_features : int, optional
-        The maximum number of features to generate. Defaults to 100.
-    stop_words : Union[str, List[str]], optional
-        The stop words to use for the TF-IDF vectorizer. Can be 'english' or 
-        a custom list of stop words. Defaults to 'english'.
-    missing_value_handling : str, optional
-        Specifies how to handle missing values in `text_columns`. 'fill' will 
-        replace them with `fill_value`, 'ignore' will keep them as is, and 
-        'drop' will remove rows with missing values. Defaults to 'fill'.
-    fill_value : str, optional
-        The value to use for replacing missing values in `text_columns` if 
-        `missing_value_handling` is 'fill'. Defaults to an empty string.
-    drop_text_columns : bool, optional
-        Whether to drop the original text columns from the returned DataFrame.
-        Defaults to True.
-
-    Returns
-    -------
-    pd.DataFrame
-        The original DataFrame concatenated with the TF-IDF features. The 
-        original text column(s) can be optionally dropped.
-
-    Examples
-    --------
-    >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import apply_tfidf_vectorization
-    >>> data = pd.DataFrame({
-    ...     'message_to_investigators': ['This is a sample message', 'Another sample message', np.nan],
-    ...     'additional_notes': ['Note one', np.nan, 'Note three']
-    ... })
-    >>> processed_data = apply_tfidf_vectorization(
-    ... data, text_columns=['message_to_investigators', 'additional_notes'])
-    >>> processed_data.head()
-    """
-    is_frame(data, df_only= True, raise_exception= True )
-    text_columns = is_iterable(text_columns, exclude_string= True, transform=True)
-    tfidf_features_df = pd.DataFrame()
-
-    for column in text_columns:
-        column_data = data[column]
-        handled_data = _handle_missing_values(
-            column_data, missing_value_handling, fill_value
-            )
-        column_tfidf_df = _generate_tfidf_features(
-            handled_data, max_features, stop_words
-            )
-        tfidf_features_df = pd.concat(
-            [tfidf_features_df, column_tfidf_df], 
-            axis=1
-            )
-
-    if drop_text_columns:
-        data = data.drop(columns=text_columns)
-    prepared_data = pd.concat(
-        [data.reset_index(drop=True), tfidf_features_df.reset_index(drop=True)
-         ], axis=1
-    )
-
-    return prepared_data
-
-def _handle_missing_values(
-        column_data: pd.Series, missing_value_handling: str, fill_value: str = ''
-   ) -> pd.Series:
-    """
-    Handles missing values in a pandas Series according to the specified method.
-
-    Parameters
-    ----------
-    column_data : pd.Series
-        The Series (column) from the DataFrame for which missing values 
-        need to be handled.
-    missing_value_handling : str
-        The method for handling missing values: 'fill', 'drop', or 'ignore'.
-    fill_value : str, optional
-        The value to use for filling missing values if `missing_value_handling`
-        is 'fill'. Defaults to an empty string.
-
-    Returns
-    -------
-    pd.Series
-        The Series with missing values handled according to the specified method.
+    features : Iterable[_T]
+        An iterable of all features, such as pd.DataFrame.columns.
 
     Raises
     ------
     ValueError
-        If an invalid `missing_value_handling` option is provided.
+        If `supervised_features` are not found within `features`.
     """
-    if missing_value_handling == 'fill':
-        return column_data.fillna(fill_value)
-    elif missing_value_handling == 'drop':
-        return column_data.dropna()
-    elif missing_value_handling == 'ignore':
-        return column_data
-    else:
-        raise ValueError("Invalid missing_value_handling option. Choose"
-                         " 'fill', 'drop', or 'ignore'.")
-def _generate_tfidf_features(
-        text_data: pd.Series, max_features: int, 
-        stop_words: Union[str, List[str]]) -> pd.DataFrame:
+    # Ensure input is in list format if strings are passed
+    if isinstance(supervised_features, str):
+        supervised_features = [supervised_features]
+    if isinstance(features, str):
+        features = [features]
+    
+    # Check for feature existence
+    if not cfexist(features_to=supervised_features, features=list(features)):
+        raise ValueError(f"Features {supervised_features} not found in {list(features)}")
+
+def cfexist(features_to: List[Any], features: List[Any]) -> bool:
     """
-    Generates TF-IDF features for a given text data Series.
+    Checks if all elements of one list (features_to) exist within another list (features).
 
     Parameters
     ----------
-    text_data : pd.Series
-        The Series (column) from the DataFrame containing the text data.
-    max_features : int
-        The maximum number of features to generate.
-    stop_words : Union[str, List[str]]
-        The stop words to use for the TF-IDF vectorizer. Can be 'english' 
-        or a custom list of stop words.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing the TF-IDF features for the text data.
-    """
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    
-    tfidf_vectorizer = TfidfVectorizer(max_features=max_features, stop_words=stop_words)
-    tfidf_features = tfidf_vectorizer.fit_transform(text_data).toarray()
-    feature_names = [f'tfidf_{i}' for i in range(tfidf_features.shape[1])]
-    return pd.DataFrame(tfidf_features, columns=feature_names, index=text_data.index)
-
-def apply_bow_vectorization(
-    data: pd.DataFrame, /, 
-    text_columns: Union[str, List[str]],
-    max_features: int = 100,
-    stop_words: Union[str, List[str]] = 'english',
-    missing_value_handling: str = 'fill',
-    fill_value: str = '',
-    drop_text_columns: bool = True
- ) -> pd.DataFrame:
-    """
-    Applies Bag of Words (BoW) vectorization to one or more text columns in 
-    a pandas DataFrame. 
-    
-    Function concatenates the resulting features back into the original 
-    DataFrame.
-    
-    Bow is a simpler approach that creates a vocabulary of all the unique 
-    words in the dataset and then models each text as a count of the number 
-    of times each word appears.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The input DataFrame containing the text data to vectorize.
-    text_columns : Union[str, List[str]]
-        The name(s) of the column(s) in `data` containing the text data.
-    max_features : int, optional
-        The maximum number of features to generate. Defaults to 100.
-    stop_words : Union[str, List[str]], optional
-        The stop words to use for the BoW vectorizer. Can be 'english' or 
-        a custom list of stop words. Defaults to 'english'.
-    missing_value_handling : str, optional
-        Specifies how to handle missing values in `text_columns`. 'fill' will 
-        replace them with `fill_value`, 'ignore' will keep them as is, and 
-        'drop' will remove rows with missing values. Defaults to 'fill'.
-    fill_value : str, optional
-        The value to use for replacing missing values in `text_columns` if 
-        `missing_value_handling` is 'fill'. Defaults to an empty string.
-    drop_text_columns : bool, optional
-        Whether to drop the original text columns from the returned DataFrame.
-        Defaults to True.
-
-    Returns
-    -------
-    pd.DataFrame
-        The original DataFrame concatenated with the BoW features. The 
-        original text column(s) can be optionally dropped.
-
-    Examples
-    --------
-    >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import apply_bow_vectorization
-    >>> data = pd.DataFrame({
-    ...     'message_to_investigators': ['This is a sample message', 'Another sample message', np.nan],
-    ...     'additional_notes': ['Note one', np.nan, 'Note three']
-    ... })
-    >>> processed_data = apply_bow_vectorization(
-    ... data, text_columns=['message_to_investigators', 'additional_notes'])
-    >>> processed_data.head()
-    """
-    is_frame(data, df_only= True, raise_exception= True )
-    text_columns = is_iterable(
-        text_columns, exclude_string= True, transform=True)
-
-    bow_features_df = pd.DataFrame()
-
-    for column in text_columns:
-        column_data = data[column]
-        handled_data = _handle_missing_values(
-            column_data, missing_value_handling, fill_value)
-        column_bow_df = _generate_bow_features(
-            handled_data, max_features, stop_words)
-        bow_features_df = pd.concat([bow_features_df, column_bow_df], axis=1)
-
-    if drop_text_columns:
-        data = data.drop(columns=text_columns)
-    prepared_data = pd.concat([data.reset_index(drop=True),
-                               bow_features_df.reset_index(drop=True)],
-                              axis=1
-                              )
-
-    return prepared_data
-
-@Dataify 
-def apply_word_embeddings(
-    data: DataFrame,/, 
-    text_columns: Union[str, List[str]],
-    embedding_file_path: str,
-    n_components: int = 50,
-    missing_value_handling: str = 'fill',
-    fill_value: str = '',
-    drop_text_columns: bool = True
-  ) -> DataFrame:
-    """
-    Applies word embedding vectorization followed by dimensionality reduction 
-    to text columns in a pandas DataFrame.
-    
-    This process converts text data into a numerical form that captures 
-    semantic relationships between words, making it suitable for use in machine
-    learning models. The function leverages pre-trained word embeddings 
-    (e.g., Word2Vec, GloVe) to represent words in a high-dimensional space and 
-    then applies PCA (Principal Component Analysis) to reduce the
-    dimensionality of these embeddings to a specified number of components.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        The input DataFrame containing the text data to be processed.
-    text_columns : Union[str, List[str]]
-        The name(s) of the column(s) in `data` containing the text data to be 
-        vectorized. Can be a single column name or a list of names for multiple
-        columns.
-    embedding_file_path : str
-        The file path to the pre-trained word embeddings. This file should be 
-        in a format compatible with Gensim's KeyedVectors, such as Word2Vec's .
-        bin format or GloVe's .txt format.
-    n_components : int, optional
-        The number of dimensions to reduce the word embeddings to using PCA. 
-        Defaults to 50, balancing between retaining
-        semantic information and ensuring manageability for machine learning models.
-    missing_value_handling : str, optional
-        Specifies how to handle missing values in `text_columns`. Options are:
-        - 'fill': Replace missing values with `fill_value`.
-        - 'drop': Remove rows with missing values in any of the specified text columns.
-        - 'ignore': Leave missing values as is, which may affect the embedding process.
-        Defaults to 'fill'.
-    fill_value : str, optional
-        The value to use for replacing missing values in `text_columns` 
-        if `missing_value_handling` is 'fill'. This can be an empty string 
-        (default) or any placeholder text.
-    drop_text_columns : bool, optional
-        Whether to drop the original text columns from the returned DataFrame.
-        Defaults to True, removing the text
-        columns to only include the generated features and original non-text data.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame consisting of the original DataFrame 
-        (minus the text columns if `drop_text_columns` is True) concatenated
-        with the dimensionality-reduced word embedding features. The new 
-        features are numerical and ready for use in machine learning models.
-
-    Examples
-    --------
-    Assuming we have a DataFrame `df` with a text column 'reviews' and 
-    pre-trained word embeddings stored at 'path/to/embeddings.bin':
-
-    >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import apply_word_embeddings
-    >>> df = pd.DataFrame({'reviews': [
-    ...  'This product is great', 'Terrible customer service', 'Will buy again', 
-    ... 'Not worth the price']})
-    >>> processed_df = apply_word_embeddings(df,
-    ...                                      text_columns='reviews',
-    ...                                      embedding_file_path='path/to/embeddings.bin',
-    ...                                      n_components=50,
-    ...                                      missing_value_handling='fill',
-    ...                                      fill_value='[UNK]',
-    ...                                      drop_text_columns=True)
-    >>> processed_df.head()
-
-    This will create a DataFrame with 50 new columns, each representing a 
-    component of the reduced dimensionality word embeddings, ready for further 
-    analysis or machine learning.
-    """
-    embeddings = _load_word_embeddings(embedding_file_path)
-    
-    is_frame(data, df_only= True, raise_exception= True )
-    text_columns = is_iterable(
-        text_columns, exclude_string= True, transform=True)
-    
-    if isinstance(text_columns, str):
-        text_columns = [text_columns]
-
-    all_reduced_embeddings = []
-
-    for column in text_columns:
-        column_data = data[column]
-        handled_data = _handle_missing_values(
-            column_data, missing_value_handling, fill_value
-            )
-        avg_embeddings = _average_word_embeddings(handled_data, embeddings)
-        reduced_embeddings = _reduce_dimensions(avg_embeddings, n_components)
-        all_reduced_embeddings.append(reduced_embeddings)
-
-    # Combine reduced embeddings into a DataFrame
-    embeddings_df = pd.DataFrame(np.hstack(all_reduced_embeddings))
-
-    if drop_text_columns:
-        data = data.drop(columns=text_columns)
-    prepared_data = pd.concat([data.reset_index(drop=True), 
-                               embeddings_df.reset_index(drop=True)],
-                              axis=1
-                              )
-
-    return prepared_data
-
-def _generate_bow_features(
-        text_data: pd.Series, max_features: int, 
-        stop_words: Union[str, List[str]]
-    ) -> pd.DataFrame:
-    """
-    Generates Bag of Words (BoW) features for a given text data Series.
-
-    Parameters
-    ----------
-    text_data : pd.Series
-        The Series (column) from the DataFrame containing the text data.
-    max_features : int
-        The maximum number of features to generate.
-    stop_words : Union[str, List[str]]
-        The stop words to use for the BoW vectorizer. Can be 'english' or a 
-        custom list of stop words.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing the BoW features for the text data.
-    """
-    from sklearn.feature_extraction.text import CountVectorizer
-    bow_vectorizer = CountVectorizer(max_features=max_features, stop_words=stop_words)
-    bow_features = bow_vectorizer.fit_transform(text_data).toarray()
-    feature_names = [f'bow_{i}' for i in range(bow_features.shape[1])]
-    return pd.DataFrame(bow_features, columns=feature_names, index=text_data.index)
-
-@ensure_pkg("gensim","Word-Embeddings expect 'gensim'to be installed." )
-def _load_word_embeddings(embedding_file_path: str):
-    """
-    Loads pre-trained word embeddings from a file.
-
-    Parameters
-    ----------
-    embedding_file_path : str
-        Path to the file containing the pre-trained word embeddings.
-
-    Returns
-    -------
-    KeyedVectors
-        The loaded word embeddings.
-    """
-    from gensim.models import KeyedVectors
-    embeddings = KeyedVectors.load_word2vec_format(embedding_file_path, binary=True)
-    
-    return embeddings
-
-def _average_word_embeddings(
-        text_data: Series, embeddings
-    ) -> ArrayLike:
-    """
-    Generates an average word embedding for each text sample in a Series.
-
-    Parameters
-    ----------
-    text_data : pd.Series
-        The Series (column) from the DataFrame containing the text data.
-    embeddings : KeyedVectors
-        The pre-trained word embeddings.
-
-    Returns
-    -------
-    np.ndarray
-        An array of averaged word embeddings for the text data.
-    """
-    def get_embedding(word):
-        try:
-            return embeddings[word]
-        except KeyError:
-            return np.zeros(embeddings.vector_size)
-
-    avg_embeddings = text_data.apply(lambda x: np.mean(
-        [get_embedding(word) for word in x.split() if word in embeddings],
-        axis=0)
-        )
-    return np.vstack(avg_embeddings)
-
-def _reduce_dimensions(
-        embeddings: ArrayLike, n_components: int = 50
-        ) -> ArrayLike:
-    """
-    Reduces the dimensionality of word embeddings using PCA.
-
-    Parameters
-    ----------
-    embeddings : np.ndarray
-        The word embeddings array.
-    n_components : int
-        The number of dimensions to reduce to.
-
-    Returns
-    -------
-    np.ndarray
-        The dimensionality-reduced word embeddings.
-    """
-    from sklearn.decomposition import PCA
-    pca = PCA(n_components=n_components)
-    reduced_embeddings = pca.fit_transform(embeddings)
-    return reduced_embeddings
-
-
-
-def boxcox_transformation(
-    data: DataFrame, 
-    columns: Optional[Union[str, List[str]]] = None, 
-    min_value: float = 1, 
-    adjust_non_positive: str = 'skip',
-    verbose: int = 0, 
-    view: bool = False,
-    cmap: str = 'viridis',
-    fig_size: Tuple[int, int] = (12, 5)
-) -> (DataFrame, Dict[str, Optional[float]]):
-    """
-    Apply Box-Cox transformation to each numeric column of a pandas DataFrame.
-    
-    The Box-Cox transformation can only be applied to positive data. This function
-    offers the option to adjust columns with non-positive values by either 
-    skipping those columns or adding a constant to make all values positive 
-    before applying the transformation.
-
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        The DataFrame containing numeric data to transform. Non-numeric columns 
-        will be ignored.
-    columns : str or list of str, optional
-        List of column names to apply the Box-Cox transformation to. If None, 
-        the transformation is applied to all numeric columns in the DataFrame.
-    min_value : float or int, optional
-        The minimum value to be considered positive. Default is 1. Values in 
-        columns must be greater than this minimum to apply the Box-Cox 
-        transformation.
-    adjust_non_positive : {'skip', 'adjust'}, optional
-        Determines how to handle columns with values <= min_value:
-            - 'skip': Skip the transformation for these columns.
-            - 'adjust': Add a constant to all elements in these columns to 
-              make them > min_value before applying the transformation.
-    verbose : int, optional
-        Verbosity mode. 0 = silent, 1 = print messages about columns being 
-        skipped or adjusted.
+    features_to : List[Any]
+        List or array to be checked for existence within `features`.
         
-    view : bool, optional
-        If True, displays visualizations of the data before and after 
-        transformation.
-    cmap : str, optional
-        The colormap for visualizing the data distributions. Default is 
-        'viridis'.
-    fig_size : Tuple[int, int], optional
-        Size of the figure for the visualizations. Default is (12, 5).
+    features : List[Any]
+        List of whole features, e.g., as in pd.DataFrame.columns.
 
     Returns
     -------
-    transformed_data : pandas.DataFrame
-        The DataFrame after applying the Box-Cox transformation to eligible 
-        columns.
-    lambda_values : dict
-        A dictionary mapping column names to the lambda value used for the 
-        Box-Cox transformation. Columns that were skipped or not numeric will 
-        have a lambda value of None.
+    bool
+        True if all elements in `features_to` exist in `features`, False otherwise.
+    """
+    # Normalize input to lists, handle string inputs
+    if isinstance(features_to, str):
+        features_to = [features_to]
+    if isinstance(features, str):
+        features = [features]
+
+    # Check for existence
+    return set(features_to).issubset(features)
+
+def control_existing_estimator(
+    estimator_name: str, 
+    predefined_estimators=None, 
+    raise_error: bool = False
+) -> Union[Tuple[str, str], None]:
+    """
+    Validates and retrieves the corresponding prefix for a given estimator name.
+
+    This function checks if the provided estimator name exists in a predefined
+    list of estimators or in scikit-learn. If found, it returns the corresponding
+    prefix and full name. Otherwise, it either raises an error or returns None,
+    based on the 'raise_error' flag.
+
+    Parameters
+    ----------
+    estimator_name : str
+        The name of the estimator to check.
+    predefined_estimators : dict, default _predefined_estimators
+        A dictionary of predefined estimators.
+    raise_error : bool, default False
+        If True, raises an error when the estimator is not found. Otherwise, 
+        emits a warning.
+
+    Returns
+    -------
+    Tuple[str, str] or None
+        A tuple containing the prefix and full name of the estimator, or 
+        None if not found.
+
+    Example
+    -------
+    >>> from gofast.tools.baseutils import control_existing_estimator
+    >>> test_est = control_existing_estimator('svm')
+    >>> print(test_est)
+    ('svc', 'SupportVectorClassifier')
+    """
+    
+    from ..exceptions import EstimatorError 
+    # Define a dictionary of predefined estimators
+    _predefined_estimators ={
+            'dtc': ['DecisionTreeClassifier', 'dtc', 'dec', 'dt'],
+            'svc': ['SupportVectorClassifier', 'svc', 'sup', 'svm'],
+            'sdg': ['SGDClassifier','sdg', 'sd', 'sdg'],
+            'knn': ['KNeighborsClassifier','knn', 'kne', 'knr'],
+            'rdf': ['RandomForestClassifier', 'rdf', 'rf', 'rfc',],
+            'ada': ['AdaBoostClassifier','ada', 'adc', 'adboost'],
+            'vtc': ['VotingClassifier','vtc', 'vot', 'voting'],
+            'bag': ['BaggingClassifier', 'bag', 'bag', 'bagg'],
+            'stc': ['StackingClassifier','stc', 'sta', 'stack'],
+            'xgb': ['ExtremeGradientBoosting', 'xgboost', 'gboost', 'gbdm', 'xgb'], 
+          'logit': ['LogisticRegression', 'logit', 'lr', 'logreg'], 
+          'extree': ['ExtraTreesClassifier', 'extree', 'xtree', 'xtr']
+            }
+    predefined_estimators = predefined_estimators or _predefined_estimators
+    
+    estimator_name= estimator_name.lower().strip() if isinstance (
+        estimator_name, str) else get_estimator_name(estimator_name)
+    
+    # Check if the estimator is in the predefined list
+    for prefix, names in predefined_estimators.items():
+        lower_names = [name.lower() for name in names]
+        
+        if estimator_name in lower_names:
+            return prefix, names[0]
+
+    # If not found in predefined list, check if it's a valid scikit-learn estimator
+    if estimator_name in _get_sklearn_estimator_names():
+        return estimator_name, estimator_name
+
+    # If XGBoost is installed, check if it's an XGBoost estimator
+    if 'xgb' in predefined_estimators and estimator_name.startswith('xgb'):
+        return 'xgb', estimator_name
+
+    # If raise_error is True, raise an error; otherwise, emit a warning
+    if raise_error:
+        valid_names = [name for names in predefined_estimators.values() for name in names]
+        raise EstimatorError(f'Unsupported estimator {estimator_name!r}. '
+                             f'Expected one of {valid_names}.')
+    else:
+        available_estimators = _get_available_estimators(predefined_estimators)
+        warning_msg = (f"Estimator {estimator_name!r} not found. "
+                       f"Expected one of: {available_estimators}.")
+        warnings.warn(warning_msg)
+
+    return None
+
+def _get_sklearn_estimator_names():
+    
+    # Retrieve all scikit-learn estimator names using all_estimators
+    sklearn_estimators = [name for name, _ in all_estimators(type_filter='classifier')]
+    sklearn_estimators += [name for name, _ in all_estimators(type_filter='regressor')]
+    return sklearn_estimators
+
+def _get_available_estimators(predefined_estimators):
+    # Combine scikit-learn and predefined estimators
+    sklearn_estimators = _get_sklearn_estimator_names()
+    xgboost_estimators = ['xgb' + name for name in predefined_estimators['xgb']]
+    
+    available_estimators = sklearn_estimators + xgboost_estimators
+    return available_estimators
+
+def get_target(df, tname, inplace=True):
+    """
+    Extracts one or more target columns from a DataFrame and optionally
+    modifies the original DataFrame in place.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame from which to extract the target(s).
+    tname : str or list of str
+        The name(s) of the target column(s) to extract. These must be present
+        in the DataFrame.
+    inplace : bool, optional
+        If True, the DataFrame is modified in place by removing the target
+        column(s). Defaults to True.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - pd.Series or pd.DataFrame: The extracted target column(s).
+        - pd.DataFrame: The modified or unmodified DataFrame depending on the
+          `inplace` parameter.
+
+    Raises
+    ------
+    ValueError
+        If any of the specified target names are not in the DataFrame columns.
+    TypeError
+        If `df` is not a pandas DataFrame.
+
+    Examples
+    --------
+    >>> from sklearn.datasets import load_iris
+    >>> from gofast.baseutils import get_target 
+    >>> data = load_iris(as_frame=True).frame
+    >>> targets, modified_df = get_target(data, 'target', inplace=False)
+    >>> print(targets.head())
+    >>> print(modified_df.columns)
+
+    Notes
+    -----
+    This function is particularly useful when preparing data for machine
+    learning models, where separating features from labels is a common task.
+
+    See Also
+    --------
+    extract_target : Similar function with enhanced capabilities for handling
+                     more complex scenarios.
+    
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("Input 'df' must be a pandas DataFrame.")
+
+    if isinstance(tname, str):
+        tname = [tname]  # Convert string to list for uniform processing
+
+    missing_columns = [name for name in tname if name not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            f"Target name(s) not found in DataFrame columns: {missing_columns}")
+
+    target_data = df[tname]
+    if inplace:
+        df.drop(tname, axis=1, inplace=True)
+
+    return target_data, df
+
+@Dataify(auto_columns=True )
+def binning_statistic(
+    data, categorical_column, 
+    value_column, 
+    statistic='mean'
+    ):
+    """
+    Compute a statistic for each category in a categorical column of a dataset.
+
+    This function categorizes the data into bins based on a categorical variable and then
+    applies a statistical function to the values of another column for each category.
+
+    Parameters
+    ----------
+    data : DataFrame
+        Pandas DataFrame containing the dataset.
+    categorical_column : str
+        Name of the column in `data` which contains the categorical variable.
+    value_column : str
+        Name of the column in `data` from which the statistic will be calculated.
+    statistic : str, optional
+        The statistic to compute (default is 'mean'). Other options include 
+        'sum', 'count','median', 'min', 'max', etc.
+
+    Returns
+    -------
+    result : DataFrame
+        A DataFrame with each category and the corresponding computed statistic.
+
+    Examples
+    --------
+    >>> import pandas as pd 
+    >>> from gofast.tools.baseutils import binning_statistic
+    >>> df = pd.DataFrame({
+    ...     'Category': ['A', 'B', 'A', 'C', 'B', 'A', 'C'],
+    ...     'Value': [1, 2, 3, 4, 5, 6, 7]
+    ... })
+    >>> binning_statistic(df, 'Category', 'Value', statistic='mean')
+       Category  Mean_Value
+    0        A         3.33
+    1        B         3.50
+    2        C         5.50
+    """
+    if statistic not in ('mean', 'sum', 'count', 'median', 'min',
+                         'max', 'proportion'):
+        raise ValueError(
+            "Unsupported statistic. Please choose from 'mean',"
+            " 'sum', 'count', 'median', 'min', 'max', 'proportion'.")
+
+    is_categorical(data, categorical_column)
+    exist_features(data, features =value_column, name ="value_column")
+    grouped_data = data.groupby(categorical_column)[value_column]
+    
+    if statistic == 'mean':
+        result = grouped_data.mean().reset_index(name=f'Mean_{value_column}')
+    elif statistic == 'sum':
+        result = grouped_data.sum().reset_index(name=f'Sum_{value_column}')
+    elif statistic == 'count':
+        result = grouped_data.count().reset_index(name=f'Count_{value_column}')
+    elif statistic == 'median':
+        result = grouped_data.median().reset_index(name=f'Median_{value_column}')
+    elif statistic == 'min':
+        result = grouped_data.min().reset_index(name=f'Min_{value_column}')
+    elif statistic == 'max':
+        result = grouped_data.max().reset_index(name=f'Max_{value_column}')
+    elif statistic == 'proportion':
+        total_count = data[value_column].count()
+        proportion = grouped_data.sum() / total_count
+        result = proportion.reset_index(name=f'Proportion_{value_column}')
+        
+    return result
+
+@Dataify(auto_columns=True)
+def category_count(data, /, *categorical_columns, error='raise'):
+    """
+    Count occurrences of each category in one or more categorical columns 
+    of a dataset.
+    
+    This function computes the frequency of each unique category in the specified
+    categorical columns of a pandas DataFrame and handles different ways of error
+    reporting including raising an error, warning, or ignoring the error when a
+    specified column is not found.
+
+    Parameters
+    ----------
+    data : DataFrame
+        Pandas DataFrame containing the dataset.
+    *categorical_columns : str
+        One or multiple names of the columns in `data` which contain the 
+        categorical variables.
+    error : str, optional
+        Error handling strategy - 'raise' (default), 'warn', or 'ignore' which
+        dictates the action when a categorical column is not found.
+
+    Returns
+    -------
+    counts : DataFrame
+        A DataFrame with each category and the corresponding count from each
+        categorical column. If multiple columns are provided, columns are named as
+        'Category_i' and 'Count_i'.
+
+    Raises
+    ------
+    ValueError
+        If any categorical column is not found in the DataFrame and error is 'raise'.
+
+    Examples
+    --------
+    >>> import pandas as pd 
+    >>> from gofast.tools.baseutils import category_count
+    >>> df = pd.DataFrame({
+    ...     'Fruit': ['Apple', 'Banana', 'Apple', 'Cherry', 'Banana', 'Apple'],
+    ...     'Color': ['Red', 'Yellow', 'Green', 'Red', 'Yellow', 'Green']
+    ... })
+    >>> category_count(df, 'Fruit', 'Color')
+       Category_1  Count_1 Category_2  Count_2
+    0      Apple        3        Red        2
+    1     Banana        2     Yellow        2
+    2     Cherry        1      Green        2
+    >>> category_count(df, 'NonExistentColumn', error='warn')
+    Warning: Column 'NonExistentColumn' not found in the dataframe.
+    Empty DataFrame
+    Columns: []
+    Index: []
+    """
+    results = []
+    for i, column in enumerate(categorical_columns, 1):
+        if column not in data.columns:
+            message = f"Column '{column}' not found in the dataframe."
+            if error == 'raise':
+                raise ValueError(message)
+            elif error == 'warn':
+                warnings.warn(message)
+                continue
+            elif error == 'ignore':
+                continue
+
+        count = data[column].value_counts().reset_index()
+        count.columns = [f'Category_{i}', f'Count_{i}']
+        results.append(count)
+
+    if not results:
+        return pd.DataFrame()
+
+    # Merge all results into a single DataFrame
+    final_df = functools.reduce(lambda left, right: pd.merge(
+        left, right, left_index=True, right_index=True, how='outer'), results)
+    final_df.fillna(value=np.nan, inplace=True)
+    
+    if len( results)==1: 
+        final_df.columns =['Category', 'Count']
+    return final_df
+
+@Dataify(auto_columns=True) 
+def soft_bin_stat(
+    data, /, categorical_column, 
+    target_column, 
+    statistic='mean', 
+    update=False, 
+    ):
+    """
+    Compute a statistic for each category in a categorical 
+    column based on a binary target.
+
+    This function calculates statistics like mean, sum, or proportion 
+    for a binary target variable, grouped by categories in a 
+    specified column.
+
+    Parameters
+    ----------
+    data : DataFrame
+        Pandas DataFrame containing the dataset.
+    categorical_column : str
+        Name of the column in `data` which contains the categorical variable.
+    target_column : str
+        Name of the column in `data` which contains the binary target variable.
+    statistic : str, optional
+        The statistic to compute for the binary target (default is 'mean').
+        Other options include 'sum' and 'proportion'.
+
+    Returns
+    -------
+    result : DataFrame
+        A DataFrame with each category and the corresponding 
+        computed statistic.
+
+    Examples
+    --------
+    >>> import pandas as pd 
+    >>> from gofast.tools.baseutils import soft_bin_stat
+    >>> df = pd.DataFrame({
+    ...     'Category': ['A', 'B', 'A', 'C', 'B', 'A', 'C'],
+    ...     'Target': [1, 0, 1, 0, 1, 0, 1]
+    ... })
+    >>> soft_bin_stat(df, 'Category', 'Target', statistic='mean')
+       Category  Mean_Target
+    0        A     0.666667
+    1        B     0.500000
+    2        C     0.500000
+
+    >>> soft_bin_stat(df.values, 'col_0', 'col_1', statistic='mean')
+      col_0  Mean_col_1
+    0     A    0.666667
+    1     B    0.500000
+    2     C    0.500000
+    """
+    if statistic not in ['mean', 'sum', 'proportion']:
+        raise ValueError("Unsupported statistic. Please choose from "
+                         "'mean', 'sum', 'proportion'.")
+    
+    is_categorical(data, categorical_column)
+    exist_features(data, features= target_column, name ='Target')
+    grouped_data = data.groupby(categorical_column)[target_column]
+    
+    if statistic == 'mean':
+        result = grouped_data.mean().reset_index(name=f'Mean_{target_column}')
+    elif statistic == 'sum':
+        result = grouped_data.sum().reset_index(name=f'Sum_{target_column}')
+    elif statistic == 'proportion':
+        total_count = data[target_column].count()
+        proportion = grouped_data.sum() / total_count
+        result = proportion.reset_index(name=f'Proportion_{target_column}')
+
+    return result
+
+def reshape_to_dataframe(flattened_array, columns, error ='raise'):
+    """
+    Reshapes a flattened array into a pandas DataFrame or Series based on the
+    provided column names. If the number of columns does not allow reshaping
+    to match the array length, it raises an error.
+
+    Parameters
+    ----------
+    flattened_array : array-like
+        The flattened array to reshape.
+    columns : list of str
+        The list of column names for the DataFrame. If a single name is provided,
+        a Series is returned.
+        
+    error : {'raise', 'warn', 'ignore'}, default 'raise'
+        Specifies how to handle the situation when the number of elements in the
+        flattened array is not compatible with the number of columns required for
+        reshaping. Options are:
+        
+        - 'raise': Raises a ValueError. This is the default behavior.
+        - 'warn': Emits a warning, but still returns the original flattened array.
+        - 'ignore': Does nothing about the error, just returns the original
+          flattened array.
+        
+    Returns
+    -------
+    pandas.DataFrame or pandas.Series
+        A DataFrame or Series reshaped according to the specified columns.
+
+    Raises
+    ------
+    ValueError
+        If the total number of elements in the flattened array does not match
+        the required number for a complete reshaping.
+
+    Examples
+    --------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils import reshape_to_dataframe
+    >>> data = np.array([1, 2, 3, 4, 5, 6])
+    >>> print(reshape_to_dataframe(data, ['A', 'B', 'C']))  # DataFrame with 2 rows and 3 columns
+    >>> print(reshape_to_dataframe(data, 'A'))  # Series with 6 elements
+    >>> print(reshape_to_dataframe(data, ['A']))  # DataFrame with 6 rows and 1 column
+    """
+    # Check if the reshaping is possible
+    is_string = isinstance ( columns, str )
+    # Convert single string column name to list
+    if isinstance(columns, str):
+        columns = [columns]
+        
+    num_elements = len(flattened_array)
+    num_columns = len(columns)
+    if num_elements % num_columns != 0:
+        message = ("The number of elements in the flattened array is not"
+                   " compatible with the number of columns.")
+        if error =="raise": 
+            raise ValueError(message)
+        elif error =='warn': 
+            warnings.warn(message, UserWarning)
+        return flattened_array
+    # Calculate the number of rows that will be needed
+    num_rows = num_elements // num_columns
+
+    # Reshape the array
+    reshaped_array = np.reshape(flattened_array, (num_rows, num_columns))
+
+    # Check if we need to return a DataFrame or a Series
+    if num_columns == 1 and is_string:
+        return pd.Series(reshaped_array[:, 0], name=columns[0])
+    else:
+        return pd.DataFrame(reshaped_array, columns=columns)
+
+def save_figure(fig, filename=None, dpi=300, close=True, ax=None, 
+                tight_layout=False, bbox_inches='tight'):
+    """
+    Saves a matplotlib figure to a file and optionally closes it. 
+    Automatically generates a unique filename if not provided.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure object to save.
+    filename : str, optional
+        The name of the file to save the figure to. If None, a unique name
+        is generated based on the current date-time.
+    dpi : int, optional
+        The resolution of the output file in dots per inch.
+    close : bool, optional
+        Whether to close the figure after saving.
+    ax : matplotlib.axes.Axes or array-like of Axes, optional
+        Axes object(s) to perform operations on before saving.
+    tight_layout : bool, optional
+        Whether to adjust subplot parameters to give specified padding.
+    bbox_inches : str, optional
+        Bounding box in inches: 'tight' or a specific value.
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> from gofast.tools.baseutils import save_figure
+    >>> fig, ax = plt.subplots()
+    >>> x = np.linspace(0, 10, 100)
+    >>> y = np.sin(x)
+    >>> ax.plot(x, y)
+    >>> save_figure(fig, close=True, ax=ax)
+
+    Notes
+    -----
+    If the filename is not specified, this function generates a filename that
+    is unique to the second, using the pattern 'figure_YYYYMMDD_HHMMSS.png'.
+    If two figures are saved within the same second, it appends microseconds
+    to ensure uniqueness.
+    """
+    # Generate a unique filename if not provided
+    if filename is None:
+        date_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"figure_{date_time}.png"
+        while os.path.exists(filename):
+            date_time = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"figure_{date_time}.png"
+
+    # Adjust layout if requested
+    if tight_layout:
+        fig.tight_layout()
+
+    # Optionally adjust axis properties
+    if ax is not None:
+        if isinstance(ax, (list, tuple, np.ndarray)):
+            for a in ax:
+                a.grid(True)
+        else:
+            ax.grid(True)
+    
+    # Save the figure
+    fig.savefig(filename, dpi=dpi, bbox_inches=bbox_inches)
+    print(f"Figure saved as '{filename}' with dpi={dpi}")
+
+    # Optionally close the figure
+    if close:
+        plt.close(fig)
+        print("Figure closed.")
+
+def _handle_non_numeric(data, action='normalize'):
+    """Process input data (Series, DataFrame, or ndarray) to ensure 
+    it contains only numeric data.
+    
+    Parameters:
+    data (pandas.Series, pandas.DataFrame, numpy.ndarray): Input data to process.
+    
+    Returns:
+    numpy.ndarray: An array containing only numeric data.
+    
+    Raises:
+    ValueError: If the processed data is empty after removing non-numeric types.
+    TypeError: If the input is not a Series, DataFrame, or ndarray.
+    """
+    if isinstance(data, pd.Series) or isinstance(data, pd.DataFrame):
+        if isinstance(data, pd.Series):
+            # Convert Series to DataFrame to use select_dtypes
+            data = data.to_frame()
+            # Convert back to Series if needed
+            numeric_data = data.select_dtypes(include=[np.number]).squeeze()  
+        elif isinstance(data, pd.DataFrame):
+            # For DataFrame, use select_dtypes to filter numeric data.
+            numeric_data = data.select_dtypes(include=[np.number])
+        # For pandas data structures, select only numeric data types.
+        if numeric_data.empty:
+            raise ValueError(f"No numeric data to {action}.")
+    elif isinstance(data, np.ndarray):
+        # For numpy arrays, ensure the dtype is numeric.
+        if not np.issubdtype(data.dtype, np.number):
+            # Attempt to convert non-numeric numpy array to a numeric one by coercion
+            try:
+                numeric_data = data.astype(np.float64)
+            except ValueError:
+                raise ValueError("Array contains non-numeric data that cannot"
+                                 " be converted to numeric type.")
+        else:
+            numeric_data = data
+    else:
+        raise TypeError("Input must be a pandas Series, DataFrame, or a numpy array.")
+    
+    # Check if resulting numeric data is empty
+    if numeric_data.size == 0:
+        raise ValueError("No numeric data available after processing.")
+    
+    return numeric_data
+
+
+def _nan_checker(arr, allow_nan=False):
+    """Check and handle NaN values in a numpy array, pandas Series, 
+    or pandas DataFrame.
+
+    Parameters:
+    arr (numpy.ndarray, pandas.Series, pandas.DataFrame): The data to check
+    for NaNs.
+    allow_nan (bool): If False, raises an error if NaNs are found. If True, 
+    replaces NaNs with zero.
+
+    Returns:
+    numpy.ndarray, pandas.Series, pandas.DataFrame: Data with NaNs handled 
+    according to allow_nan.
+
+    Raises:
+    ValueError: If NaNs are found and allow_nan is False.
+    """
+    # Check for NaNs across different types
+    if not allow_nan:
+        if isinstance(arr, (np.ndarray, pd.Series, pd.DataFrame)): 
+            contain_nans = np.isnan(arr).any() if isinstance (
+                arr, np.ndarray)  else pd.isnull(arr).values.any()
+            if contain_nans:
+                raise ValueError("NaN values found, set allow_nan=True to handle them.")
+    if allow_nan:
+        if isinstance(arr, np.ndarray):
+            arr = np.nan_to_mode(arr)  # Replace NaNs with zero for numpy arrays
+        elif isinstance(arr, (pd.Series, pd.DataFrame)):
+            arr = arr.fillna(0)  # Replace NaNs with zero for pandas Series or DataFrame
+    
+    return arr
+
+def normalizer(
+    *arrays: tuple[np.ndarray], 
+    method: str = '01', 
+    scaler: str = 'naive', 
+    allow_nan: bool = False, 
+    axis: Optional[int] = None) -> List[np.ndarray]:
+    """
+    Normalize given arrays using a specified method and scaler, optionally 
+    along a specified axis. 
+    
+    Handles non-numeric data and NaNs according to the parameters.
+
+    Parameters
+    ----------
+    arrays : tuple of np.ndarray
+        A tuple containing one or more arrays (either 1D or 2D) to be normalized.
+    method : str, default '01'
+        Specifies the normalization method to apply. Options include:
+        - '01' : Normalizes the data to the range [0, 1].
+        - 'zscore' : Uses Z-score normalization (standardization).
+        - 'sum' : Scales the data so that the sum is 1.
+        Note that the 'sum' method is not compatible with the 'sklearn' scaler.
+    scaler : str, default 'naive'
+        Specifies the type of scaling technique to use. Options include:
+        - 'naive' : Simple mathematical operations based on the method.
+        - 'sklearn' : Utilizes scikit-learn's MinMaxScaler or StandardScaler,
+          depending on the `method` specified.
+    allow_nan : bool, default False
+        Determines how NaN values should be handled. If False, the function 
+        will raise an error if NaN values are present. If True, NaNs will be 
+        replaced with zero or handled by an imputer,
+        depending on the context.
+    axis : int, optional
+        The axis along which to normalize the data. By default (None), the 
+        data is normalized based on all elements. If specified, normalization 
+        is done along the axis for 2D arrays:
+        - axis=0 : Normalize each column.
+        - axis=1 : Normalize each row.
+
+    Returns
+    -------
+    list of np.ndarray
+        A list of normalized arrays. If only one array is provided, a single 
+        normalized array is returned.
+
+    Raises
+    ------
+    ValueError
+        If `allow_nan` is False and NaNs are detected.
+        If an invalid normalization method or combination of scaler and method 
+        is specified.
+
+    Notes
+    -----
+    - The function internally converts pandas DataFrames and Series to numpy 
+      arrays for processing.
+    - Non-numeric data types within arrays are filtered out before normalization.
+    - It's important to consider the scale of values and distribution of data
+      when choosing a normalization method,
+      as each method can significantly affect the outcome and interpretation 
+      of results.
+
+    Examples
+    --------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils import normalizer 
+    >>> arr = np.array([10, 20, 30, 40, 50])
+    >>> normalizer(arr, method='01', scaler='naive')
+    array([0. , 0.25, 0.5 , 0.75, 1. ])
+    
+    >>> arr2d = np.array([[1, 2], [3, 4]])
+    >>> normalizer(arr2d, method='zscore', axis=0)
+    array([[-1., -1.], [ 1.,  1.]])
+    """
+    from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
+    def _normalize_array(arr, method, scaler):
+        arr = _nan_checker(arr, allow_nan = allow_nan )
+        if scaler in ['sklearn', 'scikit-learn']:
+            is_array_1d =False 
+            if method == 'sum':
+                raise ValueError("`sum` method is not valid with `scaler`='sklearn'.")
+            scaler_object = MinMaxScaler() if method == '01' else StandardScaler()
+            
+            if arr.ndim ==1: 
+                arr = ( 
+                    np.asarray(arr).reshape(-1, 0) if axis ==0 
+                    else np.asarray(arr).reshape(1, -1)  
+                    )
+                is_array_1d =True 
+            scaled = scaler_object.fit_transform(
+                arr if axis == 0 else arr.T).T if axis == 0 else\
+                scaler_object.fit_transform(arr.T).T
+            if is_array_1d: 
+                scaled = scaled.flatten() 
+        else:  # naive scaling
+            arr, name_or_columns, index  = pandas_manager(arr )
+            if axis is None:
+                arr_min = np.min(arr)
+                arr_max = np.max(arr)
+            else:
+                arr_min = np.min(arr, axis=axis, keepdims=True)
+                arr_max = np.max(arr, axis=axis, keepdims=True)
+
+            if method == '01':
+                
+                scaled = (arr - arr_min) / (arr_max - arr_min)
+            elif method == 'zscore':
+                mean = np.mean(arr, axis=axis, keepdims=True)
+                std = np.std(arr, axis=axis, keepdims=True)
+                scaled = (arr - mean) / std
+            elif method == 'sum':
+                sum_val = np.sum(arr, axis=axis, keepdims=True)
+                scaled = arr / sum_val
+            else:
+                raise ValueError(f"Unknown method '{method}'. Valid methods"
+                                 " are '01', 'zscore', and 'sum'.")
+                
+        # revert back to series or dataframe is given as it 
+        if name_or_columns is not None: 
+            scaled = pandas_manager(
+                scaled, todo='set', name_or_columns=name_or_columns, 
+                index= index 
+                )
+
+        return scaled
+    # Normalize each array
+    normalized_arrays = []
+    for arr in arrays:
+        if not hasattr(arr, '__array__'):
+            arr = np.asarray(arr)
+        arr = _handle_non_numeric(arr)
+        normalized = _normalize_array(arr, method, scaler)
+        normalized_arrays.append(normalized)
+
+    return normalized_arrays[0] if len(normalized_arrays) == 1 else normalized_arrays
+
+def smooth1d(
+    ar, /, 
+    drop_outliers:bool=True, 
+    ma:bool=True, 
+    absolute:bool=False,
+    interpolate:bool=False, 
+    view:bool=False , 
+    x: ArrayLike=None, 
+    xlabel:str =None, 
+    ylabel:str =None, 
+    fig_size:tuple = ( 10, 5) 
+    )-> ArrayLike[float]: 
+    """ Smooth one-dimensional array. 
+    
+    Parameters 
+    -----------
+    ar: ArrayLike 1d 
+       Array of one-dimensional 
+       
+    drop_outliers: bool, default=True 
+       Remove the outliers in the data before smoothing 
+       
+    ma: bool, default=True, 
+       Use the moving average for smoothing array value. This seems more 
+       realistic.
+       
+    interpolate: bool, default=False 
+       Interpolate value to fit the original data size after NaN filling. 
+       
+    absolute: bool, default=False, 
+       keep postive the extrapolated scaled values. Indeed, when scaling data, 
+       negative value can be appear due to the polyfit function. to absolute 
+       this value, set ``absolute=True``. Note that converting to values to 
+       positive must be considered as the last option when values in the 
+       array must be positive.
+       
+    view: bool, default =False 
+       Display curves 
+    x: ArrayLike, optional 
+       Abscissa array for visualization. If given, it must be consistent 
+       with the given array `ar`. Raises error otherwise. 
+    xlabel: str, optional 
+       Label of x 
+    ylabel:str, optional 
+       label of y  
+    fig_size: tuple , default=(10, 5)
+       Matplotlib figure size
+       
+    Returns 
+    --------
+    yc: ArrayLike 
+       Smoothed array value. 
+       
+    Examples 
+    ---------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils  import smooth1d 
+    >>> # add Guassian Noise 
+    >>> np.random.seed (42)
+    >>> ar = np.random.randn (20 ) * 20 + np.random.normal ( 20 )
+    >>> ar [:7 ]
+    array([6.42891445e+00, 3.75072493e-02, 1.82905357e+01, 2.92957265e+01,
+           6.20589038e+01, 2.26399535e+01, 1.12596434e+01])
+    >>> arc = smooth1d (ar, view =True , ma =False )
+    >>> arc [:7 ]
+    array([12.08603102, 15.29819907, 18.017749  , 20.27968322, 22.11900412,
+           23.5707141 , 24.66981557])
+    >>> arc = smooth1d (ar, view =True )# ma=True by default 
+    array([ 5.0071604 ,  5.90839339,  9.6264018 , 13.94679804, 17.67369252,
+           20.34922943, 22.00836725])
+    """
+    from .mathex import moving_average 
+    # convert data into an iterable object 
+    ar = np.array(
+        is_iterable(ar, exclude_string = True , transform =True )) 
+    
+    if not _is_arraylike_1d(ar): 
+        raise TypeError("Expect one-dimensional array. Use `gofast.smoothing`"
+                        " for handling two-dimensional array.")
+    if not _is_numeric_dtype(ar): 
+        raise ValueError (f"{ar.dtype.name!r} is not allowed. Expect a numeric"
+                          " array")
+        
+    arr = ar.copy() 
+    if drop_outliers: 
+        arr = remove_outliers( 
+            arr, fill_value = np.nan , interpolate = interpolate )
+    # Nan is not allow so fill NaN if exists in array 
+    # is arraylike 1d 
+    if not interpolate:
+        # fill NaN 
+        arr = reshape ( fillNaN( arr , method ='both') ) 
+    if ma: 
+        arr = moving_average(arr, method ='sma')
+    # if extrapolation give negative  values
+    # whether to keep as it was or convert to positive values. 
+    # note that converting to positive values is 
+    arr, *_  = scale_y ( arr ) 
+    # if extrapolation gives negative values
+    # convert to positive values or keep it intact. 
+    # note that converting to positive values is 
+    # can be used as the last option when array 
+    # data must be positive.
+    if absolute: 
+        arr = np.abs (arr )
+    if view: 
+        x = np.arange ( len(ar )) if x is None else np.array (x )
+
+        check_consistency_size( x, ar )
+            
+        fig,  ax = plt.subplots (1, 1, figsize = fig_size)
+        ax.plot (x, 
+                 ar , 
+                 'ok-', 
+                 label ='raw curve'
+                 )
+        ax.plot (x, 
+                 arr, 
+                 c='#0A4CEE',
+                 marker = 'o', 
+                 label ='smooth curve'
+                 ) 
+        
+        ax.legend ( ) 
+        ax.set_xlabel (xlabel or '')
+        ax.set_ylabel ( ylabel or '') 
+        
+    return arr 
+
+def smoothing (
+    ar, /, 
+    drop_outliers = True ,
+    ma=True,
+    absolute =False,
+    interpolate=False, 
+    axis = 0, 
+    view = False, 
+    fig_size =(7, 7), 
+    xlabel =None, 
+    ylabel =None , 
+    cmap ='binary'
+    ): 
+    """ Smooth data along axis. 
+    
+    Parameters 
+    -----------
+    ar: ArrayLike 1d or 2d 
+       One dimensional or two dimensional array. 
+       
+    drop_outliers: bool, default=True 
+       Remove the outliers in the data before smoothing along the given axis 
+       
+    ma: bool, default=True, 
+       Use the moving average for smoothing array value along axis. This seems 
+       more realistic rather than using only the scaling method. 
+       
+    absolute: bool, default=False, 
+       keep positive the extrapolated scaled values. Indeed, when scaling data, 
+       negative value can be appear due to the polyfit function. to absolute 
+       this value, set ``absolute=True``. Note that converting to values to 
+       positive must be considered as the last option when values in the 
+       array must be positive.
+       
+    axis: int, default=0 
+       Axis along with the data must be smoothed. The default is the along  
+       the row. 
+       
+    view: bool, default =False 
+       Visualize the two dimensional raw and smoothing grid. 
+       
+    xlabel: str, optional 
+       Label of x 
+       
+    ylabel:str, optional 
+    
+       label of y  
+    fig_size: tuple , default=(7, 5)
+       Matplotlib figure size 
+       
+    cmap: str, default='binary'
+       Matplotlib.colormap to manage the `view` color 
+      
+    Return 
+    --------
+    arr0: ArrayLike 
+       Smoothed array value. 
+    
+    Examples 
+    ---------
+    >>> import numpy as np 
+    >>> from gofast.tools.baseutils  import smoothing
+    >>> # add Guassian Noises 
+    >>> np.random.seed (42)
+    >>> ar = np.random.randn (20, 7 ) * 20 + np.random.normal ( 20, 7 )
+    >>> ar [:3, :3 ]
+    array([[ 31.5265026 ,  18.82693352,  34.5459903 ],
+           [ 36.94091413,  12.20273182,  32.44342041],
+           [-12.90613711,  10.34646896,   1.33559714]])
+    >>> arc = smoothing (ar, view =True , ma =False )
+    >>> arc [:3, :3 ]
+    array([[32.20356863, 17.18624398, 41.22258603],
+           [33.46353806, 15.56839464, 19.20963317],
+           [23.22466498, 13.8985316 ,  5.04748584]])
+    >>> arcma = smoothing (ar, view =True )# ma=True by default
+    >>> arcma [:3, :3 ]
+    array([[23.96547827,  8.48064226, 31.81490918],
+           [26.21374675, 13.33233065, 12.29345026],
+           [22.60143346, 16.77242118,  2.07931194]])
+    >>> arcma_1 = smoothing (ar, view =True, axis =1 )
+    >>> arcma_1 [:3, :3 ]
+    array([[18.74017857, 26.91532187, 32.02914421],
+           [18.4056216 , 21.81293014, 21.98535213],
+           [-1.44359989,  3.49228057,  7.51734762]])
+    """
+    ar = np.array ( 
+        is_iterable(ar, exclude_string = True , transform =True )
+        ) 
+    if ( 
+            str (axis).lower().find('1')>=0 
+            or str(axis).lower().find('column')>=0
+            ): 
+        axis = 1 
+    else : axis =0 
+    
+    if _is_arraylike_1d(ar): 
+        ar = reshape ( ar, axis = 0 ) 
+    # make a copy
+    arr = ar.copy() 
+    along_axis = arr.shape [1] if axis == 0 else len(ar) 
+    arr0 = np.zeros_like (arr)
+    for ix in range (along_axis): 
+        value = arr [:, ix ] if axis ==0 else arr[ix , :]
+        yc = smooth1d(value, drop_outliers = drop_outliers , 
+                      ma= ma, view =False , absolute =absolute , 
+                      interpolate= interpolate, 
+                      ) 
+        if axis ==0: 
+            arr0[:, ix ] = yc 
+        else : arr0[ix, :] = yc 
+        
+    if view: 
+        fig, ax  = plt.subplots (nrows = 1, ncols = 2 , sharey= True,
+                                 figsize = fig_size )
+        ax[0].imshow(arr ,interpolation='nearest', label ='Raw Grid', 
+                     cmap = cmap )
+        ax[1].imshow (arr0, interpolation ='nearest', label = 'Smooth Grid', 
+                      cmap =cmap  )
+        
+        ax[0].set_title ('Raw Grid') 
+        ax[0].set_xlabel (xlabel or '')
+        ax[0].set_ylabel ( ylabel or '')
+        ax[1].set_title ('Smooth Grid') 
+        ax[1].set_xlabel (xlabel or '')
+        ax[1].set_ylabel ( ylabel or '')
+        plt.legend
+        plt.show () 
+        
+    if 1 in ar.shape: 
+        arr0 = reshape (arr0 )
+        
+    return arr0 
+    
+def _count_local_minima(arr: ArrayLike, method: str = 'robust') -> int:
+    if method == 'base':
+        return sum(
+            1 for i in range(1, len(arr) - 1) if arr[i] < arr[i - 1] 
+            and arr[i] < arr[i + 1]
+            )
+    else:
+        return len(argrelextrema(np.array(arr), np.less)[0])
+
+def scale_y(
+    y: ArrayLike, 
+    x: ArrayLike = None, 
+    deg: int = "auto", 
+    func: _F = None, 
+    return_xf: bool = False, 
+    view: bool = False
+) -> Tuple[ArrayLike, ArrayLike, _F]:
+    """
+    Scaling value using a fitting curve.
+
+    Create polyfit function from specific data points `x` to correct `y` 
+    values.
+
+    Parameters
+    ----------
+    y : ArrayLike
+        Array-like of y-axis. This is the array of values to be scaled.
+    x : ArrayLike, optional
+        Array-like of x-axis. If `x` is given, it should be the same length 
+        as `y`, otherwise an error will occur. Default is ``None``.
+    deg : int, optional
+        Polynomial degree. If value is ``auto`` or ``None``, it will be computed 
+        using the length of extrema (local and/or global) values.
+    func : _F, optional
+        Callable - The model function, ``f(x, ...)``. It must take the 
+        independent variable as the first argument and the parameters to 
+        fit as separate remaining arguments. `func` can be a ``linear`` 
+        function i.e. for ``f(x)= ax + b`` where `a` is slope and `b` is 
+        the intercept value. It is recommended to set up a custom function 
+        according to the `y` value distribution for better fitting. If 
+        `func` is given, `deg` is not needed.
+    return_xf : bool, optional
+        If True, returns the new x-axis and the fitting function. Default 
+        is ``False``.
+    view : bool, optional
+        If True, visualizes the original and scaled data. Default is 
+        ``False``.
+
+    Returns
+    -------
+    yc : ArrayLike
+        Array of scaled/projected sample values obtained from `f`.
+    x : ArrayLike
+        New x-axis generated from the samples (if `return_xf` is True).
+    f : _F
+        Linear or polynomial function `f` (if `return_xf` is True).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
+    >>> np.random.seed(42)
+    >>> x0 = 10 * np.random.rand(50)
+    >>> y = 2 * x0 + np.random.randn(50) - 1
+    >>> plt.scatter(x0, y)
+    >>> yc, x, f = scale_y(y, return_xf=True, view=True)
+    >>> plt.plot(x, y, label='Original Data')
+    >>> plt.plot(x, yc, label='Scaled Data')
+    >>> plt.legend()
+    >>> plt.show()
+
+    Notes
+    -----
+    - The function checks if `x` and `y` are of the same length.
+    - If `func` is provided, `deg` is ignored.
+    - The function raises a `TypeError` if `func` is not callable.
+    - The degree of the polynomial is determined by the number of local 
+      minima plus one.
+    - In case of fitting errors, a `ValueError` is raised with a suggestion 
+      to check the polynomial degree.
+      
+    References 
+    -----------
+    Wikipedia, Curve fitting, https://en.wikipedia.org/wiki/Curve_fitting
+    Wikipedia, Polynomial interpolation, https://en.wikipedia.org/wiki/Polynomial_interpolation
+    """
+    _, name_or_columns, index = pandas_manager(y )
+    
+    y = check_y(y, y_numeric =True )
+    if func is not None and (not callable(func) or not hasattr(func, '__call__')):
+        raise TypeError(f"`func` argument is not a callable; got {type(func).__name__!r}")
+
+    degree = _count_local_minima(y) + 1
+    if x is None:
+        x = np.arange(len(y))
+        
+    x = check_y(x, input_name="x")
+    
+    if len(x) != len(y):
+        raise ValueError("`x` and `y` arrays must have the same length."
+                         f" Got lengths {len(x)} and {len(y)}.")
+    
+    deg= None if deg =='auto' else deg 
+    
+    try: 
+        coeff = np.polyfit(x, y, int(deg) if deg is not None else degree)
+        f = np.poly1d(coeff) if func is None else func
+        yc = f(x)
+    except np.linalg.LinAlgError:
+        raise ValueError("Check the number of degrees. SVD did not converge"
+                         " in Linear Least Squares.")
+
+    if view: 
+        plt.plot(x, y, "-ok", label='Original Data')
+        plt.plot(x, yc, "-or", label='Scaled Data')
+        plt.xlabel ("x") ; plt.ylabel("y")
+        plt.legend()
+        plt.show()
+    
+    yc = pandas_manager(yc, todo="set", name_or_columns=name_or_columns,
+                        index =index ) 
+    
+    return (yc, x, f) if return_xf else yc
+
+def _visualize_interpolation(
+    original_data: Union[np.ndarray, pd.Series, pd.DataFrame], 
+    interpolated_data: Union[np.ndarray, pd.Series, pd.DataFrame]) -> None:
+    """
+    Helper function to visualize original and interpolated data.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    
+    if isinstance(original_data, (pd.Series, np.ndarray)
+                  ) and original_data.ndim == 1:
+        axes[0].plot(original_data, label='Original Data', marker='o')
+        axes[1].plot(interpolated_data, label='Interpolated Data', marker='o')
+    elif isinstance(original_data, (pd.DataFrame, np.ndarray)
+                    ) and original_data.ndim == 2:
+        axes[0].imshow(original_data, aspect='auto', interpolation='none')
+        axes[1].imshow(interpolated_data, aspect='auto', interpolation='none')
+    
+    axes[0].set_title('Original Data')
+    axes[1].set_title('Interpolated Data')
+    plt.show()
+
+def interpolate_data(
+    data: Union[ArrayLike, Series, DataFrame], 
+    method: str = 'slinear', 
+    order: Optional[int] = None, 
+    fill_value: str = 'extrapolate', 
+    axis: int = 0, 
+    drop_outliers: bool = False, 
+    outlier_method: str = "IQR", 
+    view: bool = False, 
+    **kwargs
+) -> Union[ArrayLike, Series, DataFrame]:
+    """
+    Interpolates 1D or 2D data, allowing for NaN values, and visualizes 
+    the result if requested.
+
+    Parameters
+    ----------
+    data : Union[np.ndarray, pd.Series, pd.DataFrame]
+        Input data to be interpolated. Can be a 1D or 2D numpy array, 
+        pandas Series, or pandas DataFrame.
+    method : str, optional
+        Method of interpolation. Options include 'linear', 'nearest', 
+        'zero', 'slinear', 'quadratic', and 'cubic'. Default is 'slinear'.
+    order : Optional[int], optional
+        The order of the spline interpolation. Only applicable for some 
+        methods. Default is None.
+    fill_value : str, optional
+        Specifies the fill value for points outside the interpolation 
+        domain. Default is 'extrapolate'.
+    axis : int, optional
+        Axis along which to interpolate, if data is a DataFrame. Default 
+        is 0.
+    drop_outliers : bool, optional
+        If True, outliers will be removed before interpolation. Default 
+        is False.
+    outlier_method : str, optional
+        Method for outlier detection if drop_outliers is True. Options 
+        are 'IQR' and 'z-score'. Default is 'IQR'.
+    view : bool, optional
+        If True, visualizes the original and interpolated data in two 
+        panels. Default is False.
+    **kwargs
+        Additional keyword arguments to pass to the interpolation 
+        function.
+
+    Returns
+    -------
+    Union[np.ndarray, pd.Series, pd.DataFrame]
+        Interpolated data, returned in the same type as the input data.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import pandas as pd 
+    >>> from gofast.tools.baseutils import interpolate_data
+    >>> s = pd.Series([1, np.nan, 3, 4, np.nan, 6])
+    >>> interpolate_data(s, view=True)
+    0    1.0
+    1    2.0
+    2    3.0
+    3    4.0
+    4    5.0
+    5    6.0
+    dtype: float64
+
+    >>> df = pd.DataFrame([[1, np.nan, 3], [4, 5, np.nan], [np.nan, 8, 9]])
+    >>> interpolate_data(df, view=True)
+         0    1    2
+    0  1.0  6.5  3.0
+    1  4.0  5.0  6.0
+    2  4.0  8.0  9.0
+
+    Notes
+    -----
+    - The 'slinear' method is not available for 2D interpolation. It 
+      defaults to 'linear' for 2D data.
+    - The 'extrapolate' fill_value is not available for 2D interpolation 
+      and defaults to 0.
+    - If drop_outliers is True, the specified outlier detection method 
+      will be applied before interpolation.
+    """
+    valid_methods = ['linear', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic']
+    method = str(method).lower() 
+    if method not in valid_methods:
+        raise ValueError(
+            f"Invalid method. Expected one of {valid_methods}, got {method}.")
+    
+    
+    if not isinstance(data, (pd.Series, pd.DataFrame)):
+        data = np.asarray(data)
+    
+    data = _handle_non_numeric(data, action="interpolate")
+    data, name_or_columns, index = pandas_manager(data)
+    if drop_outliers: 
+        data = remove_outliers(data, method=outlier_method)
+        
+    if isinstance(data, pd.Series):
+        x = np.arange(len(data))
+        y = data.values
+        mask = ~np.isnan(y)
+        f = interp1d(x[mask], y[mask], kind=method, fill_value=fill_value,
+                     bounds_error=False, **kwargs)
+        data_interp = f(x)
+        result = pd.Series(data_interp, index=data.index)
+    
+    elif isinstance(data, pd.DataFrame):
+        data_interp = data.apply(lambda col: interpolate_data(
+            col, method=method, 
+            order=order, fill_value=fill_value, axis=axis, 
+            **kwargs), axis=axis)
+        result = data_interp
+    
+    elif data.ndim == 1:
+        x = np.arange(len(data))
+        y = data
+        mask = ~np.isnan(y)
+        f = interp1d(x[mask], y[mask], kind=method, fill_value=fill_value,
+                     bounds_error=False, **kwargs)
+        data_interp = f(x)
+        result = data_interp
+    
+    elif data.ndim == 2:
+        # slinear not available for two dimensional interpolation 
+        method = 'linear' if method.find("linear")>=0 else method 
+        
+        x = np.arange(data.shape[1])
+        y = np.arange(data.shape[0])
+        x_grid, y_grid = np.meshgrid(x, y)
+        mask = ~np.isnan(data)
+        points = np.array((y_grid[mask], x_grid[mask])).T
+        values = data[mask]
+        x_new, y_new = np.meshgrid(x, y)
+        # 'extrapolate fill_value' not available.
+        fill_value = 0. if str(fill_value).find("extra")>=0 else fill_value
+        data_interp = griddata(points, values, (
+            y_new, x_new), method=method, fill_value=fill_value, **kwargs)
+        result = data_interp
+ 
+    if view:
+        _visualize_interpolation(data, result)
+    
+    if name_or_columns is not None: 
+        result = pandas_manager(
+            result, 
+            name_or_columns = name_or_columns,
+            index = index, 
+            todo='set'
+        )
+    
+    return result
+
+def denormalizer(
+    data: Union[np.ndarray, pd.Series, pd.DataFrame], 
+    min_value: float, max_value: float, 
+    method: str = '01', 
+    std_dev_factor: float = 3
+    ) -> Union[np.ndarray, pd.Series, pd.DataFrame]:
+    """
+    Denormalizes data from a normalized scale back to its original scale.
+
+    Parameters
+    ----------
+    data : Union[np.ndarray, pd.Series, pd.DataFrame]
+        The data to be denormalized, can be a NumPy array, 
+        pandas Series, or pandas DataFrame.
+    min_value : float
+        The minimum value of the original scale before normalization.
+    max_value : float
+        The maximum value of the original scale before normalization.
+    method : str, optional
+        The normalization method used. Supported methods are:
+        - '01' : Min-Max normalization to range [0, 1].
+        - 'zscore' : Standard score normalization (zero mean, unit variance).
+        - 'sum' : Normalization by sum of elements.
+        Default is '01'.
+    std_dev_factor : float, optional
+        The factor determining the range for standard deviation. 
+        This is used only for 'zscore' method. Default is 3.
+
+    Returns
+    -------
+    Union[np.ndarray, pd.Series, pd.DataFrame]
+        The denormalized data, converted back to its original scale.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported normalization method is provided.
+
+    Notes
+    -----
+    The denormalization process depends on the normalization method:
+    
+    - For Min-Max normalization ('01'):
+     .. math:: 
+         
+         `denormalized\_data = data \cdot (max\_value - min\_value) + min\_value`
+    
+    - For z-score normalization ('zscore'):
+      Assuming the original data follows a normal distribution:
+          
+      .. math:: 
+          `denormalized\_data = data \cdot std\_dev + mean`
+      where 
+      
+      .. math::
+          `mean = \frac{min\_value + max\_value}{2}`
+      and 
+      
+      .. math::
+          `std\_dev = \frac{max\_value - min\_value}{2 \cdot std\_dev\_factor}`
+    
+    - For sum normalization ('sum'):
+        
+      .. math::
+          
+          `denormalized\_data = data \cdot \frac{max\_value - min\_value}{\sum(data)} + min\_value`
 
     Examples
     --------
     >>> import numpy as np
     >>> import pandas as pd
-    >>> from gofast.tools.baseutils import boxcox_transformation
-    >>> # Create a sample DataFrame
-    >>> data = pd.DataFrame({
-    ...     'A': np.random.rand(10) * 100,
-    ...     'B': np.random.normal(loc=50, scale=10, size=10),
-    ...     'C': np.random.randint(1, 10, size=10)  # Ensure positive values for example
-    ... })
-    >>> transformed_data, lambda_values = boxcox_transformation(
-    ...     data, columns=['A', 'B'], adjust_non_positive='adjust', verbose=1)
-    >>> print(transformed_data.head())
-    >>> print(lambda_values)
-    """
-    is_frame (data, df_only=True, raise_exception= True )
-    transformed_data = pd.DataFrame()
-    lambda_values = {}
-
-    columns = is_iterable(columns, exclude_string=True, transform= True )
-    if columns is not None:
-        missing_cols = [col for col in columns if col not in data.columns]
-        if missing_cols and verbose:
-            print(f"Warning: Columns {missing_cols} not found in DataFrame."
-                  " Skipping these columns.")
-        columns = [col for col in columns if col in data.columns]
-
-    numeric_columns = data.select_dtypes(include=[np.number]).columns
-    columns_to_transform = columns if columns is not None else numeric_columns
+    >>> from gofast.tools.baseutils import denormalizer 
     
-    _, adjust_non_positive= normalize_string(adjust_non_positive, target_strs=(
-        "adjust", "skip"), return_target_str= True, raise_exception=True, 
-        error_msg= ("`adjust_non_positive` argument expects ['skip', 'adjust']"
-                    f" Got: {adjust_non_positive!r}")
+    >>> normalized_data = np.array([0, 0.5, 1])
+    >>> min_value = 10
+    >>> max_value = 20
+    >>> denormalized_data = denormalizer(normalized_data, min_value, max_value)
+    >>> print(denormalized_data)
+    [10. 15. 20.]
+
+    >>> normalized_series = pd.Series([0, 0.5, 1])
+    >>> denormalized_series = denormalizer(normalized_series, min_value, max_value)
+    >>> print(denormalized_series)
+    0    10.0
+    1    15.0
+    2    20.0
+    dtype: float64
+
+    >>> normalized_df = pd.DataFrame([[0, 0.5], [1, 0.2]])
+    >>> denormalized_df = denormalizer(normalized_df, min_value, max_value)
+    >>> print(denormalized_df)
+         0     1
+    0  10.0  15.0
+    1  20.0  12.0
+    """
+
+    if isinstance(data, (pd.Series, pd.DataFrame)):
+        data_values = data.to_numpy()
+        is_pandas = True
+    else:
+        data_values = np.asarray(data)
+        is_pandas = False
+
+    if method == '01':
+        denormalized_data = data_values * (max_value - min_value) + min_value
+    elif method == 'zscore':
+        mean = (min_value + max_value) / 2
+        # Adjusting for specified standard deviation factor
+        std_dev = (max_value - min_value) /  (2 * std_dev_factor)  
+        denormalized_data = data_values * std_dev + mean
+    elif method == 'sum':
+        total = np.sum(data_values)
+        denormalized_data = data_values * (max_value - min_value) / total + min_value
+    else:
+        raise ValueError(f"Unsupported normalization method: {method}")
+
+    if is_pandas:
+        if isinstance(data, pd.Series):
+            return pd.Series(denormalized_data, index=data.index, name=data.name)
+        elif isinstance(data, pd.DataFrame):
+            return pd.DataFrame(denormalized_data, index=data.index, columns=data.columns)
+    else:
+        return denormalized_data
+
+def _handle_get_action(
+        data: Any, action: str, error: str) -> Union[bool, Tuple[np.ndarray, Any]]:
+    is_pandas = isinstance(data, (pd.Series, pd.DataFrame))
+    if action == 'check_only':
+        return is_pandas
+
+    arr = data.to_numpy() if is_pandas else data
+    index = data.index if is_pandas else None  
+    if error == 'raise' and not is_pandas:
+        raise TypeError("Expected a pandas Series or DataFrame, but got a non-pandas type.")
+    elif error == 'warn' and not is_pandas:
+        warnings.warn("Expected a pandas Series or DataFrame, but got a non-pandas type.")
+
+    name_or_columns = data.name if isinstance(data, pd.Series) else\
+        data.columns if is_pandas else None
+        
+    if action=='keep_frame': 
+        arr= data 
+    return arr, name_or_columns, index 
+
+def _handle_set_action(data: Any, name_or_columns: Any, action: str, error: str, 
+                       index=None, 
+                       ) -> Union[pd.Series, pd.DataFrame]:
+    if name_or_columns is None and action != 'default':
+        raise ValueError(
+            "The 'name_or_columns' parameter cannot be None when setting data. "
+            "Provide a valid 'name_or_columns' or set the 'action' to 'default'."
         )
-    for column in columns_to_transform:
-        if column in numeric_columns:
-            col_data = data[column]
-            if adjust_non_positive == 'adjust' and (col_data <= min_value).any():
-                adjustment = min_value - col_data.min() + 1
-                col_data += adjustment
-                transformed, fitted_lambda = stats.boxcox(col_data)
-            elif (col_data > min_value).all():
-                transformed, fitted_lambda = stats.boxcox(col_data)
-            else:
-                transformed = col_data.copy()
-                fitted_lambda = None
-                if verbose:
-                    print(f"Column '{column}' skipped: contains values <= {min_value}.")
-            transformed_data[column] = transformed
-            lambda_values[column] = fitted_lambda
-        else:
-            if verbose:
-                print(f"Column '{column}' is not numeric and will be skipped.")
-
-    # Include non-transformed columns in the returned DataFrame
-    for column in data.columns:
-        if column not in transformed_data:
-            transformed_data[column] = data[column]
-            
-    if view:
-        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(fig_size[0]*2, fig_size[1]))
-        
-        # Determine columns for heatmap
-        heatmap_columns = columns if columns is not None else data.select_dtypes(
-            include=[np.number]).columns
-        heatmap_columns = [col for col in heatmap_columns if col in data.columns 
-                           and np.issubdtype(data[col].dtype, np.number)]
-        # Original data heatmap
-        sns.heatmap(data[heatmap_columns].corr(), ax=axs[0], annot=True, cmap=cmap)
-        axs[0].set_title('Correlation Matrix Before Transformation')
-        
-        # Apply Box-Cox Transformation
-        # Transformed data heatmap
-        sns.heatmap(transformed_data[heatmap_columns].corr(), ax=axs[1], 
-                    annot=True, cmap=cmap)
-        axs[1].set_title('Correlation Matrix After Transformation')
-        
-        plt.tight_layout()
-        plt.show()
+    is_pandas = isinstance(data, (pd.Series, pd.DataFrame))
     
-    return transformed_data, lambda_values
+    if is_pandas and name_or_columns is None:
+        # Not set anymore when is already a series or dataframe.
+        name_or_columns =  data.name if isinstance(data, pd.Series) else data.columns 
+        
+    data = np.asarray(data).squeeze()
+    if data.ndim == 1:
+        if isinstance(name_or_columns, (list, tuple)):
+            if error == 'raise':
+                raise ValueError("1D array provided; 'name_or_columns' should be a single string.")
+            name_or_columns = list(name_or_columns)[0]
+        return pd.Series(data, name=name_or_columns, index =index  )
+    else:
+        if isinstance(name_or_columns, str):
+            name_or_columns = [name_or_columns]
+        return pd.DataFrame(data, columns=name_or_columns, index =index )
 
-def check_missing_data(
-    data: DataFrame, /, 
-    view: bool = False,
-    explode: Optional[Union[Tuple[float, ...], str]] = None,
-    shadow: bool = True,
-    startangle: int = 90,
-    cmap: str = 'viridis',
-    autopct: str = '%1.1f%%',
-    verbose: int = 0
-) -> DataFrame:
+def pandas_manager(
+    data: Any, todo: str = 'get', 
+    name_or_columns: Any = None, 
+    action: str = 'as_array', 
+    error: str = 'passthrough', 
+    index: bool = None
+) -> Union[np.ndarray, Series, DataFrame, Tuple[np.ndarray, Any], bool]:
     """
-    Check for missing data in a DataFrame and optionally visualize the 
-    distribution of missing data with a pie chart.
+    Manages pandas objects by getting or setting data, with error handling.
 
     Parameters
     ----------
-    data : pandas.DataFrame
-        The DataFrame to check for missing data.
-    view : bool, optional
-        If True, displays a pie chart visualization of the missing data 
-        distribution.
-    explode : tuple of float, or 'auto', optional
-        - If a tuple, it should have a length matching the number of columns 
-          with missing data, indicating how far from the center the slice 
-          for that column will be.
-        - If 'auto', the slice with the highest percentage of missing data will 
-          be exploded. If the length does not match, an error is raised.
-    shadow : bool, optional
-        If True, draws a shadow beneath the pie chart.
-    startangle : int, optional
-        The starting angle of the pie chart. If greater than 360 degrees, 
-        the value is adjusted using modulo operation.
-    cmap : str, optional
-        The colormap to use for the pie chart.
-    autopct : str, optional
-        String format for the percentage of each slice in the pie chart. 
-    verbose : int, optional
-        If set, prints messages about automatic adjustments.
+    data : Any
+        The input data which can be a numpy array, pandas Series, or DataFrame.
+    todo : str, optional
+        Specifies the action to perform: 'get' or 'set'. Default is 'get'.
+    name_or_columns : Any, optional
+        Name for Series or columns for DataFrame when setting data.
+    action : str, optional
+        Specifies the sub-action for 'get': 'as_array' or 'check_only' or 'keep_frame'. 
+        - `as_array` converts data to Numpy array 
+        - `check_only` checks only whether the data is passed as pandas Series or 
+          DataFrame
+        - `keep_frame` keeps the dataframe but returns additionals frame attributes 
+          like columns/name  and index. 
+        Default is 'as_array'.
+    error : str, optional
+        Error handling strategy: 'passthrough', 'raise', or 'warn'. 
+        Default is 'passthrough'.
+    index : bool, optional
+        Whether to include the index when getting or setting data. Default is None.
 
     Returns
     -------
-    missing_stats : pandas.DataFrame
-        A DataFrame containing the count and percentage of missing data in 
-        each column that has missing data.
+    Union[np.ndarray, pd.Series, pd.DataFrame, Tuple[np.ndarray, Any], bool]
+        Depending on the action, returns different types of results:
+        - If `todo` is 'get' and `action` is 'check_only': returns a boolean 
+          indicating if the data is a pandas object.
+        - If `todo` is 'get' and `action` is 'as_array': returns the data as 
+          a NumPy array along with the original pandas attributes.
+        - If `todo` is 'set': returns the data as a pandas Series or DataFrame.
 
+    Raises
+    ------
+    ValueError
+        If the 'todo' parameter is not 'get' or 'set'.
+        If 'name_or_columns' is None when setting data and action is not 'default'.
+    TypeError
+        If the data is not a pandas Series or DataFrame when expected.
+
+ 
     Examples
     --------
+    >>> import numpy as np
     >>> import pandas as pd
-    >>> from gofast.tools.baseutils import check_missing_data
-    >>> # Create a sample DataFrame with missing values
-    >>> data = pd.DataFrame({
-    ...     'A': [1, 2, None, 4],
-    ...     'B': [None, 2, 3, 4],
-    ...     'C': [1, 2, 3, 4]
-    ... })
-    >>> missing_stats = check_missing_data(data, view=True, explode='auto',
-                                           shadow=True, startangle=270, verbose=1)
+    >>> from gofast.tools.baseutils import pandas_manager
+
+    Get action with pandas DataFrame:
+    >>> df = pd.DataFrame([[1, 2], [3, 4]], columns=['A', 'B'])
+    >>> array, columns, index = pandas_manager(df, todo='get', action='as_array')
+    >>> print(array)
+    [[1 2]
+     [3 4]]
+    >>> print(columns)
+    Index(['A', 'B'], dtype='object')
+
+    Set action with 1D numpy array:
+    >>> arr = np.array([1, 2, 3])
+    >>> series = pandas_manager(arr, todo='set', name_or_columns='Value')
+    >>> print(series)
+    0    1
+    1    2
+    2    3
+    Name: Value, dtype: int64
+
+    Set action with 2D numpy array:
+    >>> arr_2d = np.array([[1, 2], [3, 4]])
+    >>> df_2d = pandas_manager(arr_2d, todo='set', name_or_columns=['A', 'B'])
+    >>> print(df_2d)
+       A  B
+    0  1  2
+    1  3  4
     """
-    def validate_autopct_format(autopct: str) -> bool:
-        """
-        Validates the autopct format string for matplotlib pie chart.
+    todo = todo.lower()
+    if todo not in ('get', 'set'):
+        raise ValueError("Invalid 'todo' parameter. Must be 'get' or 'set'.")
 
-        Parameters
-        ----------
-        autopct : str
-            The format string to validate.
+    if todo == 'get':
+        return _handle_get_action(data, action, error)
+    elif todo == 'set':
+        return _handle_set_action(
+            data, name_or_columns, action , error, index)
 
-        Returns
-        -------
-        bool
-            True if the format string is valid, False otherwise.
-        """
-        # A regex pattern that matches strings like '%1.1f%%', '%1.2f%%', etc.
-        # This pattern checks for the start of the string (%), optional flags,
-        # optional width, a period, precision, the 'f' specifier, and ends with '%%'
-        pattern = r'^%[0-9]*\.?[0-9]+f%%$'
-        return bool(re.match(pattern, autopct))
-    
-    is_frame( data, df_only= True, raise_exception= True )
-    missing_count = data.isnull().sum()
-    missing_count = missing_count[missing_count > 0]
-    missing_percentage = (missing_count / len(data)) * 100
-    missing_stats = pd.DataFrame({'Count': missing_count,
-                                  'Percentage': missing_percentage})
-    
-    if view and not missing_count.empty:
-        labels = missing_stats.index.tolist()
-        sizes = missing_stats['Percentage'].values.tolist()
-        if explode == 'auto':
-            # Dynamically create explode data 
-            explode = [0.1 if i == sizes.index(max(sizes)) else 0 
-                       for i in range(len(sizes))]
-        elif explode is not None:
-            if len(explode) != len(sizes):
-                raise ValueError(
-                    f"The length of 'explode' ({len(explode)}) does not match "
-                    f"the number of columns with missing data ({len(sizes)})."
-                    " Set 'explode' to 'auto' to avoid this error.")
+
+
+
         
-        if startangle > 360:
-            startangle %= 360
-            if verbose:
-                print("Start angle greater than 180 degrees. Using modulo "
-                      f"to adjust: startangle={startangle}")
+    
         
-        if not validate_autopct_format(autopct):
-            raise ValueError("`autopct` format is not valid. It should be a"
-                             "  format string like '%1.1f%%'.")
-        fig, ax = plt.subplots()
-        ax.pie(sizes, explode=explode, labels=labels, autopct=autopct,
-               shadow=shadow, startangle=startangle, colors=plt.get_cmap(cmap)(
-                   np.linspace(0, 1, len(labels))))
-        ax.axis('equal')  # Equal aspect ratio ensures the pie is drawn as a circle.
-        ax.set_title('Missing Data Distribution')
-        plt.show()
 
-    return missing_stats
 
+        
+        
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

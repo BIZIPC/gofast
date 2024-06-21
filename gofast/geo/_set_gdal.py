@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-@author: Daniel
+@author: LKouadio <etanoyau@gmail.com> @~Daniel
 """
 import re 
 import os 
 import warnings 
 import numpy as np 
 
-from ..decorators import gdal_data_check
+from ..decorators import CheckGDALData
 
 with warnings.catch_warnings():  # noqa 
     warnings.filterwarnings(action='ignore', category=UserWarning)
-    HAS_GDAL = gdal_data_check(None)._gdal_data_found
+    HAS_GDAL = CheckGDALData(None)._gdal_data_found
     NEW_GDAL = False
 
 HAS_PROJ=False 

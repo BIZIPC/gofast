@@ -8,13 +8,12 @@ import math
 import pandas as pd
 import numpy as np
 from collections import Counter
-from .._typing import Tuple, List, Union, Optional, DataFrame
+from ..api.types import Tuple, List, Union, Optional, DataFrame
 
 from ..exceptions import StrataError 
 
 __all__=["get_depth_range", "reduce_samples", "calculate_K", "transmissivity", 
-         "compress_aquifer_data"]
-
+         "compress_aquifer_data", "AquiferGroupAnalyzer"]
 
 def compress_aquifer_data(
     *data: DataFrame, 
@@ -703,4 +702,107 @@ def _get_s_occurrence(
     counts_list = counts.most_common()
     return bs, rate, counts_list
 
+
+class AquiferGroupAnalyzer:
+    """
+    Analyzes and represents aquifer groups, particularly focusing on the 
+    relationship between permeability coefficient ``K`` values and aquifer
+    groupings. It utilizes a Mixture Learning Strategy (MXS) to impute missing
+    'k' values by creating Naive Group of Aquifer (NGA) labels based on 
+    unsupervised learning predictions.
+    
+    This approach aims to minimize bias by considering the permeability coefficient
+    'k' closely tied to aquifer groups. It determines the most representative aquifer
+    group for given 'k' values, facilitating the filling of missing 'k' values in the dataset.
+    
+    Parameters
+    ----------
+    group_data : dict, optional
+        A dictionary mapping labels to their occurrences, representativity, and
+        similarity within aquifer groups.
+    
+    Example
+    -------
+    See class documentation for a detailed example of usage.
+    
+    Attributes
+    ----------
+    group_data : dict
+        Accessor for the aquifer group data.
+    similarity : generator
+        Yields label similarities with NGA labels.
+    preponderance : generator
+        Yields label occurrences in the dataset.
+    representativity : generator
+        Yields the representativity of each label.
+    groups : generator
+        Yields groups for each label.
+    """
+
+    def __init__(self, group_data=None):
+        """
+        Initializes the AquiferGroupAnalyzer with optional group data.
+        """
+        self.group_data = group_data if group_data is not None else {}
+
+    @property
+    def similarity(self):
+        """Yields label similarities with NGA labels."""
+        return ((label, list(rep_val[1])[0]) for label, rep_val in self.group_data.items())
+
+    @property
+    def preponderance(self):
+        """Yields label occurrences in the dataset."""
+        return ((label, rep_val[0]) for label, rep_val in self.group_data.items())
+
+    @property
+    def representativity(self):
+        """Yields the representativity of each label."""
+        return ((label, round(rep_val[1].get(list(rep_val[1])[0]), 2))
+                for label, rep_val in self.group_data.items())
+
+    @property
+    def groups(self):
+        """Yields groups for each label."""
+        return ((label, {k: v for k, v in repr_val[1].items()})
+                for label, repr_val in self.group_data.items())
+
+    def __repr__(self):
+        """
+        Returns a string representation of the AquiferGroupAnalyzer object,
+        formatting the representativity of aquifer groups.
+        """
+        formatted_data = self._format(self.group_data)
+        return f"{self.__class__.__name__}({formatted_data})"
+
+    def _format(self, group_dict):
+        """
+        Formats the representativity of aquifer groups into a string.
+        
+        Parameters
+        ----------
+        group_dict : dict
+            Dictionary composed of the occurrence of the group as a function
+            of aquifer group representativity.
+        
+        Returns
+        -------
+        str
+            A formatted string representing the aquifer group data.
+        """
+        formatted_groups = []
+        for index, (label, (preponderance, groups)) in enumerate(group_dict.items()):
+            label_str = f"{'Label' if index == 0 else ' ':>17}=['{label:^3}',\n"
+            preponderance_str = f"{'>32'}(rate = '{preponderance * 100:^7}%',\n"
+            groups_str = f"{'>34'}'Groups', {groups}),\n"
+            representativity_key, representativity_value = next(iter(groups.items()))
+            representativity_str = f"{'>34'}'Representativity', ('{representativity_key}', {representativity_value}),\n"
+            similarity_str = f"{'>34'}'Similarity', '{representativity_key}')])],\n"
+
+            formatted_groups.extend([
+                label_str, preponderance_str, groups_str,
+                representativity_str, similarity_str
+            ])
+        
+        return ''.join(formatted_groups).rstrip(',\n')
 

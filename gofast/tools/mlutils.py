@@ -9,18 +9,19 @@ from __future__ import annotations
 import os
 import re 
 import copy 
-import inspect 
 import tarfile 
-import warnings 
 import pickle 
 import joblib
 import datetime 
+import warnings 
 import shutil 
 from six.moves import urllib 
 from collections import Counter 
+from pathlib import Path
+
 import numpy as np 
 import pandas as pd 
-from pathlib import Path
+from scipy import sparse
 from tqdm import tqdm
 
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -29,51 +30,51 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectFromModel, SelectKBest
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit 
+from sklearn.model_selection import StratifiedShuffleSplit 
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import OneHotEncoder,RobustScaler ,OrdinalEncoder 
 from sklearn.preprocessing import StandardScaler,MinMaxScaler,  LabelBinarizer
 from sklearn.preprocessing import LabelEncoder,Normalizer, PolynomialFeatures 
-from sklearn.utils import all_estimators, resample
+from sklearn.utils import resample
 
 from .._gofastlog import gofastlog
-from .._typing import List, Tuple, Any, Dict,  Optional,Union, Iterable,Series 
-from .._typing import _T, _F, ArrayLike, NDArray,  DataFrame, Set 
-# from ._dependency import import_optional_dependency
-from ..exceptions import ParameterNumberError, EstimatorError          
-from .coreutils import _assert_all_types, _isin,  is_in_if,  ellipsis2false
-from .coreutils import smart_format,  is_iterable, get_valid_kwargs
-from .coreutils import is_classification_task, to_numeric_dtypes, fancy_printer
+from ..api.types import List, Tuple, Any, Dict,  Optional,Union, Series 
+from ..api.types import  _F, ArrayLike, NDArray,  DataFrame
+from ..api.formatter import MetricFormatter
+from ..api.summary import ReportFactory, ResultSummary  
+from ..compat.sklearn import get_feature_names
+from ..compat.sklearn import train_test_split 
+from ..decorators import SmartProcessor 
+from .baseutils import select_features 
+from .coreutils import _assert_all_types, is_in_if,  ellipsis2false
+from .coreutils import smart_format, is_iterable, get_valid_kwargs
+from .coreutils import is_classification_task, to_numeric_dtypes
 from .coreutils import validate_feature, download_progress_hook, exist_features
 from .coreutils import contains_delimiter 
 from .funcutils import ensure_pkg
+from .validator import _is_numeric_dtype, _is_arraylike_1d 
 from .validator import get_estimator_name, check_array, check_consistent_length
-from .validator import  _is_numeric_dtype,  _is_arraylike_1d 
-from .validator import  is_frame, build_data_if, check_is_fitted
-from .validator import check_mixed_data_types 
+from .validator import is_frame, build_data_if, check_is_fitted
+from .validator import check_mixed_data_types, validate_data_types   
 
 _logger = gofastlog().get_gofast_logger(__name__)
 
-
 __all__=[ 
+    "fetch_tgz", 
+    "fetch_model", 
     "evaluate_model",
-    "select_features", 
     "get_global_score", 
     "get_correlated_features", 
-    "categorize_target", 
     "resampling", 
     "bin_counting", 
-    "labels_validator", 
-    "rename_labels_in" , 
     "soft_imputer", 
     "soft_scaler", 
     "select_feature_importances", 
     "load_model", 
+    "load_csv", 
     "make_pipe",
     "build_data_preprocessor", 
     "bi_selector", 
-    "get_target", 
-    "extract_target",  
     "stats_from_prediction", 
     "fetch_tgz", 
     "fetch_model", 
@@ -88,202 +89,441 @@ __all__=[
     "laplace_smoothing_word", 
     "handle_imbalance", 
     "smart_split",
-    "save_dataframes"
+    "save_dataframes", 
+    "stats_from_prediction", 
+    "one_click_preprocess", 
+    "soft_encoder", 
+    "display_feature_contributions"
     ]
 
+def one_click_preprocess(
+    data: DataFrame, 
+    target_columns=None,
+    columns=None, 
+    impute_strategy=None,
+    coerce_datetime=False, 
+    seed=None, 
+    **process_kws
+    ):
+    """
+    Perform all-in-one preprocessing for beginners on a pandas DataFrame,
+    simplifying common tasks like scaling, encoding, and imputation.
 
-def codify_variables (
+    This function is designed to be user-friendly, particularly for those new
+    to data analysis, by automating complex preprocessing tasks with just a
+    few parameters. It supports selective processing through specification
+    of target and other columns and incorporates flexibility with custom
+    imputation strategies and random seeds for reproducibility.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The DataFrame to preprocess. This should be a structured DataFrame
+        with any combination of numeric and categorical variables.
+    target_columns : str or list of str, optional
+        Column(s) designated as target(s) for modeling. These columns will
+        not be scaled or imputed to avoid data leakage. Defaults to None,
+        implying no columns are treated as targets.
+    columns : str or list of str, optional
+        Column names to be specifically included in preprocessing. If None
+        (default), all columns are processed.
+    impute_strategy : dict, optional
+        Defines specific strategies for imputing missing values, separately
+        for 'numeric' and 'categorical' data types. The default strategy is
+        {'numeric': 'median', 'categorical': 'constant'}.
+    coerce_datetime : bool, default=False
+        If True, tries to convert object columns to datetime data types when 
+        `data` is a numpy array. 
+    seed : int, optional
+        Random seed for operations that involve randomization, ensuring
+        reproducibility of results. Defaults to None.
+    
+    **process_kws : keyword arguments, optional
+        Additional arguments that can be passed to preprocessing steps, such
+        as parameters for scaling or encoding methods.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame with preprocessed data, where numeric columns have been
+        scaled, categorical columns encoded, and missing values imputed.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np 
+    >>> from gofast.tools import one_click_preprocess
+    >>> data = pd.DataFrame({
+    ...     'Age': [25, np.nan, 37, 59],
+    ...     'City': ['New York', 'Paris', 'Berlin', np.nan],
+    ...     'Income': [58000, 67000, np.nan, 120000]
+    ... })
+    >>> processed_data = one_click_preprocess(
+    ...     data, seed=42)
+    >>> processed_data.head()
+            Age    Income  City_Berlin  City_New York  City_Paris  City_missing
+    0 -1.180971 -0.815478            0              1           0             0
+    1 -0.203616 -0.448513            0              0           1             0
+    2 -0.203616 -0.448513            1              0           0             0
+    3  1.588203  1.712504            0              0           0             1
+
+    After preprocessing, the 'Age' and 'Income' columns will be scaled,
+    the 'City' column will be one-hot encoded, and missing values in
+    'Age' and 'City' will be imputed based on the specified strategies.
+
+    Notes
+    -----
+    The function relies on scikit-learn's ColumnTransformer to apply
+    different preprocessing steps to numeric and categorical columns.
+    It is important to note that while this function aims to simplify
+    preprocessing for beginners, understanding the underlying transformations
+    and their implications is beneficial for more advanced data analysis.
+    """
+    # Convert input data to a DataFrame if it is not one already,
+    # handling any issues silently.
+    data = build_data_if(data, to_frame=True, force=True, input_name='col',
+                         raise_warning='silence',
+                         coerce_datetime=coerce_datetime 
+                         )
+    # Set a seed for reproducibility in operations that involve randomness.
+    np.random.seed(seed)
+
+    # Set default imputation strategies if none are provided.
+    impute_strategy = impute_strategy or {
+        'numeric': 'median', 'categorical': 'constant'}
+
+    # Ensure impute_strategy is a dictionary with required keys.
+    if ( not isinstance(impute_strategy, dict) 
+        or 'numeric' not in impute_strategy 
+        or 'categorical' not in impute_strategy
+        ):
+        raise ValueError("impute_strategy must be a dictionary with"
+                         " 'numeric' and 'categorical' keys")
+
+    # Pop keyword arguments or set defaults for handling missing categories,
+    # fill values, and behavior of additional columns not specified in transformers.
+    handle_unknown = process_kws.pop("handle_unknown", 'ignore')
+    fill_value = process_kws.pop("fill_value", 'missing')
+    remainder = process_kws.pop("remainder", 'passthrough')
+
+    # If specific columns are specified, reduce the DataFrame to these columns only.
+    if columns is not None:
+        columns = list(is_iterable(columns, exclude_string= True, transform =True )) 
+        data = data[columns] if isinstance(columns, list) else data[[columns]]
+
+    # Convert target_columns to a list if it's a single column passed as string.
+    if target_columns is not None:
+        target_columns = [target_columns] if isinstance(
+            target_columns, str) else target_columns
+
+    # Identify numeric and categorical features based on their data type.
+    numeric_features = data.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    categorical_features = data.select_dtypes(include=['object']).columns.tolist()
+    
+    # Exclude target columns from the numeric features list if specified.
+    if target_columns is not None:
+        numeric_features = [col for col in numeric_features 
+                            if col not in target_columns]
+
+    # Define transformation pipeline for numeric features: imputation and scaling.
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy=impute_strategy['numeric'])),
+        ('scaler', StandardScaler())
+    ])
+
+    # Define transformation pipeline for categorical 
+    # features: imputation and one-hot encoding.
+    steps = [('imputer', SimpleImputer(
+        strategy=impute_strategy['categorical'], fill_value=fill_value))
+        ] 
+    categorical_step = ('onehot', OneHotEncoder(handle_unknown=handle_unknown))
+    if categorical_features: 
+        steps += [categorical_step]
+        
+    categorical_transformer = Pipeline(steps=steps)
+
+    # Combine the numeric and categorical transformations with ColumnTransformer.
+    transformer_steps = [('num', numeric_transformer, numeric_features)] 
+    if categorical_features: 
+        transformer_steps +=[('cat', categorical_transformer, categorical_features)]
+        
+    preprocessor = ColumnTransformer(
+        transformers=transformer_steps, remainder=remainder
+    )
+
+    # Fit and transform the data using the defined ColumnTransformer.
+    data_processed = preprocessor.fit_transform(data)
+
+    # Attempt to retrieve processed column names for creating
+    # a DataFrame from the transformed data.
+    try:
+        
+        if categorical_features: 
+            processed_columns = numeric_features + list(get_feature_names(
+                preprocessor.named_transformers_['cat']['onehot'], categorical_features)
+                ) + [col for col in data.columns 
+                     if col not in numeric_features + categorical_features]
+        else: 
+            processed_columns = numeric_features  + [
+                col for col in data.columns if col not in numeric_features]
+    except:
+        # Fallback for older versions of scikit-learn or other compatibility issues.
+        if categorical_features: 
+            cat_features_names = get_feature_names(preprocessor.named_transformers_['cat'])
+            processed_columns = numeric_features + list(cat_features_names)
+        else: 
+            processed_columns = numeric_features
+
+    # Check if the transformed data is a sparse matrix and convert to dense if necessary.
+    if sparse.issparse(data_processed):
+        data_processed = data_processed.toarray()
+
+    # Create a new DataFrame with the processed data.
+    data_processed = pd.DataFrame(
+        data_processed, columns=processed_columns, index=data.index)
+
+    # Attempt to use a custom transformer if available.
+    try:
+        from ..transformers import FloatCategoricalToInt
+        data_processed = FloatCategoricalToInt(
+            ).fit_transform(data_processed)
+    except:
+        pass
+    # Return the preprocessed DataFrame.
+    return data_processed
+
+def soft_encoder (
     data:DataFrame | ArrayLike, /, 
-    columns: list =None, 
+    columns: List[str] =None, 
     func: _F=None, 
     categories: dict=None, 
     get_dummies:bool=..., 
     parse_cols:bool =..., 
-    return_cat_codes:bool=... 
+    return_cat_codes:bool=..., 
     ) -> DataFrame: 
-    """ Encode multiple categorical variables in a dataset. 
-    
-    Encodes categorical variables in a dataset by applying specified transformations,
-    mapping categories, or performing one-hot encoding. Supports DataFrame, 
-    array-like, or dictionary inputs for data.
+    """
+    Encode multiple categorical variables in a dataset.
 
-    Parameters 
-    -----------
-    arr: pd.DataFrame, ArrayLike, dict 
-       DataFrame or Arraylike. If simple array is passed, specify the 
-       columns argumment to create a dataframe. If a dictionnary 
-       is passed, it should be convert to a dataframe. 
-       
-    columns: list,
-       List of the columns to encode the labels 
-       
-    func: callable, 
-       Function to apply the label accordingly. Label must be included in 
-       the columns values.
-       
-    categories: dict, Optional 
-       Dictionnary of column names(`key`) and labels (`values`) to 
-       map the labels.  
-       
-    get_dummies: bool, default=False 
-      returns a new encoded DataFrame  with binary columns 
-      for each category within the specified categorical columns.
+    Function facilitates the encoding of categorical variables by applying 
+    specified transformations, mapping categories to integers, or performing 
+    one-hot encoding. It accepts input data in the form of pandas DataFrames, 
+    array-like structures convertible to DataFrame, or dictionaries that are 
+    directly convertible to DataFrame.
 
-    parse_cols: bool, default=False
-      If `columns` parameter is listed as string, `parse_cols` can defaultly 
-      constructs an iterable objects. 
-    
-    return_cat_codes: bool, default=False 
-       return the categorical codes that used for mapping variables. 
-       if `func` is applied, mapper returns an empty dict. 
-       
-    Return
-    -------
-    df: New encoded Dataframe 
-    
-    Examples
+    Parameters
     ----------
-    >>> from gofast.tools.mlutils import codify_variables 
+    data : DataFrame | ArrayLike | dict
+        The input data to process. Accepts a pandas DataFrame, any array-like 
+        structure that can be converted to a DataFrame, or a dictionary that will
+        be converted to a DataFrame. In the case of array-like or dictionary
+        inputs, the structure must be suitable for DataFrame transformation.
+    columns : list, optional
+        A list of column names from the data that are to be encoded. If not 
+        provided, all columns within the DataFrame are considered for encoding.
+    func : callable, optional
+        A function to apply to the data for encoding purposes. The function 
+        should accept a single value and return a transformed value. It is 
+        applied to each element of the columns specified by `columns`, or to all
+        elements in the DataFrame if `columns` is None.
+    categories : dict, optional
+        A dictionary mapping column names (keys) to lists of categories (values)
+        that should be used for encoding. This dictionary explicitly defines 
+        the categories corresponding to each column that should be transformed.
+    get_dummies : bool, default False
+        When set to True, enables one-hot encoding for the specified `columns` 
+        or for all columns if `columns` is unspecified. This parameter converts
+        each categorical variable into multiple binary columns, one for each 
+        category, which indicates the presence of the category.
+    parse_cols : bool, default False
+        If True and `columns` is a string, this parameter will interpret the 
+        string as a list of column names, effectively parsing a single comma-
+        separated string into separate column names.
+    return_cat_codes : bool, default False
+        When True, the function returns a tuple. The first element of the tuple 
+        is the DataFrame with transformed data, and the second element is a 
+        dictionary that maps the original categorical values to the new 
+        numerical codes. This is useful for retaining a reference to the original
+        categorical data.
+
+    Returns
+    -------
+    DataFrame or (DataFrame, dict)
+        The primary return is the encoded DataFrame. If `return_cat_codes` is 
+        True, a dictionary mapping original categories to their new numerical 
+        codes is also returned.
+        
+    Raises
+    ------
+    TypeError
+        If `func` is provided but is not callable, or if `categories` 
+        is not a dictionary.
+        
+    Examples
+    --------
+    >>> from gofast.tools.mlutils import soft_encoder
     >>> # Sample dataset with categorical variables
-    >>> data = {'Height': [152, 175, 162, 140, 170], 
-        'Color': ['Red', 'Blue', 'Green', 'Red', 'Blue'],
-        'Size': ['Small', 'Large', 'Medium', 'Medium', 'Small'],
-        'Shape': ['Circle', 'Square', 'Triangle', 'Circle', 'Triangle'], 
-        'Weight': [80, 75, 55, 61, 70]
-    }
-    # List of categorical columns to one-hot encode
-    categorical_columns = ['Color', 'Size', 'Shape']
-    >>> df_encoded = codify_variables (data)
-    >>> df_encoded.head(2) 
-    Out[1]: 
+    >>> data = {'Height': [152, 175, 162, 140, 170],
+    ...         'Color': ['Red', 'Blue', 'Green', 'Red', 'Blue'],
+    ...         'Size': ['Small', 'Large', 'Medium', 'Medium', 'Small'],
+    ...         'Shape': ['Circle', 'Square', 'Triangle', 'Circle', 'Triangle'],
+    ...         'Weight': [80, 75, 55, 61, 70]
+    ...        }
+    >>> # Basic encoding without additional parameters
+    >>> df_encoded = soft_encoder(data)
+    >>> df_encoded.head(2)
+    Out[1]:
        Height  Weight  Color  Size  Shape
     0     152      80      2     2      0
     1     175      75      0     0      1
-    >>> # new return_map codes 
-    >>> df_encoded , map_codes =codify_variables (
-        data, return_cat_codes =True )
-    >>> map_codes 
-    Out[2]: 
+    
+    >>> # Returning a map of categorical codes
+    >>> df_encoded, map_codes = soft_encoder(data, return_cat_codes=True)
+    >>> map_codes
+    Out[2]:
     {'Color': {2: 'Red', 0: 'Blue', 1: 'Green'},
      'Size': {2: 'Small', 0: 'Large', 1: 'Medium'},
      'Shape': {0: 'Circle', 1: 'Square', 2: 'Triangle'}}
-    >>> def cat_func (x ): 
-        # 2: 'Red', 0: 'Blue', 1: 'Green'
-        if x=='Red': 
-            return 2 
-        elif x=='Blue': 
-            return 0
-        elif x=='Green': 
-            return 1 
-        else: return x 
-    >>> df_encoded =codify_variables (data, func= cat_func)
-    >>> df_encoded.head(3) 
-    Out[3]: 
+    
+    >>> # Custom function to manually map categories
+    >>> def cat_func(x):
+    ...     if x == 'Red':
+    ...         return 2
+    ...     elif x == 'Blue':
+    ...         return 0
+    ...     elif x == 'Green':
+    ...         return 1
+    ...     else:
+    ...         return x
+    >>> df_encoded = soft_encoder(data, func=cat_func)
+    >>> df_encoded.head(3)
+    Out[3]:
        Height  Color    Size     Shape  Weight
     0     152      2   Small    Circle      80
     1     175      0   Large    Square      75
     2     162      1  Medium  Triangle      55
-    >>> 
+    
     >>> # Perform one-hot encoding
-    >>> df_encoded = codify_variables (data, get_dummies=True )
+    >>> df_encoded = soft_encoder(data, get_dummies=True)
     >>> df_encoded.head(3)
-    Out[4]: 
-       Height  Weight  Color_Blue  ...  Shape_Circle  Shape_Square  Shape_Triangle
-    0     152      80           0  ...             1             0               0
-    1     175      75           1  ...             0             1               0
-    2     162      55           0  ...             0             0               1
-    [3 rows x 11 columns]
-    >>> codify_variables (data, categories ={'Size': ['Small', 'Large',  'Medium']})
-    Out[5]: 
+    Out[4]:
+       Height  Weight  Color_Blue  Color_Green  Color_Red  Size_Large  Size_Medium  \
+    0     152      80           0            0          1           0            0   
+    1     175      75           1            0          0           1            0   
+    2     162      55           0            1          0           0            1   
+    
+       Size_Small  Shape_Circle  Shape_Square  Shape_Triangle
+    0           1             1             0               0
+    1           0             0             1               0
+    2           0             0             0               1
+    
+    >>> # Specifying explicit categories
+    >>> df_encoded = soft_encoder(data, categories={'Size': ['Small', 'Large', 'Medium']})
+    >>> df_encoded.head()
+    Out[5]:
        Height  Color     Shape  Weight  Size
     0     152    Red    Circle      80     0
     1     175   Blue    Square      75     1
     2     162  Green  Triangle      55     2
     3     140    Red    Circle      61     2
     4     170   Blue  Triangle      70     0
-    """
-    get_dummies, parse_cols, return_cat_codes = ellipsis2false(
-        get_dummies, parse_cols, return_cat_codes )
-    # build dataframe if arr is passed rather 
-    # than a dataframe 
-    df = build_data_if( data, to_frame =True, force=True, input_name ='col',
-                        raise_warning='silence'  )
-    # now check integrity 
-    df = to_numeric_dtypes( df )
-    if columns is not None: 
-        columns = list( 
-            is_iterable(columns, exclude_string =True, transform =True, 
-                              parse_string= parse_cols 
-                              )
-                       )
-        df = select_features(df, features = columns )
-        
-    map_codes ={}     
-    if get_dummies :
-        # Perform one-hot encoding
-        # We use the pd.get_dummies() function from the pandas library 
-        # to perform one-hot encoding on the specified columns
-        return ( ( pd.get_dummies(df, columns=columns) , map_codes )
-                  if return_cat_codes else ( 
-                          pd.get_dummies(df, columns=columns) ) 
-                )
-    # ---work with category -------- 
-    # if categories is Note , get auto numeric and 
-    # categoric variablees 
-    num_columns, cat_columns = bi_selector (df ) 
     
-    # apply function if 
-    if func is not None: 
-        # just get only the columns 
-        if not callable (func): 
-            raise TypeError(
-                f"Provided func is not callable. Received: {type(func)}")
-        if len(cat_columns)==0: 
-            # no categorical data func. 
-            warnings.warn(
-                "No categorical data were detected. To transform numeric"
-                " values into categorical labels, consider using either"
-                " `gofast.tools.smart_label_classifier` or"
-                " `gofast.tools.categorize_target`."
-                )
-    
-            return df 
-        
-        for col in  cat_columns: 
-            df[col]= df[col].apply (func ) 
+    Notes
+    -----
+    - The function handles various forms of input data, applying default 
+      encoding if no specific encoding function or categories are provided.
+    - Custom encoding functions allow for flexibility in mapping categories 
+      manually.
+    - One-hot encoding transforms each categorical attribute into multiple 
+      binary attributes, enhancing model interpretability but increasing 
+      dimensionality.
+    - Specifying explicit categories helps ensure consistency in encoding, 
+      especially when some categories might not appear in the training set but 
+      could appear in future data.
 
-        return (df, map_codes) if return_cat_codes else df 
- 
-    if categories is None: 
-        categories ={}
-        for col in cat_columns: 
-            #categories[col].fillna(pd.NA, inplace =True)
-            categories[col] = list(np.unique (df[col]))
-            
-    # categories should be a mapping data 
-    if not isinstance ( categories, dict ): 
+    """
+    # Convert ellipsis inputs to False for get_dummies, parse_cols,
+    # return_cat_codes if not explicitly defined
+    get_dummies, parse_cols, return_cat_codes = ellipsis2false(
+        get_dummies, parse_cols, return_cat_codes)
+
+    # Convert input data to DataFrame if not already a DataFrame
+    df = build_data_if(data, to_frame=True, force=True, input_name='col',
+                       raise_warning='silence')
+
+    # Recheck and convert data to numeric dtypes if possible
+    df = to_numeric_dtypes(df)
+
+    # Ensure columns are iterable and parse them if necessary
+    if columns is not None:
+        columns = list(is_iterable(columns, exclude_string=True, 
+                                   transform=True, parse_string=parse_cols))
+        # Select only the specified features from the DataFrame
+        df = select_features(df, features=columns)
+    
+    # Initialize map_codes to store mappings of categorical codes to labels
+    map_codes = {}
+    # Create a CategoryMap code object for nested dict collection
+    mapresult=ResultSummary(name="CategoryMap", flatten_nested_dicts=False)
+    
+    # Perform one-hot encoding if requested
+    if get_dummies:
+        # Use pandas get_dummies for one-hot encoding and handle
+        # return type based on return_cat_codes
+        mapresult.add_results(map_codes)
+        return (pd.get_dummies(df, columns=columns), mapresult
+                ) if return_cat_codes else pd.get_dummies(df, columns=columns)
+
+    # Automatically select numeric and categorical columns if not manually specified
+    num_columns, cat_columns = bi_selector(df)
+
+    # Apply provided function to categorical columns if func is given
+    if func is not None:
+        if not callable(func):
+            raise TypeError(f"Provided func is not callable. Received: {type(func)}")
+        if len(cat_columns) == 0:
+            # Warn if no categorical data were found
+            warnings.warn("No categorical data were detected. To transform"
+                          " numeric values into categorical labels, consider"
+                          " using either `gofast.tools.smart_label_classifier`"
+                          " or `gofast.tools.categorize_target`.")
+            return df
+        
+        # Apply the function to each categorical column
+        for col in cat_columns:
+            df[col] = df[col].apply(func)
+
+        # Return DataFrame and mappings if required
+        mapresult.add_results(map_codes)
+        return (df, mapresult) if return_cat_codes else df
+
+    # Handle automatic categorization if categories are not provided
+    if categories is None:
+        categories = {}
+        for col in cat_columns:
+            categories[col] = list(np.unique(df[col]))
+
+    # Ensure categories is a dictionary
+    if not isinstance(categories, dict):
         raise TypeError("Expected a dictionary with the format"
                         " {'column name': 'labels'} to categorize data.")
 
-        
-    for col, values  in  categories.items():
+    # Map categories for each column and adjust DataFrame accordingly
+    for col, values in categories.items():
         if col not in df.columns:
-            continue  
-        values = is_iterable(
-            values, exclude_string=True, transform =True )
-        df[col] = pd.Categorical (df[col], categories = values, ordered=True )
-        # df[col] = df[col].astype ('category')
-        val=df[col].cat.codes
+            continue
+        values = is_iterable(values, exclude_string=True, transform=True)
+        df[col] = pd.Categorical(df[col], categories=values, ordered=True)
+        val = df[col].cat.codes
         temp_col = col + '_col'
-        df[temp_col] = val 
-        map_codes[col] =  dict(zip(df[col].cat.codes, df[col]))
-        # drop prevous col in the data frame 
-        df.drop ( columns =[col], inplace =True ) 
-        # rename the tem colum 
-        # to take back to pandas 
-        df.rename ( columns ={temp_col: col }, inplace =True ) 
-        
-    return (df, map_codes) if return_cat_codes else df 
+        df[temp_col] = val
+        map_codes[col] = dict(zip(val, df[col]))
+        df.drop(columns=[col], inplace=True)  # Drop original column
+        # Rename the temp column to original column name
+        df.rename(columns={temp_col: col}, inplace=True) 
+
+    # Return DataFrame and mappings if required
+    mapresult.add_results(map_codes)
+    return (df, mapresult) if return_cat_codes else df
 
 @ensure_pkg ("imblearn", extra= (
     "`imblearn` is actually a shorthand for ``imbalanced-learn``.")
@@ -888,7 +1128,8 @@ def laplace_smoothing(
         smoothed_probs_list.append(smoothed_probs)
 
     if input_type == 'dataframe':
-        return pd.DataFrame({feature: probs for feature, probs in zip(features, smoothed_probs_list)})
+        return pd.DataFrame({feature: probs for feature, probs in zip(
+            features, smoothed_probs_list)})
     else:
         return np.column_stack(smoothed_probs_list)
 
@@ -899,7 +1140,7 @@ def evaluate_model(
     y: Optional[Union[NDArray, Series]] = None, 
     yt: Optional[Union[NDArray, Series]] = None,
     y_pred: Optional[Union[NDArray, Series]] = None,
-    scorer: Union[str, _F[[NDArray, NDArray], float]] = 'accuracy',
+    scorer: Union[str, _F[[NDArray, NDArray], float]] = 'accuracy_score',
     eval: bool = False,
     **kws: Any
 ) -> Union[Tuple[Optional[Union[NDArray, Series]], Optional[float]],
@@ -964,7 +1205,7 @@ def evaluate_model(
     ...                            eval=True)
     >>> print(f'Accuracy: {score:.2f}')
     """
-    from ..metrics import _SCORERS
+    from ..metrics import fetch_scorers
     
     if y_pred is None:
         if model is None or X is None or y is None or Xt is None:
@@ -993,11 +1234,10 @@ def evaluate_model(
         if not isinstance(scorer, (str, callable)):
             raise TypeError("scorer must be a string or a callable,"
                             f" got {type(scorer).__name__}.")
-            if isinstance (scorer , str) and scorer not in _SCORERS:
-                raise ValueError(f"Use {scorer!r} function instead.")
-        
-        score_func = _SCORERS[scorer] if isinstance(scorer, str) else scorer
-        score = score_func(yt, y_pred, **kws)
+        if isinstance (scorer, str): 
+            scorer= fetch_scorers (scorer) 
+        # score_func = get_scorer(scorer, include_sklearn= True )
+        score = scorer(yt, y_pred, **kws)
         return y_pred, score
 
     return y_pred
@@ -1085,120 +1325,6 @@ def get_correlated_features(
 
     return  c_df.style.format({corr :"{:2.f}"}) if fmt else c_df 
                       
-def get_target (df, tname, inplace = True): 
-    """ Extract target and modified data in place or not . 
-    
-    :param df: A dataframe with features including the target name `tname`
-    :param tname: A target name. It should be include in the dataframe columns 
-        otherwise an error is raised. 
-    :param inplace: modified the dataframe inplace. if ``False`` return the 
-        dataframe. the *defaut* is ``True`` 
-        
-    :returns: Tuple of the target and dataframe (modified or not)
-    
-    :example: 
-    >>> from gofast.datasets import fetch_data '
-    >>> from gofast.tools.mlutils import exporttarget 
-    >>> data0 = fetch_data ('bagoue original').get('data=dfy1') 
-    >>> # no modification 
-    >>> target, data_no = exporttarget (data0 , 'sfi', False )
-    >>> len(data_no.columns ) , len(data0.columns ) 
-    ... (13, 13)
-    >>> # modified in place 
-    >>> target, data= exporttarget (data0 , 'sfi')
-    >>> len(data.columns ) , len(data0.columns ) 
-    ... (12, 12)
-        
-    """
-    df = _assert_all_types(df, pd.DataFrame)
-    validate_feature(df, tname) # assert tname 
-    if is_iterable(tname, exclude_string=True): 
-        tname = list(tname)
-        
-    t = df [tname ] 
-    df.drop (tname, axis =1 , inplace =inplace )
-    
-    return t, df
-
-def select_features(
-    data: DataFrame,
-    features: List[str] =None, 
-    include = None, 
-    exclude = None,
-    coerce: bool=...,
-    columns: list=None, 
-    verify_integrity:bool=..., 
-	parse_features: bool=..., 
-    **kwd
-    ): 
-    """ Select features  and return new dataframe.  
-    
-    :param data: a dataframe for features selections 
-    :param features: list of features to select. List of features must be in the 
-        dataframe otherwise an error occurs. 
-    :param include: the type of data to retrieve in the dataframe `df`. Can  
-        be ``number``. 
-    :param exclude: type of the data to exclude in the dataframe `df`. Can be 
-        ``number`` i.e. only non-digits data will be keep in the data return.
-    :param coerce: return the whole dataframe with transforming numeric columns.
-        Be aware that no selection is done and no error is raises instead. 
-        *default* is ``False``
-    :param columns: list, needs columns to construst a dataframe if data is 
-        passed as Numpy object array.
-    :param verify_integrity: bool, Control the data type and rebuilt the data 
-       to the right type.
-    :param parse_features:bool, parse the string and convert to an iterable object.
-    :param kwd: additional keywords arguments from `pd.astype` function 
-    
-    :ref: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.astype.html
-    
-    :examples: 
-        >>> from gofast.tools.mlutils import select_features 
-        >>> data = {"Color": ['Blue', 'Red', 'Green'], 
-                    "Name": ['Mary', "Daniel", "Augustine"], 
-                    "Price ($)": ['200', "300", "100"]
-                    }
-        >>> select_features (data, include='number')
-        Out[230]: 
-        Empty DataFrame
-        Columns: []
-        Index: [0, 1, 2]
-        >>> select_features (data, include='number', verify_integrity =True )
-        Out[232]: 
-            Price ($)
-        0       200.0
-        1       300.0
-        2       100.0
-        >>> select_features (data, features =['Color', 'Price ($)'], )
-        Out[234]: 
-           color  Price ($)
-        0   Blue        200
-        1    Red        300
-        2  Green        100
-    """
-    coerce, verify_integrity, parse_features= ellipsis2false( 
-        coerce, verify_integrity, parse_features)
-    
-    data = build_data_if(data, columns = columns, )
-  
-    if verify_integrity: 
-        data = to_numeric_dtypes(data )
-        
-    if features is not None: 
-        features= list(is_iterable (
-            features, exclude_string=True, transform=True, 
-            parse_string = parse_features)
-            )
-        validate_feature(data, features, verbose ='raise')
-    # change the dataype 
-    data = data.astype (float, errors ='ignore', **kwd) 
-    # assert whether the features are in the data columns
-    if features is not None: 
-        return data [features] 
-    # raise ValueError: at least one of include or exclude must be nonempty
-    # use coerce to no raise error and return data frame instead.
-    return data if coerce else data.select_dtypes (include, exclude) 
-    
 def get_global_score(
     cvres: Dict[str, ArrayLike],
     ignore_convergence_problem: bool = False
@@ -1260,411 +1386,6 @@ def get_global_score(
         mean_std = np.mean(cvres.get('std_test_score'))
 
     return mean_score, mean_std
-
-def cfexist(features_to: List[ArrayLike], 
-            features: List[str] )-> bool:      
-    """
-    Control features existence into another list . List or array can be a 
-    dataframe columns for pratical examples.  
-    
-    :param features_to :list of array to be controlled .
-    :param features: list of whole features located on array of `pd.DataFrame.columns` 
-    
-    :returns: 
-        -``True``:If the provided list exist in the features colnames 
-        - ``False``: if not 
-
-    """
-    if isinstance(features_to, str): 
-        features_to =[features_to]
-    if isinstance(features, str): features =[features]
-    
-    if sorted(list(features_to))== sorted(list(
-            set(features_to).intersection(set(features)))): 
-        return True
-    else: return False 
-
-def formatGenericObj(generic_obj :Iterable[_T])-> _T: 
-    """
-    Format a generic object using the number of composed items. 
-
-    :param generic_obj: Can be a ``list``, ``dict`` or other `TypeVar` 
-        classified objects.
-    
-    :Example: 
-        
-        >>> from gofast.tools.mlutils import formatGenericObj 
-        >>> formatGenericObj ({'ohmS', 'lwi', 'power', 'id', 
-        ...                         'sfi', 'magnitude'})
-        
-    """
-    
-    return ['{0}{1}{2}'.format('{', ii, '}') for ii in range(
-                    len(generic_obj))]
-
-def find_relation_between_generics(
-    gen_obj1: Iterable[Any],
-    gen_obj2: Iterable[Any],
-    operation: str = "intersection"
-) -> Set[Any]:
-    """
-    Computes either the intersection or difference of two generic iterable objects.
-
-    Based on the specified operation, this function finds either common elements 
-    (intersection) or unique elements (difference) between two iterable objects 
-    like lists, sets, or dictionaries.
-
-    Parameters
-    ----------
-    gen_obj1 : Iterable[Any]
-        The first generic iterable object. Can be a list, set, dictionary, 
-        or any iterable type.
-    gen_obj2 : Iterable[Any]
-        The second generic iterable object. Same as gen_obj1.
-    operation : str, optional
-        The operation to perform. Can be 'intersection' or 'difference'.
-        Defaults to 'intersection'.
-
-    Returns
-    -------
-    Set[Any]
-        A set containing either the common elements (intersection) or 
-        unique elements (difference) of the two iterables.
-
-    Examples
-    --------
-    Intersection:
-    >>> from gofast.tools.mlutils import find_relation_between_generics
-    >>> result = find_relation_between_generics(
-    ...     ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'], 
-    ...     {'ohmS', 'lwi', 'power'}
-    ... )
-    >>> print(result)
-    {'ohmS', 'lwi', 'power'}
-
-    Difference:
-    >>> result = find_relation_between_generics(
-    ...     ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'], 
-    ...     {'ohmS', 'lwi', 'power'},
-    ...     operation='difference'
-    ... )
-    >>> print(result)
-    {'id', 'sfi', 'magnitude'}
-
-    Notes
-    -----
-    The function returns the result as a set, irrespective of the
-    type of the input iterables. The 'operation' parameter controls
-    whether the function calculates the intersection or difference.
-    """
-
-    set1 = set(gen_obj1)
-    set2 = set(gen_obj2)
-
-    if operation == "intersection":
-        return set1.intersection(set2)
-    elif operation == "difference":
-        if len(gen_obj1) <= len(gen_obj2):
-            return set(gen_obj2).difference(set(gen_obj1))
-        else:
-            return set(gen_obj1).difference(set(gen_obj2))
-    else:
-        raise ValueError("Invalid operation specified. Choose"
-                         " 'intersection' or 'difference'.")
-
-def find_intersection_between_generics(
-    gen_obj1: Iterable[Any],
-    gen_obj2: Iterable[Any]
-) -> Set[Any]:
-    """
-    Computes the intersection of two generic iterable objects.
-
-    This function finds common elements between two iterable objects 
-    (like lists, sets, or dictionaries) and returns a set containing 
-    these shared elements. The function is designed to handle various 
-    iterable types.
-
-    Parameters
-    ----------
-    gen_obj1 : Iterable[Any]
-        The first generic iterable object. Can be a list, set, dictionary, 
-        or any iterable type.
-    gen_obj2 : Iterable[Any]
-        The second generic iterable object. Same as gen_obj1.
-
-    Returns
-    -------
-    Set[Any]
-        A set containing the elements common to both iterables.
-
-    Example
-    -------
-    >>> from gofast.tools.mlutils import find_intersection_between_generics
-    >>> result = find_intersection_between_generics(
-    ...     ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'], 
-    ...     {'ohmS', 'lwi', 'power'}
-    ... )
-    >>> print(result)
-    {'ohmS', 'lwi', 'power'}
-
-    Notes
-    -----
-    The function returns the intersection as a set, irrespective of the
-    type of the input iterables.
-    """
-
-    # Convert both iterables to sets for intersection calculation
-    set1 = set(gen_obj1)
-    set2 = set(gen_obj2)
-
-    # Calculate and return the intersection
-    return set1.intersection(set2)
-
-def findIntersectionGenObject(
-        gen_obj1: Iterable[Any], 
-        gen_obj2: Iterable[Any]
-                              )-> set: 
-    """
-    Find the intersection of generic object and keep the shortest len 
-    object `type` at the be beginning 
-  
-    :param gen_obj1: Can be a ``list``, ``dict`` or other `TypeVar` 
-        classified objects.
-    :param gen_obj2: Idem for `gen_obj1`.
-    
-    :Example: 
-        
-        >>> from gofast.tools.mlutils import findIntersectionGenObject
-        >>> findIntersectionGenObject(
-        ...    ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'], 
-        ...    {'ohmS', 'lwi', 'power'})
-        [out]:
-        ...  {'ohmS', 'lwi', 'power'}
-    
-    """
-    if len(gen_obj1) <= len(gen_obj2):
-        objType = type(gen_obj1)
-    else: objType = type(gen_obj2)
-
-    return objType(set(gen_obj1).intersection(set(gen_obj2)))
-
-def find_difference_between_generics(
-    gen_obj1: Iterable[Any],
-    gen_obj2: Iterable[Any]
-   ) -> Union[None, Set[Any]]:
-    """
-    Identifies the difference between two generic iterable objects.
-
-    This function computes the difference between two iterable objects 
-    (like lists or sets) and returns a set containing elements that are 
-    unique to the larger iterable. If both iterables are of the same length, 
-    the function returns None.
-
-    Parameters
-    ----------
-    gen_obj1 : Iterable[Any]
-        The first generic iterable object. Can be a list, set, dictionary, 
-        or any iterable type.
-    gen_obj2 : Iterable[Any]
-        The second generic iterable object. Same as gen_obj1.
-
-    Returns
-    -------
-    Union[None, Set[Any]]
-        A set containing the unique elements from the larger iterable.
-        Returns None if both
-        iterables are of equal length.
-
-    Example
-    -------
-    >>> from gofast.tools.mlutils import find_difference_between_generics
-    >>> result = find_difference_between_generics(
-    ...     ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'],
-    ...     {'ohmS', 'lwi', 'power'}
-    ... )
-    >>> print(result)
-    {'id', 'sfi', 'magnitude'}
-    """
-
-    # Convert both iterables to sets for difference calculation
-    set1 = set(gen_obj1)
-    set2 = set(gen_obj2)
-
-    # Calculate difference based on length
-    if len(set1) > len(set2):
-        return set1.difference(set2)
-    elif len(set1) < len(set2):
-        return set2.difference(set1)
-
-    # Return None if both are of equal length
-    return None
-
-def findDifferenceGenObject(gen_obj1: Iterable[Any],
-                            gen_obj2: Iterable[Any]
-                              )-> None | set: 
-    """
-    Find the difference of generic object and keep the shortest len 
-    object `type` at the be beginning: 
- 
-    :param gen_obj1: Can be a ``list``, ``dict`` or other `TypeVar` 
-        classified objects.
-    :param gen_obj2: Idem for `gen_obj1`.
-    
-    :Example: 
-        
-        >>> from gofast.tools.mlutils import findDifferenceGenObject
-        >>> findDifferenceGenObject(
-        ...    ['ohmS', 'lwi', 'power', 'id', 'sfi', 'magnitude'], 
-        ...    {'ohmS', 'lwi', 'power'})
-        [out]:
-        ...  {'ohmS', 'lwi', 'power'}
-    
-    """
-    if len(gen_obj1) < len(gen_obj2):
-        objType = type(gen_obj1)
-        return objType(set(gen_obj2).difference(set(gen_obj1)))
-    elif len(gen_obj1) > len(gen_obj2):
-        objType = type(gen_obj2)
-        return objType(set(gen_obj1).difference(set(gen_obj2)))
-    else: return 
-   
-    return set(gen_obj1).difference(set(gen_obj2))
-    
-def featureExistError(superv_features: Iterable[_T], 
-                      features:Iterable[_T]) -> None:
-    """
-    Catching feature existence errors.
-    
-    check error. If nothing occurs  then pass 
-    
-    :param superv_features: 
-        list of features presuming to be controlled or supervised
-        
-    :param features: 
-        List of all features composed of pd.core.DataFrame. 
-    
-    """
-    for ii, supff in enumerate([superv_features, features ]): 
-        if isinstance(supff, str): 
-            if ii==0 : superv_features=[superv_features]
-            if ii==1 :features =[superv_features]
-            
-    try : 
-        resH= cfexist(features_to= superv_features,
-                           features = features)
-    except TypeError: 
-        
-        print(' Features can not be a NoneType value.'
-              'Please set a right features.')
-        _logger.error('NoneType can not be a features!')
-    except :
-        raise ParameterNumberError  (
-           f'Parameters number of {features} is  not found in the '
-           ' dataframe columns ={0}'.format(list(features)))
-    
-    else: 
-        if not resH:  raise ParameterNumberError  (
-            f'Parameters number is ``{features}``. NoneType object is'
-            ' not allowed in  dataframe columns ={0}'.
-            format(list(features)))
-
-def control_existing_estimator(
-    estimator_name: str, 
-    predefined_estimators=None, 
-    raise_error: bool = False
-) -> Union[Tuple[str, str], None]:
-    """
-    Validates and retrieves the corresponding prefix for a given estimator name.
-
-    This function checks if the provided estimator name exists in a predefined
-    list of estimators or in scikit-learn. If found, it returns the corresponding
-    prefix and full name. Otherwise, it either raises an error or returns None,
-    based on the 'raise_error' flag.
-
-    Parameters
-    ----------
-    estimator_name : str
-        The name of the estimator to check.
-    predefined_estimators : dict, default _predefined_estimators
-        A dictionary of predefined estimators.
-    raise_error : bool, default False
-        If True, raises an error when the estimator is not found. Otherwise, 
-        emits a warning.
-
-    Returns
-    -------
-    Tuple[str, str] or None
-        A tuple containing the prefix and full name of the estimator, or 
-        None if not found.
-
-    Example
-    -------
-    >>> from gofast.tools.mlutils import control_existing_estimator
-    >>> test_est = control_existing_estimator('svm')
-    >>> print(test_est)
-    ('svc', 'SupportVectorClassifier')
-    """
-    # Define a dictionary of predefined estimators
-    _predefined_estimators ={
-            'dtc': ['DecisionTreeClassifier', 'dtc', 'dec', 'dt'],
-            'svc': ['SupportVectorClassifier', 'svc', 'sup', 'svm'],
-            'sdg': ['SGDClassifier','sdg', 'sd', 'sdg'],
-            'knn': ['KNeighborsClassifier','knn', 'kne', 'knr'],
-            'rdf': ['RandomForestClassifier', 'rdf', 'rf', 'rfc',],
-            'ada': ['AdaBoostClassifier','ada', 'adc', 'adboost'],
-            'vtc': ['VotingClassifier','vtc', 'vot', 'voting'],
-            'bag': ['BaggingClassifier', 'bag', 'bag', 'bagg'],
-            'stc': ['StackingClassifier','stc', 'sta', 'stack'],
-            'xgb': ['ExtremeGradientBoosting', 'xgboost', 'gboost', 'gbdm', 'xgb'], 
-          'logit': ['LogisticRegression', 'logit', 'lr', 'logreg'], 
-          'extree': ['ExtraTreesClassifier', 'extree', 'xtree', 'xtr']
-            }
-    predefined_estimators = predefined_estimators or _predefined_estimators
-    
-    estimator_name= estimator_name.lower().strip() if isinstance (
-        estimator_name, str) else get_estimator_name(estimator_name)
-    
-    # Check if the estimator is in the predefined list
-    for prefix, names in predefined_estimators.items():
-        lower_names = [name.lower() for name in names]
-        
-        if estimator_name in lower_names:
-            return prefix, names[0]
-
-    # If not found in predefined list, check if it's a valid scikit-learn estimator
-    if estimator_name in _get_sklearn_estimator_names():
-        return estimator_name, estimator_name
-
-    # If XGBoost is installed, check if it's an XGBoost estimator
-    if 'xgb' in predefined_estimators and estimator_name.startswith('xgb'):
-        return 'xgb', estimator_name
-
-    # If raise_error is True, raise an error; otherwise, emit a warning
-    if raise_error:
-        valid_names = [name for names in predefined_estimators.values() for name in names]
-        raise EstimatorError(f'Unsupported estimator {estimator_name!r}. '
-                             f'Expected one of {valid_names}.')
-    else:
-        available_estimators = _get_available_estimators(predefined_estimators)
-        warning_msg = (f"Estimator {estimator_name!r} not found. "
-                       f"Expected one of: {available_estimators}.")
-        warnings.warn(warning_msg)
-
-    return None
-
-def _get_sklearn_estimator_names():
-    # Retrieve all scikit-learn estimator names using all_estimators
-    sklearn_estimators = [name for name, _ in all_estimators(type_filter='classifier')]
-    sklearn_estimators += [name for name, _ in all_estimators(type_filter='regressor')]
-    return sklearn_estimators
-
-def _get_available_estimators(predefined_estimators):
-    # Combine scikit-learn and predefined estimators
-    sklearn_estimators = _get_sklearn_estimator_names()
-    xgboost_estimators = ['xgb' + name for name in predefined_estimators['xgb']]
-    
-    available_estimators = sklearn_estimators + xgboost_estimators
-    return available_estimators
 
 def format_model_score(
     model_score: Union[float, Dict[str, float]] = None,
@@ -1750,7 +1471,6 @@ def stats_from_prediction(y_true, y_pred, verbose=False):
             'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
         }, **stats, 
         )
-
     # Adding accuracy for classification tasks
     # Check if y_true and y_pred are categories task 
     if is_classification_task(y_true, y_pred ): 
@@ -1758,13 +1478,16 @@ def stats_from_prediction(y_true, y_pred, verbose=False):
         stats['Accuracy'] = accuracy_score(y_true, y_pred)
 
     # Printing the results if verbose is True
+    summary = MetricFormatter(
+        title="Prediction Summary", descriptor="PredictStats", 
+        **stats)
     if verbose:
-        fancy_printer(stats, "Prediction Statistics Summary" )
-
-    return stats
+        print(summary)
+       
+    return summary
 
 def save_dataframes(
-    *data: Union[pd.DataFrame, Any],
+    *data: Union[DataFrame, Any],
     file_name_prefix: str = 'data',
     output_format: str = 'excel',
     sep: str = ',',
@@ -2740,119 +2463,6 @@ def _assert_sl_target (target,  df=None, obj=None):
             
     return target
 
-def extract_target(
-    data: Union[ArrayLike, DataFrame],/, 
-    target_names: Union[str, int, List[Union[str, int]]],
-    drop: bool = True,
-    columns: Optional[List[str]] = None,
-) -> Tuple[Union[ArrayLike, Series, DataFrame], Union[ArrayLike, DataFrame]]:
-    """
-    Extracts specified target column(s) from a multidimensional numpy array
-    or pandas DataFrame. 
-    
-    with options to rename columns in a DataFrame and control over whether the 
-    extracted columns are dropped from the original data.
-
-    Parameters
-    ----------
-    data : Union[np.ndarray, pd.DataFrame]
-        The input data from which target columns are to be extracted. Can be a 
-        NumPy array or a pandas DataFrame.
-    target_names : Union[str, int, List[Union[str, int]]]
-        The name(s) or integer index/indices of the column(s) to extract. 
-        If `data` is a DataFrame, this can be a mix of column names and indices. 
-        If `data` is a NumPy array, only integer indices are allowed.
-    drop : bool, default True
-        If True, the extracted columns are removed from the original `data`. 
-        If False, the original `data` remains unchanged.
-    columns : Optional[List[str]], default None
-        If provided and `data` is a DataFrame, specifies new names for the 
-        columns in `data`. The length of `columns` must match the number of 
-        columns in `data`. This parameter is ignored if `data` is a NumPy array.
-
-    Returns
-    -------
-    Tuple[Union[np.ndarray, pd.Series, pd.DataFrame], Union[np.ndarray, pd.DataFrame]]
-        A tuple containing two elements:
-        - The extracted column(s) as a NumPy array or pandas Series/DataFrame.
-        - The original data with the extracted columns optionally removed, as a
-          NumPy array or pandas DataFrame.
-
-    Raises
-    ------
-    ValueError
-        If `columns` is provided and its length does not match the number of 
-        columns in `data`.
-        If any of the specified `target_names` do not exist in `data`.
-        If `target_names` includes a mix of strings and integers for a NumPy 
-        array input.
-
-    Examples
-    --------
-    >>> import pandas as pd 
-    >>> from gofast.tools.mlutils import extract_target
-    >>> df = pd.DataFrame({
-    ...     'A': [1, 2, 3],
-    ...     'B': [4, 5, 6],
-    ...     'C': [7, 8, 9]
-    ... })
-    >>> target, remaining = extract_target(df, 'B', drop=True)
-    >>> print(target)
-    0    4
-    1    5
-    2    6
-    Name: B, dtype: int64
-    >>> print(remaining)
-       A  C
-    0  1  7
-    1  2  8
-    2  3  9
-    >>> arr = np.random.rand(5, 3)
-    >>> target, modified_arr = extract_target(arr, 2, )
-    >>> print(target)
-    >>> print(modified_arr)
-    """
-    is_frame = isinstance(data, pd.DataFrame)
-    
-    if is_frame and columns is not None:
-        if len(columns) != data.shape[1]:
-            raise ValueError("`columns` must match the number of columns in"
-                             f" `data`. Expected {data.shape[1]}, got {len(columns)}.")
-        data.columns = columns
-
-    if isinstance(target_names, (int, str)):
-        target_names = [target_names]
-
-    if all(isinstance(name, int) for name in target_names):
-        if max(target_names, default=-1) >= data.shape[1]:
-            raise ValueError("All integer indices must be within the"
-                             " column range of the data.")
-    elif any(isinstance(name, int) for name in target_names) and is_frame:
-        target_names = [data.columns[name] if isinstance(name, int) 
-                        else name for name in target_names]
-
-    if is_frame:
-        missing_cols = [name for name in target_names 
-                        if name not in data.columns]
-        if missing_cols:
-            raise ValueError(f"Column names {missing_cols} do not match "
-                             "any column in the DataFrame.")
-        target = data.loc[:, target_names]
-        if drop:
-            data = data.drop(columns=target_names)
-    else:
-        if any(isinstance(name, str) for name in target_names):
-            raise ValueError("String names are not allowed for target names"
-                             " when data is a NumPy array.")
-        target = data[:, target_names]
-        if drop:
-            data = np.delete(data, target_names, axis=1)
-            
-    if  isinstance (target, np.ndarray): # squeeze the array 
-        target = np.squeeze (target)
-        
-    return target, data
-
 def _extract_target(
         X, target: Union[ArrayLike, int, str, List[Union[int, str]]]):
     """
@@ -3156,7 +2766,6 @@ def handle_imbalance(
 
     return X_resampled, y_resampled
 
-
 def soft_data_split(
     X, y=None, *,
     test_size=0.2,
@@ -3324,301 +2933,7 @@ def load_model(
         return model_info
 
     return loaded_data
-
-def categorize_target(
-    arr :ArrayLike |Series , /, 
-    func: _F = None,  
-    labels: int | List[int] = None, 
-    rename_labels: Optional[str] = None, 
-    coerce:bool=False,
-    order:str='strict',
-    ): 
-    """ Categorize array to hold the given identifier labels. 
-    
-    Classifier numerical values according to the given label values. Labels 
-    are a list of integers where each integer is a group of unique identifier  
-    of a sample in the dataset. 
-    
-    Parameters 
-    -----------
-    arr: array-like |pandas.Series 
-        array or series containing numerical values. If a non-numerical values 
-        is given , an errors will raises. 
-    func: Callable, 
-        Function to categorize the target y.  
-    labels: int, list of int, 
-        if an integer value is given, it should be considered as the number 
-        of category to split 'y'. For instance ``label=3`` applied on 
-        the first ten number, the labels values should be ``[0, 1, 2]``. 
-        If labels are given as a list, items must be self-contain in the 
-        target 'y'.
-    rename_labels: list of str; 
-        list of string or values to replace the label integer identifier. 
-    coerce: bool, default =False, 
-        force the new label names passed to `rename_labels` to appear in the 
-        target including or not some integer identifier class label. If 
-        `coerce` is ``True``, the target array holds the dtype of new_array. 
-
-    Return
-    --------
-    arr: Arraylike |pandas.Series
-        The category array with unique identifer labels 
-        
-    Examples 
-    --------
-
-    >>> from gofast.tools.mlutils import categorize_target 
-    >>> def binfunc(v): 
-            if v < 3 : return 0 
-            else : return 1 
-    >>> arr = np.arange (10 )
-    >>> arr 
-    ... array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    >>> target = categorize_target(arr, func =binfunc)
-    ... array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1], dtype=int64)
-    >>> categorize_target(arr, labels =3 )
-    ... array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
-    >>> array([2, 2, 2, 2, 1, 1, 1, 0, 0, 0]) 
-    >>> categorize_target(arr, labels =3 , order =None )
-    ... array([0, 0, 0, 0, 1, 1, 1, 2, 2, 2])
-    >>> categorize_target(arr[::-1], labels =3 , order =None )
-    ... array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2]) # reverse does not change
-    >>> categorize_target(arr, labels =[0 , 2,  4]  )
-    ... array([0, 0, 0, 2, 2, 4, 4, 4, 4, 4])
-
-    """
-    arr = _assert_all_types(arr, np.ndarray, pd.Series) 
-    is_arr =False 
-    if isinstance (arr, np.ndarray ) :
-        arr = pd.Series (arr  , name = 'none') 
-        is_arr =True 
-        
-    if func is not None: 
-        if not  inspect.isfunction (func): 
-            raise TypeError (
-                f'Expect a function but got {type(func).__name__!r}')
-            
-        arr= arr.apply (func )
-        
-        return  arr.values  if is_arr else arr   
-    
-    name = arr.name 
-    arr = arr.values 
-
-    if labels is not None: 
-        arr = _cattarget (arr , labels, order =order)
-        if rename_labels is not None: 
-            arr = rename_labels_in( arr , rename_labels , coerce =coerce ) 
-
-    return arr  if is_arr else pd.Series (arr, name =name  )
-
-def rename_labels_in (
-        arr, new_names, coerce = False): 
-    """ Rename label by a new names 
-    
-    :param arr: arr: array-like |pandas.Series 
-         array or series containing numerical values. If a non-numerical values 
-         is given , an errors will raises. 
-    :param new_names: list of str; 
-        list of string or values to replace the label integer identifier. 
-    :param coerce: bool, default =False, 
-        force the 'new_names' to appear in the target including or not some 
-        integer identifier class label. `coerce` is ``True``, the target array 
-        hold the dtype of new_array; coercing the label names will not yield 
-        error. Consequently can introduce an unexpected results.
-    :return: array-like, 
-        An array-like with full new label names. 
-    """
-    
-    if not is_iterable(new_names): 
-        new_names= [new_names]
-    true_labels = np.unique (arr) 
-    
-    if labels_validator(arr, new_names, return_bool= True): 
-        return arr 
-
-    if len(true_labels) != len(new_names):
-        if not coerce: 
-            raise ValueError(
-                "Can't rename labels; the new names and unique label" 
-                " identifiers size must be consistent; expect {}, got " 
-                "{} label(s).".format(len(true_labels), len(new_names))
-                             )
-        if len(true_labels) < len(new_names) : 
-            new_names = new_names [: len(new_names)]
-        else: 
-            new_names = list(new_names)  + list(
-                true_labels)[len(new_names):]
-            warnings.warn("Number of the given labels '{}' and values '{}'"
-                          " are not consistent. Be aware that this could "
-                          "yield an expected results.".format(
-                              len(new_names), len(true_labels)))
-            
-    new_names = np.array(new_names)
-    # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    # hold the type of arr to operate the 
-    # element wise comparaison if not a 
-    # ValueError:' invalid literal for int() with base 10' 
-    # will appear. 
-    if not np.issubdtype(np.array(new_names).dtype, np.number): 
-        arr= arr.astype (np.array(new_names).dtype)
-        true_labels = true_labels.astype (np.array(new_names).dtype)
-
-    for el , nel in zip (true_labels, new_names ): 
-        # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-        # element comparison throws a future warning here 
-        # because of a disagreement between Numpy and native python 
-        # Numpy version ='1.22.4' while python version = 3.9.12
-        # this code is brittle and requires these versions above. 
-        # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-        # suppress element wise comparison warning locally 
-        with warnings.catch_warnings():
-            warnings.simplefilter(action='ignore', category=FutureWarning)
-            arr [arr == el ] = nel 
-            
-    return arr 
-
-    
-def _cattarget (ar , labels , order=None): 
-    """ A shadow function of :func:`gofast.tools.mlutils.cattarget`. 
-    
-    :param ar: array-like of numerical values 
-    :param labels: int or list of int, 
-        the number of category to split 'ar'into. 
-    :param order: str, optional, 
-        the order of label to be categorized. If None or any other values, 
-        the categorization of labels considers only the length of array. 
-        For instance a reverse array and non-reverse array yield the same 
-        categorization samples. When order is set to ``strict``, the 
-        categorization  strictly considers the value of each element. 
-        
-    :return: array-like of int , array of categorized values.  
-    """
-    # assert labels
-    if is_iterable (labels):
-        labels =[int (_assert_all_types(lab, int, float)) 
-                 for lab in labels ]
-        labels = np.array (labels , dtype = np.int32 ) 
-        cc = labels 
-        # assert whether element is on the array 
-        s = set (ar).intersection(labels) 
-        if len(s) != len(labels): 
-            mv = set(labels).difference (s) 
-            
-            fmt = [f"{'s' if len(mv) >1 else''} ", mv,
-                   f"{'is' if len(mv) <=1 else'are'}"]
-            warnings.warn("Label values must be array self-contain item. "
-                           "Label{0} {1} {2} missing in the array.".format(
-                               *fmt)
-                          )
-            raise ValueError (
-                "label value{0} {1} {2} missing in the array.".format(*fmt))
-    else : 
-        labels = int (_assert_all_types(labels , int, float))
-        labels = np.linspace ( min(ar), max (ar), labels + 1 ) #+ .00000001 
-        #array([ 0.,  6., 12., 18.])
-        # split arr and get the range of with max bound 
-        cc = np.arange (len(labels)) #[0, 1, 3]
-        # we expect three classes [ 0, 1, 3 ] while maximum 
-        # value is 18 . we want the value value to be >= 12 which 
-        # include 18 , so remove the 18 in the list 
-        labels = labels [:-1] # remove the last items a
-        # array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-        # array([0, 0, 0, 0, 1, 1, 1, 2, 2, 2]) # 3 classes 
-        #  array([ 0.        ,  3.33333333,  6.66666667, 10. ]) + 
-    # to avoid the index bound error 
-    # append nan value to lengthen arr 
-    r = np.append (labels , np.nan ) 
-    new_arr = np.zeros_like(ar) 
-    # print(labels)
-    ar = ar.astype (np.float32)
-
-    if order =='strict': 
-        for i in range (len(r)):
-            if i == len(r) -2 : 
-                ix = np.argwhere ( (ar >= r[i]) & (ar != np.inf ))
-                new_arr[ix ]= cc[i]
-                break 
-            
-            if i ==0 : 
-                ix = np.argwhere (ar < r[i +1])
-                new_arr [ix] == cc[i] 
-                ar [ix ] = np.inf # replace by a big number than it was 
-                # rather than delete it 
-            else :
-                ix = np.argwhere( (r[i] <= ar) & (ar < r[i +1]) )
-                new_arr [ix ]= cc[i] 
-                ar [ix ] = np.inf 
-    else: 
-        l= list() 
-        for i in range (len(r)): 
-            if i == len(r) -2 : 
-                l.append (np.repeat ( cc[i], len(ar))) 
-                
-                break
-            ix = np.argwhere ( (ar < r [ i + 1 ] ))
-            l.append (np.repeat (cc[i], len (ar[ix ])))  
-            # remove the value ready for i label 
-            # categorization 
-            ar = np.delete (ar, ix  )
-            
-        new_arr= np.hstack (l).astype (np.int32)  
-        
-    return new_arr.astype (np.int32)       
-
-def labels_validator (t, /, labels, return_bool = False): 
-    """ Assert the validity of the label in the target  and return the label 
-    or the boolean whether all items of label are in the target. 
-    
-    :param t: array-like, target that is expected to contain the labels. 
-    :param labels: int, str or list of (str or int) that is supposed to be in 
-        the target `t`. 
-    :param return_bool: bool, default=False; returns 'True' or 'False' rather 
-        the labels if set to ``True``. 
-    :returns: bool or labels; 'True' or 'False' if `return_bool` is set to 
-        ``True`` and labels otherwise. 
-        
-    :example: 
-    >>> from gofast.datasets import fetch_data 
-    >>> from gofast.tools.mlutils import cattarget, labels_validator 
-    >>> _, y = fetch_data ('bagoue', return_X_y=True, as_frame=True) 
-    >>> # binarize target y into [0 , 1]
-    >>> ybin = cattarget(y, labels=2 )
-    >>> labels_validator (ybin, [0, 1])
-    ... [0, 1] # all labels exist. 
-    >>> labels_validator (y, [0, 1, 3])
-    ... ValueError: Value '3' is missing in the target.
-    >>> labels_validator (ybin, 0 )
-    ... [0]
-    >>> labels_validator (ybin, [0, 5], return_bool=True ) # no raise error
-    ... False
-        
-    """
-    
-    if not is_iterable(labels):
-        labels =[labels] 
-        
-    t = np.array(t)
-    mask = _isin(t, labels, return_mask=True ) 
-    true_labels = np.unique (t[mask]) 
-    # set the difference to know 
-    # whether all labels are valid 
-    remainder = list(set(labels).difference (true_labels))
-    
-    isvalid = True 
-    if len(remainder)!=0 : 
-        if not return_bool: 
-            # raise error  
-            raise ValueError (
-                "Label value{0} {1} {2} missing in the target 'y'.".format ( 
-                f"{'s' if len(remainder)>1 else ''}", 
-                f"{smart_format(remainder)}",
-                f"{'are' if len(remainder)> 1 else 'is'}")
-                )
-        isvalid= False 
-        
-    return isvalid if return_bool else  labels 
-        
+     
 def bi_selector (d, /,  features =None, return_frames = False,
                  parse_features:bool=... ):
     """ Auto-differentiates the numerical from categorical attributes.
@@ -3719,7 +3034,7 @@ def make_pipe(
     ): 
     """ make a pipeline to transform data at once. 
     
-    make a naive pipeline is usefull to fast preprocess the data at once 
+    make a quick pipeline is usefull to fast preprocess the data at once 
     for quick prediction. 
     
     Work with a pandas dataframe. If `None` features is set, the numerical 
@@ -3895,7 +3210,7 @@ def make_pipe(
     num_pipe=Pipeline(npipe)
     
     if for_pca : 
-        encoding=  ('OrdinalEncoder',OrdinalEncoder())
+        encoding=  ('OrdinalEncoder', OrdinalEncoder())
     else:  encoding =  (
         'OneHotEncoder', OneHotEncoder())
         
@@ -3959,7 +3274,7 @@ def build_data_preprocessor(
     """
     Create a preprocessing pipeline for data transformation and feature engineering.
 
-    This function constructs a pipeline to preprocess data for machine learning tasks, 
+    Function constructs a pipeline to preprocess data for machine learning tasks, 
     accommodating a variety of transformations including scaling, encoding, 
     and dimensionality reduction. It supports both numerical and categorical data, 
     and can incorporate custom transformations.
@@ -4203,6 +3518,7 @@ def select_feature_importances(
     
     return selector if return_selector else selector.transform(X)
 
+@SmartProcessor(fail_silently=True, param_name ="skip_columns")
 def soft_imputer(
     X, 
     strategy='mean', 
@@ -4214,6 +3530,7 @@ def soft_imputer(
     verbose=0, 
     add_indicator=False,
     keep_empty_features=False, 
+    skip_columns=None, 
     **kwargs
     ):
     """
@@ -4256,20 +3573,35 @@ def soft_imputer(
     drop_features : bool or list, default=False
         If True, drops all categorical features before imputation. If a list, 
         drops specified features.
+        
     mode : str, optional
         If set to 'bi-impute', imputes both numerical and categorical features 
         and returns a single imputed dataframe. Only 'bi-impute' is supported.
+        
     copy : bool, default=True
         If True, a copy of X will be created. If False, imputation will
         be done in-place whenever possible.
+        
     verbose : int, default=0
         Controls the verbosity of the imputer.
+        
     add_indicator : bool, default=False
         If True, a `MissingIndicator` transform will be added to the output 
         of the imputer's transform.
+        
     keep_empty_features : bool, default=False
         If True, features that are all missing when `fit` is called are 
         included in the transform output.
+        
+    skip_columns : list of str or int, optional
+        Specifies the columns to exclude from processing when the decorator is
+        applied to a function. If the input data `X` is a pandas DataFrame, 
+        `skip_columns` should contain the names of the columns to be skipped. 
+        If `X` is a numpy array, `skip_columns`  should be a list of column 
+        indices (integers) indicating the positions of the columns to be excluded.
+        This allows selective processing of data, avoiding alterations to the
+        specified columns.
+        
     **kwargs : dict
         Additional fitting parameters.
 
@@ -4280,6 +3612,8 @@ def soft_imputer(
 
     Examples
     --------
+    >>> import numpy as np 
+    >>> from gofast.tools.mlutils import soft_imputer
     >>> X = np.array([[1, np.nan, 3], [4, 5, np.nan], [np.nan, np.nan, 9]])
     >>> soft_imputer(X, strategy='mean')
     array([[ 1. ,  5. ,  3. ],
@@ -4329,8 +3663,8 @@ def soft_imputer(
             Xi, imp = _impute_data(
                 X, strategy, missing_values, fill_value, add_indicator, copy)
         except Exception as e : 
-            raise ValueError( f"Imputation failed due to: {e}. Consider using"
-                             " the 'bi-impute' mode for mixed data types.")
+            raise ValueError("Imputation failed. Consider using the"
+                             " 'bi-impute' mode for mixed data types.") from e 
         if isinstance(X, pd.DataFrame):
             Xi = pd.DataFrame(Xi, index=X.index, columns=imp.feature_names_in_)
             
@@ -4378,7 +3712,6 @@ def _separate_and_impute(X, num_imputer, cat_imputer):
         cat_imputed = np.array([]).reshape(X.shape[0], 0)
     return num_imputed, cat_imputed, num_columns, cat_columns
 
-
 def _enabled_bi_impute_mode(
     strategy: str, fill_value: Union[str, float, None]
      ) -> Tuple[List[Union[None, float, str]], List[str]]:
@@ -4404,20 +3737,20 @@ def _enabled_bi_impute_mode(
 
     Examples
     --------
-    >>> from gofast.tools.mlutils import enabled_bi_impute_mode
+    >>> from gofast.tools.mlutils import _enabled_bi_impute_mode
     >>> enabled_bi_impute_mode('mean', None)
     ([None, None], ['mean', 'most_frequent'])
 
-    >>> enabled_bi_impute_mode('constant', '0__missing')
+    >>> _enabled_bi_impute_mode('constant', '0__missing')
     ([0.0, 'missing'], ['constant', 'constant'])
     
-    >>> enabled_bi_impute_mode (strategy='constant', fill_value="missing")
+    >>> _enabled_bi_impute_mode (strategy='constant', fill_value="missing")
     ([0.0, 'missing'], ['constant', 'constant'])
     
-    >>> enabled_bi_impute_mode('constant', 9.) 
+    >>> _enabled_bi_impute_mode('constant', 9.) 
     ([9.0, None], ['constant', 'most_frequent'])
     
-    >>> enabled_bi_impute_mode(strategy='constant', fill_value="mean__missing",)
+    >>> _enabled_bi_impute_mode(strategy='constant', fill_value="mean__missing",)
     ([None, 'missing'], ['mean', 'constant'])
     """
     num_strategy, cat_strategy = 'most_frequent', 'most_frequent'
@@ -4503,6 +3836,7 @@ def _manage_fill_value(
     
     return [num_fill_value, cat_fill], strategies
 
+@SmartProcessor(fail_silently= True, param_name="skip_columns")
 def soft_scaler(
     X, *, 
     kind=StandardScaler, 
@@ -4512,6 +3846,7 @@ def soft_scaler(
     feature_range=(0, 1), 
     clip=False, 
     norm='l2',
+    skip_columns=None, 
     verbose=0, 
     **kwargs
     ):
@@ -4545,7 +3880,14 @@ def soft_scaler(
     norm : {'l1', 'l2', 'max'}, default='l2'
         The norm to use to normalize each non-zero sample or feature.
         Only applicable when kind is 'Normalizer'.
-        
+    skip_columns : list of str or int, optional
+        Specifies the columns to exclude from processing when the decorator is
+        applied to a function. If the input data `X` is a pandas DataFrame, 
+        `skip_columns` should contain the names of the columns to be skipped. 
+        If `X` is a numpy array, `skip_columns`  should be a list of column 
+        indices (integers) indicating the positions of the columns to be excluded.
+        This allows selective processing of data, avoiding alterations to the
+        specified columns.
     verbose : int, default=0
         If > 0, print messages about the processing.
         
@@ -4635,6 +3977,162 @@ def _concat_scaled_numeric_with_categorical(X_scaled_numeric, X, cat_features):
                           X[cat_features]], axis=1)
     return X_scaled[X.columns]  # Maintain original column order
 
+@ensure_pkg(
+    "shap", extra="SHapley Additive exPlanations (SHAP) is needed.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get("pkg")=="shap"
+    )
+def display_feature_contributions(
+        X, y=None, view=False, pkg=None):
+    """
+    Trains a RandomForest model to determine the importance of features in
+    the dataset and optionally displaysthese importances visually using SHAP.
+
+    Parameters
+    ----------
+    X : ndarray or DataFrame
+        The feature matrix from which to determine feature importances. This 
+        should not include the target variable.
+    y : ndarray, optional
+        The target variable array. If provided, it will be used for supervised 
+        learning. If None, an unsupervised approach will be used 
+        (feature importances based on feature permutation).
+    view : bool, optional
+        If True, display feature importances using SHAP's summary plot.
+        Defaults to False.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are feature names and values are their 
+        corresponding importances as determined by the RandomForest model.
+
+    Examples
+    --------
+    >>> from sklearn.datasets import load_iris 
+    >>> from gofast.tools.mlutils import display_feature_contributions
+    >>> data = load_iris()
+    >>> X = data['data']
+    >>> feature_names = data['feature_names']
+    >>> display_feature_contributions(X, view=True)
+    {'sepal length (cm)': 0.112, 'sepal width (cm)': 0.032, 
+     'petal length (cm)': 0.423, 'petal width (cm)': 0.433}
+    """
+    pkg ='shap' if str(pkg).lower() =='shap' else 'matplotlib'
+    
+    validate_data_types(X, nan_policy="raise", error ="raise")
+    
+    # Initialize the RandomForest model
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+
+    # Fit the model on the provided features, with or without a target variable
+    if y is not None:
+        model.fit(X, y)
+    else:
+        # Fit a dummy target if y is None, assuming unsupervised setup
+        model.fit(X, range(X.shape[0]))
+
+    # Extract feature importances
+    importances = model.feature_importances_
+
+    # Optionally, display the feature importances using the chosen visualization package
+    feature_names = model.feature_names_in_ if hasattr(
+            model, 'feature_names_in_') else [f'feature_{i}' for i in range(X.shape[1])]
+    if view:
+        if pkg.lower() == "shap":
+            import shap
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+            shap.summary_plot(shap_values, X, feature_names=feature_names)
+            
+        elif pkg.lower() == "matplotlib":
+            import matplotlib.pyplot as plt
+            plt.figure(figsize=(10, 5))
+            indices = range(len(importances))
+            plt.title('Feature Importances')
+            plt.bar(indices, importances, color='skyblue', align='center')
+            plt.xticks(indices, feature_names, rotation=45)
+            plt.xlabel('Feature')
+            plt.ylabel('Importance')
+            plt.show()
+
+    # Map feature names to their importances
+    feature_importance_dict = dict(zip(feature_names, importances))
+    
+    summary = ReportFactory(title="Feature Contributions Table",).add_mixed_types(
+        feature_importance_dict)
+    
+    print(summary)
+
+@ensure_pkg ("shap", extra = ( 
+    "`get_feature_contributions` needs SHapley Additive exPlanations (SHAP)"
+    " package to be installed. Instead, you can use"
+    " `gofast.tools.display_feature_contributions` for contribution scores" 
+    " and `gofast.analysis.get_feature_importances` for PCA quick evaluation."
+    )
+ )
+def get_feature_contributions(X, model=None, view=False):
+    """
+    Calculate the SHAP (SHapley Additive exPlanations) values to determine 
+    the contribution of each feature to the model's predictions for each 
+    instance in the dataset and optionally display a visual summary.
+
+    Parameters
+    ----------
+    X : ndarray or DataFrame
+        The feature matrix for which to calculate feature contributions.
+    model : sklearn.base.BaseEstimator, optional
+        A pre-trained tree-based machine learning model from scikit-learn (e.g.,
+        RandomForest). If None, a new RandomForestClassifier will be trained on `X`.
+    view : bool, optional
+        If True, displays a visual summary of feature contributions using SHAP's
+        visualization tools. Default is False.
+
+    Returns
+    -------
+    ndarray
+        A matrix of SHAP values where each row corresponds to an instance and
+        each column corresponds to a feature's contribution to that instance's 
+        prediction.
+
+    Notes
+    -----
+    The function defaults to creating and using a RandomForestClassifier if no 
+    model is provided. It is more efficient to pass a pre-trained model if 
+    available.
+
+    Examples
+    --------
+    >>> from sklearn.datasets import load_iris
+    >>> from gofast.tools.mlutils import get_feature_contributions
+    >>> data = load_iris()
+    >>> X = data['data']
+    >>> model = RandomForestClassifier(random_state=42)
+    >>> model.fit(X, data['target'])
+    >>> contributions = get_feature_contributions(X, model, view=True)
+    """
+    import shap
+    
+    # If no model is provided, train a RandomForestClassifier
+    if model is None:
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        # Dummy target, assuming unsupervised setup for example
+        model.fit(X, np.zeros(X.shape[0]))  
+
+    # Create the Tree explainer and calculate SHAP values
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X)
+
+    # SHAP returns a list for multi-class, we sum across all classes for overall importance
+    if isinstance(shap_values, list):
+        shap_values = np.sum(np.abs(shap_values), axis=0)
+
+    # Visualization if view is True
+    if view:
+        shap.summary_plot(shap_values, X, feature_names=model.feature_names_in_ if hasattr(
+            model, 'feature_names_in_') else None)
+
+    return shap_values
 
         
         

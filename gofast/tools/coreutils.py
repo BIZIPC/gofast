@@ -26,64 +26,26 @@ import subprocess
 import multiprocessing
 from zipfile import ZipFile
 from six.moves import urllib 
+from collections import defaultdict 
 from collections.abc import Sequence
-from concurrent.futures import (ThreadPoolExecutor, ProcessPoolExecutor, 
-                                as_completed)
+from concurrent.futures import as_completed 
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor 
+
 import numpy as np 
 import pandas as pd 
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 from .._gofastlog import gofastlog
-from .._typing import ( 
-    _F,
-    _T,
-    _Sub,
-    Tuple,
-    Dict,
-    Optional,
-    Iterable,
-    Any,
-    ArrayLike,
-    List ,
-    DataFrame, 
-    NDArray, 
-    Text, 
-    Union, 
-    Series, 
-    Set
-    )
+from ..api.types import Union, Series,Tuple,Dict,Optional,Iterable, Any, Set
+from ..api.types import _T,_Sub, _F, ArrayLike,List, DataFrame, NDArray, Text  
 from ._dependency import import_optional_dependency
+from ..compat.scipy import ensure_scipy_compatibility 
+from ..compat.scipy import check_scipy_interpolate, optimize_minimize
+
 _logger = gofastlog.get_gofast_logger(__name__)
 
-_msg= ''.join([
-    'Note: need scipy version 0.14.0 or higher or interpolation,',
-    ' might not work.']
-)
-_msg0 = ''.join([
-    'Could not find scipy.interpolate, cannot use method interpolate'
-     'check installation you can get scipy from scipy.org.']
-)
-
-try:
-    scipy_version = [int(ss) for ss in scipy.__version__.split('.')]
-    if scipy_version[0] == 0:
-        if scipy_version[1] < 14:
-            warnings.warn(_msg, ImportWarning)
-            _logger.warning(_msg)
-            
-    import scipy.interpolate as spi
-    from scipy.spatial import distance 
-    
-    interp_import = True
- # pragma: no cover
-except ImportError: 
-    warnings.warn(_msg0)
-    _logger.warning(_msg0)
-    interp_import = False
-    
-# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
+ 
 def format_to_datetime(data, date_col, verbose=0, **dt_kws):
     """
     Reformats a specified column in a DataFrame to Pandas datetime format.
@@ -119,6 +81,7 @@ def format_to_datetime(data, date_col, verbose=0, **dt_kws):
 
     Examples
     --------
+    >>> from gofast.tools.coreutils import format_to_datetime
     >>> df = pd.DataFrame({
     ...     'Date': ['2021-01-01', '01/02/2021', '03-Jan-2021', '2021.04.01',
                      '05 May 2021'],
@@ -143,8 +106,125 @@ def format_to_datetime(data, date_col, verbose=0, **dt_kws):
 
     return data
 
-def get_params (obj: object 
-                ) -> dict: 
+def adjust_to_samples(n_samples, *values, initial_guess=None, error='warn'):
+    """
+    Adjusts the given values to match a total number of samples, aiming to distribute
+    the samples evenly across the dimensions represented by the values. The function
+    can adjust even if only one value is given.
+
+    Parameters
+    ----------
+    n_samples : int
+        The desired total number of samples.
+    *values : int
+        Variable length argument list representing the dimensions to adjust.
+    initial_guess : float or None, optional
+        An initial guess for the adjustment factor. If None, an automatic guess is made.
+    error : str, optional
+        Error handling strategy ('warn', 'ignore', 'raise'). This parameter is considered
+        only when no values or one value is provided.
+
+    Returns
+    -------
+    adjusted_values : tuple
+        A tuple of adjusted values, aiming to distribute the total samples evenly.
+        If only one value is given, the function tries to adjust it based on the
+        total number of samples and the initial guess.
+
+    Raises
+    ------
+    ValueError
+        Raised if error is set to 'raise' and no values are provided.
+
+    Examples
+    --------
+    >>> from gofast.tools.coreutils import adjust_to_samples
+    >>> adjust_to_samples(1000, 10, 20, initial_guess=5)
+    (50, 20)
+
+    >>> adjust_to_samples(1000, 10, initial_guess=2)
+    (2,)
+
+    Notes
+    -----
+    The function aims to adjust the values to match the desired total number of samples
+    as closely as possible. When only one value is given, the function uses the initial
+    guess to make an adjustment, respecting the total number of samples.
+    """
+    if len(values) == 0:
+        message = "No values provided for adjustment."
+        if error == 'raise':
+            raise ValueError(message)
+        elif error == 'warn':
+            warnings.warn(message)
+        return ()
+
+    if len(values) == 1:
+        # If only one value is given, adjust it based on initial guess and n_samples
+        single_value = values[0]
+        adjusted_value = n_samples // single_value if initial_guess is None else initial_guess
+        return (adjusted_value,)
+
+    if initial_guess is None:
+        initial_guess = np.mean(values)
+
+    # Function to minimize: difference between product of adjusted values and n_samples
+    def objective(factors):
+        prod = np.prod(np.array(values) * factors)
+        return abs(prod - n_samples)
+
+    # Start with initial guesses for factors
+    factors_initial = [initial_guess / value for value in values]
+    result = optimize_minimize(objective, factors_initial, bounds=[(0, None) for _ in values])
+
+    if result.success:
+        adjusted_values = ( 
+            tuple(max(1, int(round(value * factor))) 
+                  for value, factor in zip(values, result.x))
+            )
+    else:
+        adjusted_values = values  # Fallback to original values if optimization fails
+
+    return adjusted_values
+
+def unpack_list_of_dicts(list_of_dicts):
+    """
+    Unpacks a list of dictionaries into a single dictionary,
+    merging all keys and values.
+
+    Parameters:
+    ----------
+    list_of_dicts : list of dicts
+        A list where each element is a dictionary with a single key-value pair, 
+        the value being a list.
+
+    Returns:
+    -------
+    dict
+        A single dictionary with all keys from the original list of dictionaries, 
+        each associated with its combined list of values from all occurrences 
+        of the key.
+
+    Example:
+    --------
+    >>> from gofast.tools.coreutils import unpack_list_of_dicts
+    >>> list_of_dicts = [
+            {'key1': ['value10', 'value11']},
+            {'key2': ['value20', 'value21']},
+            {'key1': ['value12']},
+            {'key2': ['value22']}
+        ]
+    >>> unpacked_dict = unpack_list_of_dicts(list_of_dicts)
+    >>> print(unpacked_dict)
+    {'key1': ['value10', 'value11', 'value12'], 'key2': ['value20', 'value21', 'value22']}
+    """
+    unpacked_dict = defaultdict(list)
+    for single_dict in list_of_dicts:
+        for key, values in single_dict.items():
+            unpacked_dict[key].extend(values)
+    return dict(unpacked_dict)  # Convert defaultdict back to dict if required
+
+def get_params (obj: object ) -> dict: 
     """
     Get object parameters. 
     
@@ -156,7 +236,7 @@ def get_params (obj: object
     
     :examples: 
     >>> from sklearn.svm import SVC 
-    >>> from gofast.base import get_params 
+    >>> from gofast.tools.coreutils import get_params 
     >>> sigmoid= SVC (
         **{
             'C': 512.0,
@@ -228,7 +308,7 @@ def is_classification_task(
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import is_classification_task 
+    >>> from gofast.tools.coreutils import is_classification_task 
     >>> y_true = [0, 1, 1, 0, 1]
     >>> y_pred = [0, 1, 0, 0, 1]
     >>> is_classification_task(y_true, y_pred)
@@ -386,7 +466,7 @@ def to_numeric_dtypes(
     Examples
     --------
     >>> from gofast.datasets.dload import load_bagoue
-    >>> from gofast.tools.funcutils import to_numeric_dtypes
+    >>> from gofast.tools.coreutils import to_numeric_dtypes
     >>> X= load_bagoue(as_frame=True)
     >>> X0 = X[['shape', 'power', 'magnitude']]
     >>> df, nf, cf = to_numeric_dtypes(X0, return_feature_types=True)
@@ -516,7 +596,7 @@ def listing_items_format (
         None or string litteral if verbose is set to ``False``.
     Examples
     ---------
-    >>> from gofast.tools.funcutils import listing_items_format 
+    >>> from gofast.tools.coreutils import listing_items_format 
     >>> litems = ['hole_number', 'depth_top', 'depth_bottom', 'strata_name', 
                 'rock_name','thickness', 'resistivity', 'gamma_gamma', 
                 'natural_gamma', 'sp','short_distance_gamma', 'well_diameter']
@@ -580,7 +660,7 @@ def parse_attrs (attr, /, regex=None ):
     
     Example
     ---------
-    >>> from gofast.tools.funcutils import parse_attrs 
+    >>> from gofast.tools.coreutils import parse_attrs 
     >>> parse_attrs('lwi_sub_ohmSmulmagnitude')
     ... ['lwi', 'ohmS', 'magnitude']
     
@@ -617,7 +697,7 @@ def url_checker (url: str , install:bool = False,
         
     Example
     ----------
-    >>> from gofast.tools.funcutils import url_checker 
+    >>> from gofast.tools.coreutils import url_checker 
     >>> url_checker ("http://www.example.com")
     ...  0 # not reacheable 
     >>> url_checker ("https://gofast.readthedocs.io/en/latest/api/gofast.html")
@@ -672,7 +752,6 @@ def url_checker (url: str , install:bool = False,
         
     return isr 
 
-    
 def shrunkformat (
     text: str | Iterable[Any], 
     chunksize: int =7 ,
@@ -696,7 +775,7 @@ def shrunkformat (
     :example: 
         
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import shrunkformat
+    >>> from gofast.tools.coreutils import shrunkformat
     >>> text=" I'm a long text and I will be shrunked and replaced by ellipsis."
     >>> shrunkformat (text)
     ... 'Im a long ... and replaced by ellipsis.'
@@ -963,7 +1042,7 @@ def repr_callable_obj(obj: _F  , skip = None ):
     
     :Examples: 
         
-    >>> from gofast.tools.funcutils import repr_callable_obj
+    >>> from gofast.tools.coreutils import repr_callable_obj
     >>> from gofast.methods.electrical import  ResistivityProfiling
     >>> repr_callable_obj(ResistivityProfiling)
     ... 'ResistivityProfiling(station= None, dipole= 10.0, 
@@ -1017,7 +1096,7 @@ def repr_callable_obj(obj: _F  , skip = None ):
         f = {k:PARAMS_VALUES.get(k) for k in list(PARAMS_VALUES.keys())[:3]}
         e = {k:PARAMS_VALUES.get(k) for k in list(PARAMS_VALUES.keys())[-3:]}
         
-        PARAMS_VALUES= str(f) + ', ... , ' + str(e )
+        PARAMS_VALUES= str(f) + ' ... ' + str(e )
 
     return str(objname) + '(' + regex.sub('', str (PARAMS_VALUES)
                                           ).replace(':', '=') +')'
@@ -1035,7 +1114,7 @@ def accept_types (
     
     :Example: 
         >>> import numpy as np; import pandas as pd 
-        >>> from gofast.tools.funcutils import accept_types
+        >>> from gofast.tools.coreutils import accept_types
         >>> accept_types (pd.Series, pd.DataFrame, tuple, list, str)
         ... "'Series','DataFrame','tuple','list' and 'str'"
         >>> atypes= accept_types (
@@ -1109,7 +1188,7 @@ def smart_format(iter_obj, choice ='and'):
     :param choice: can be 'and' or 'or' for optional.
     
     :Example: 
-        >>> from gofast.tools.funcutils import smart_format
+        >>> from gofast.tools.coreutils import smart_format
         >>> smart_format(['model', 'iter', 'mesh', 'data'])
         ... 'model','iter','mesh' and 'data'
     """
@@ -1243,78 +1322,70 @@ def format_notes(text:str , cover_str: str ='~', inline=70, **kws):
         
     print('{0}{1:>51}'.format(' '* (margin -1), cover_str * (inline -margin+1 ))) 
     
-        
-def interpol_scipy (
+
+def interpol_scipy(
         x_value,
         y_value,
         x_new,
         kind="linear",
         plot=False,
-        fill="extrapolate"
-        ):
-    
+        fill_value="extrapolate"
+):
     """
-    function to interpolate data 
+    Function to interpolate data using scipy's interp1d if available.
     
     Parameters 
     ------------
     * x_value : np.ndarray 
-        value on array data : original abscissA 
+        Original abscissa values.
                 
     * y_value : np.ndarray 
-        value on array data : original coordinates (slope)
+        Original ordinate values (slope).
                 
-    * x_new  : np.ndarray 
-        new value of absciss you want to interpolate data 
+    * x_new : np.ndarray 
+        New abscissa values for which you want to interpolate data.
                 
-    * kind  : str 
-        projection kind maybe : "linear", "cubic"
+    * kind : str 
+        Type of interpolation, e.g., "linear", "cubic".
                 
-    * fill : str 
-        kind of extraolation, if None , *spi will use constraint interpolation 
-        can be "extrapolate" to fill_value.
+    * fill_value : str 
+        Extrapolation method. If None, scipy's interp1d will use constrained 
+        interpolation. 
+        Can be "extrapolate" to use fill_value.
         
-    * plot : Boolean 
-        Set to True to see a wiewer graph
+    * plot : bool 
+        Set to True to plot a graph of the original and interpolated data.
 
     Returns 
     --------
-        np.ndarray 
-            y_new ,new function interplolate values .
-            
-    :Example: 
-        
-        >>> import numpy as np 
-        >>>  fill="extrapolate"
-        >>>  x=np.linspace(0,15,10)
-        >>>  y=np.random.randn(10)
-        >>>  x_=np.linspace(0,20,15)
-        >>>  ss=interpol_Scipy(x_value=x, y_value=y, x_new=x_, kind="linear")
-        >>>  ss
+    np.ndarray 
+        Interpolated ordinate values for 'x_new'.
     """
-    
-    func_=spi.interp1d(
-        x_value, 
-        y_value, 
-        kind=kind,
-        fill_value=fill
-        )
-    y_new=func_(x_new)
-    if plot :
-        plt.plot(
-        x_value,
-        y_value,
-        "o",
-        x_new,
-        y_new,
-        "--"
-        )
-        plt.legend(["data", "linear","cubic"],loc="best")
-        plt.show()
-    
-    return y_new
 
+    spi = check_scipy_interpolate()
+    if spi is None:
+        return None
+    
+    try:
+        func_ = spi.interp1d(x_value, y_value, kind=kind, fill_value=fill_value)
+        y_new = func_(x_new)
+        
+        if plot:
+            import matplotlib.pyplot as plt
+            plt.plot(x_value, y_value, "o", x_new, y_new, "--")
+            plt.legend(["Data", kind.capitalize()], loc="best")
+            plt.title(f"Interpolation: {kind.capitalize()}")
+            plt.xlabel("x")
+            plt.ylabel("y")
+            plt.grid(True)
+            plt.show()
 
+        return y_new
+
+    except Exception as e:
+        _logger.error(f"An unexpected error occurred during interpolation: {e}")
+        return None
+    
 def _remove_str_word (char, word_to_remove, deep_remove=False):
     """
     Small funnction to remove a word present on  astring character 
@@ -1429,7 +1500,7 @@ def display_infos(infos, **kws):
     :param header: Change the `header` to other names. 
     
     :Example: 
-    >>> from gofast.tools.funcutils import display_infos
+    >>> from gofast.tools.coreutils import display_infos
     >>> ipts= ['river water', 'fracture zone', 'granite', 'gravel',
          'sedimentary rocks', 'massive sulphide', 'igneous rocks', 
          'gravel', 'sedimentary rocks']
@@ -1509,7 +1580,7 @@ def convert_csvdata_from_fr_to_en(csv_fn, pf, destfile = 'pme.en.csv',
         # to execute this script, we need to import the two modules below
         >>> import os 
         >>> import csv 
-        >>> from gofast.tools.funcutils import convert_csvdata_from_fr_to_en
+        >>> from gofast.tools.coreutils import convert_csvdata_from_fr_to_en
         >>> path_pme_data = r'C:/Users\Administrator\Desktop\__elodata
         >>> datalist=convert_csvdata_from_fr_to_en(
             os.path.join( path_pme_data, _enuv2.csv') , 
@@ -1594,7 +1665,7 @@ def sanitize_unicode_string (str_) :
     """ Replace all spaces and remove all french accents characters.
     
     :Example:
-    >>> from gofast.tools.funcutils import sanitize_unicode_string 
+    >>> from gofast.tools.coreutils import sanitize_unicode_string 
     >>> sentence ='Nos clients sont extrêmement satisfaits '
         'de la qualité du service fourni. En outre Nos clients '
             'rachètent frequemment nos "services".'
@@ -1977,8 +2048,6 @@ def save_job(
     append_date: bool, default=True, 
        Append the date  of the day to the filename. 
        
-       .. versionadded:: 0.2.3
-       
     protocol: int, optional 
         The optional *protocol* argument tells the pickler to use the
         given protocol; supported protocols are 0, 1, 2, 3, 4 and 5.
@@ -2070,7 +2139,7 @@ def fmt_text(
     
     :Example: 
         
-        >>> from gofast.tools.funcutils import fmt_text
+        >>> from gofast.tools.coreutils import fmt_text
         >>> fmt_text(anFeatures =[1,130, 93,(146,145, 125)])
     
     """
@@ -2148,7 +2217,7 @@ def reshape(arr , axis = None) :
     
     :Example: 
         >>> import numpy as np 
-        >>> from gofast.tools.funcutils import reshape 
+        >>> from gofast.tools.coreutils import reshape 
         >>> array = np.random.randn(50 )
         >>> array.shape
         ... (50,)
@@ -2217,7 +2286,7 @@ def ismissing(refarr, arr, fill_value = np.nan, return_index =False):
     :Example: 
         
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import ismissing
+    >>> from gofast.tools.coreutils import ismissing
     >>> refreq = np.linspace(7e7, 1e0, 20) # 20 frequencies as reference
     >>> # remove the value between index 7 to 12 and stack again
     >>> freq = np.hstack ((refreq.copy()[:7], refreq.copy()[12:] ))  
@@ -2311,7 +2380,7 @@ def make_arr_consistent (
     Examples 
     ----------
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import make_arr_consistent
+    >>> from gofast.tools.coreutils import make_arr_consistent
     >>> refarr = np.arange (12) 
     >>> arr = np.arange (7, 10) 
     >>> make_arr_consistent (refarr, arr ) 
@@ -2371,110 +2440,6 @@ def find_close_position (refarr, arr):
         yield ix 
     
 
-def fillNaN(arr, method ='ff'): 
-    """ Most efficient way to back/forward-fill NaN values in numpy array. 
-    
-    Parameters 
-    ---------- 
-    arr : ndarray 
-        Array containing NaN values to be filled 
-    method: str 
-        Method for filling. Can be forward fill ``ff`` or backward fill `bf``. 
-        or ``both`` for the two methods. Default is `ff`. 
-        
-    Returns
-    -------
-    new array filled. 
-    
-    Notes 
-    -----
-    When NaN value is framed between two valid numbers, ``ff`` and `bf` performs 
-    well the filling operations. However, when the array is ended by multiple 
-    NaN values, the ``ff`` is recommended. At the opposite the ``bf`` is  the 
-    method suggested. The ``both``argument does the both tasks at the expense of 
-    the computation cost. 
-    
-    Examples 
-    --------- 
-        
-    >>> import numpy as np 
-    >>> from from gofast.tools.funcutils import fillNaN 
-    >>> arr2d = np.random.randn(7, 3)
-    >>> # change some value into NaN 
-    >>> arr2d[[0, 2, 3, 3 ],[0, 2,1, 2]]= np.nan
-    >>> arr2d 
-    ... array([[        nan, -0.74636104,  1.12731613],
-           [ 0.48178017, -0.18593812, -0.67673698],
-           [ 0.17143421, -2.15184895,         nan],
-           [-0.6839212 ,         nan,         nan]])
-    >>> fillNaN (arr2d) 
-    ... array([[        nan, -0.74636104,  1.12731613],
-           [ 0.48178017, -0.18593812, -0.67673698],
-           [ 0.17143421, -2.15184895, -2.15184895],
-           [-0.6839212 , -0.6839212 , -0.6839212 ]])
-    >>> fillNaN(arr2d, 'bf')
-    ... array([[-0.74636104, -0.74636104,  1.12731613],
-           [ 0.48178017, -0.18593812, -0.67673698],
-           [ 0.17143421, -2.15184895,         nan],
-           [-0.6839212 ,         nan,         nan]])
-    >>> fillNaN (arr2d, 'both')
-    ... array([[-0.74636104, -0.74636104,  1.12731613],
-           [ 0.48178017, -0.18593812, -0.67673698],
-           [ 0.17143421, -2.15184895, -2.15184895],
-           [-0.6839212 , -0.6839212 , -0.6839212 ]])
-    
-    References 
-    ----------
-    Some function below are edited by the authors in pyQuestion.com website. 
-    There are other way more efficient to perform this task by calling the module 
-    `Numba` to accelerate the computation time. However, at the time this script 
-    is writen (August 17th, 2022) , `Numba` works with `Numpy` version 1.21. The
-    latter  is older than the one used in for writting this package (1.22.3 ). 
-    
-    For furher details, one can refer to the following link: 
-    https://pyquestions.com/most-efficient-way-to-forward-fill-nan-values-in-numpy-array
-    
-    """
-    
-    if not hasattr(arr, '__array__'): 
-        arr = np.array(arr)
-        
-    def ffill (arr): 
-        """ Forward fill."""
-        idx = np.where (~mask, np.arange(mask.shape[1]), 0)
-        np.maximum.accumulate (idx, axis =1 , out =idx )
-        return arr[np.arange(idx.shape[0])[:, None], idx ]
-    
-    def bfill (arr): 
-        """ Backward fill """
-        idx = np.where (~mask, np.arange(mask.shape[1]) , mask.shape[1]-1)
-        idx = np.minimum.accumulate(idx[:, ::-1], axis =1)[:, ::-1]
-        return arr [np.arange(idx.shape [0])[:, None], idx ]
-    
-    method= str(method).lower().strip() 
-    
-    if arr.ndim ==1: 
-        arr = reshape(arr, axis=1)  
-        
-    if method  in ('backward', 'bf',  'bwd'):
-        method = 'bf' 
-    elif method in ('forward', 'ff', 'fwd'): 
-        method= 'ff' 
-    elif method in ('both', 'ffbf', 'fbwf', 'bff', 'full'): 
-        method ='both'
-    if method not in ('bf', 'ff', 'both'): 
-        raise ValueError ("Expect a backward <'bf'>, forward <'ff'> fill "
-                          f" or both <'bff'> not {method!r}")
-    mask = np.isnan (arr )  
-    if method =='both': 
-        arr = ffill(arr) ;
-        #mask = np.isnan (arr)  
-        arr = bfill(arr) 
-    
-    return (ffill(arr) if method =='ff' else bfill(arr)
-            ) if method in ('bf', 'ff') else arr    
-
-
 def fit_ll(ediObjs, by ='index', method ='strict', distance='cartesian' ): 
     """ Fit EDI by location and reorganize EDI according to the site  
     longitude and latitude coordinates. 
@@ -2507,7 +2472,7 @@ def fit_ll(ediObjs, by ='index', method ='strict', distance='cartesian' ):
     :Example: 
         >>> import numpy as np 
         >>> from gofast.methods.em import EM
-        >>> from gofast.tools.funcutils import fit_ll
+        >>> from gofast.tools.coreutils import fit_ll
         >>> edipath ='data/edi_ss' 
         >>> cediObjs = EM().fit (edipath) 
         >>> ediObjs = np.random.permutation(cediObjs.ediObjs) # shuffle the  
@@ -2538,7 +2503,7 @@ def fit_ll(ediObjs, by ='index', method ='strict', distance='cartesian' ):
 def _fit_ll(ediObjs, distance='cartes', by = 'index'): 
     """ Fit ediObjs using the `strict method`. 
     
-    An isolated part of :func:`gofast.tools.funcutils.fit_by_ll`. 
+    An isolated part of :func:`gofast.tools.coreutils.fit_by_ll`. 
     """
     # get one obj randomnly and compute distance 
     obj_init = ediObjs[0]
@@ -2595,7 +2560,7 @@ def _fit_ll(ediObjs, distance='cartes', by = 'index'):
 
 def _compute_haversine_d(lat1, lon1, lat2, lon2): 
     """ Sort coordinates using Haversine distance calculus. 
-    An isolated part of :func:`gofast.tools.funcutils._fit_by_ll"""
+    An isolated part of :func:`gofast.tools.coreutils._fit_by_ll"""
     # get reference_lat and reference lon 
     # get one obj randomnly and compute distance 
     # obj_init = np.random.choice (ediObjs) 
@@ -2704,7 +2669,7 @@ def concat_array_from_list (list_of_array , concat_axis = 0) :
     :Example: 
         
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import concat_array_from_list 
+    >>> from gofast.tools.coreutils import concat_array_from_list 
     >>> np.random.seed(0)
     >>> ass=np.random.randn(10)
     >>> ass = ass2=np.linspace(0,15,10)
@@ -2761,7 +2726,7 @@ def station_id (id_, is_index= 'index', how=None, **kws):
     
     :Example:
         
-    >>> from gofast.tools.funcutils import station_id 
+    >>> from gofast.tools.coreutils import station_id 
     >>> dat1 = ['S13', 's02', 's85', 'pk20', 'posix1256']
     >>> station_id (dat1)
     ... (13, 2, 85, 20, 1256)
@@ -2930,7 +2895,7 @@ def parse_json(json_fn =None,
         >>> TRES=[10, 66,  70, 100, 1000, 3000]# 7000]     
         >>> LNS =['river water','fracture zone', 'MWG', 'LWG', 
               'granite', 'igneous rocks', 'basement rocks']
-        >>> import gofast.tools.funcutils as FU
+        >>> import gofast.tools.coreutils as FU
         >>> geo_kws ={'oc2d': INVERS_KWS, 
                       'TRES':TRES, 'LN':LNS}
         # serialize json data and save to  'jsontest.json' file
@@ -3044,7 +3009,7 @@ def parse_csv(
     https://stackoverflow.com/questions/10373247/how-do-i-write-a-python-dictionary-to-a-csv-file
         ...
     :Example:
-        >>> import gofast.tools.funcutils as FU
+        >>> import gofast.tools.coreutils as FU
         >>> PATH = 'data/model'
         >>> k_ =['model', 'iter', 'mesh', 'data']
         >>> try : 
@@ -3463,7 +3428,7 @@ def is_iterable (
     :param parse_string: bool, parse string and convert the list of string 
         into iterable object is the `y` is a string object and containg the 
         word separator character '[#&.*@!_,;\s-]'. Refer to the function 
-        :func:`~gofast.tools.funcutils.str2columns` documentation.
+        :func:`~gofast.tools.coreutils.str2columns` documentation.
         
     :returns: 
         - bool, or iterable object if `transform` is set to ``True``. 
@@ -3475,7 +3440,7 @@ def is_iterable (
         :func:`.str2columns`. Use the latter for string parsing instead. 
         
     :Examples: 
-    >>> from gofast.funcutils.is_iterable 
+    >>> from gofast.coreutils.is_iterable 
     >>> is_iterable ('iterable', exclude_string= True ) 
     Out[28]: False
     >>> is_iterable ('iterable', exclude_string= True , transform =True)
@@ -3494,7 +3459,7 @@ def is_iterable (
     if (parse_string and not transform) and isinstance (y, str): 
         raise ValueError ("Cannot parse the given string. Set 'transform' to"
                           " ``True`` otherwise use the 'str2columns' utils"
-                          " from 'gofast.tools.funcutils' instead.")
+                          " from 'gofast.tools.coreutils' instead.")
     y = str2columns(y) if isinstance(y, str) and parse_string else y 
     
     isiter = False  if exclude_string and isinstance (
@@ -3528,7 +3493,7 @@ def str2columns (text, /, regex=None , pattern = None):
     
     Examples
     ---------
-    >>> from gofast.tools.funcutils import str2columns 
+    >>> from gofast.tools.coreutils import str2columns 
     >>> text = ('this.is the text to split. It is an: example of; splitting str - to text.')
     >>> str2columns (text )  
     ... ['this',
@@ -3595,7 +3560,7 @@ def sanitize_frame_cols(
         
     Examples 
     ---------
-    >>> from gofast.tools.funcutils import sanitize_frame_cols 
+    >>> from gofast.tools.coreutils import sanitize_frame_cols 
     >>> from gofast.tools.coreutils import read_data 
     >>> h502= read_data ('data/boreholes/H502.xlsx') 
     >>> h502 = sanitize_frame_cols (h502, fill_pattern ='_' ) 
@@ -3696,7 +3661,7 @@ def to_hdf5(d, /, fn, objname =None, close =True,  **hdf5_kws):
     Examples 
     ------------
     >>> import os 
-    >>> from gofast.tools.funcutils import sanitize_frame_cols, to_hdf5 
+    >>> from gofast.tools.coreutils import sanitize_frame_cols, to_hdf5 
     >>> from gofast.tools import read_data 
     >>> data = read_data('data/boreholes/H502.xlsx') 
     >>> sanitize_frame_cols (data, fill_pattern='_', inplace =True ) 
@@ -3788,7 +3753,7 @@ def find_by_regex (o , /, pattern,  func = re.match, **kws ):
         
     Example
     --------
-    >>> from gofast.tools.funcutils import find_by_regex
+    >>> from gofast.tools.coreutils import find_by_regex
     >>> from gofast.datasets import load_hlogs 
     >>> X0, _= load_hlogs (as_frame =True )
     >>> columns = X0.columns 
@@ -3847,7 +3812,7 @@ def is_in_if (o: iter, /, items: str | iter, error = 'raise',
         
     :example: 
         >>> from gofast.datasets import load_hlogs 
-        >>> from gofast.tools.funcutils import is_in_if 
+        >>> from gofast.tools.coreutils import is_in_if 
         >>> X0, _= load_hlogs (as_frame =True )
         >>> is_in_if  (X0 , items= ['depth_top', 'top']) 
         ... ValueError: Item 'top' is missing in the object 
@@ -4164,7 +4129,6 @@ def count_func (path , verbose = 0 ):
  
     return cobj if not verbose else None 
 
-
 def smart_label_classifier (
         arr: ArrayLike, /, values: float | List[float]= None , labels =None, 
         order ='soft', func: _F=None, raise_warn=True): 
@@ -4209,7 +4173,7 @@ def smart_label_classifier (
     Examples
     ----------
     >>> import numpy as np
-    >>> from gofast.tools.funcutils import smart_label_classifier
+    >>> from gofast.tools.coreutils import smart_label_classifier
     >>> sc = np.arange (0, 7, .5 ) 
     >>> smart_label_classifier (sc, values = [1, 3.2 ]) 
     array([0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2], dtype=int64)
@@ -4353,7 +4317,7 @@ def _smart_mapper (k, /,  kr , return_dict_map =False ) :
     :return: int - new categorical class 
     
     :Example: 
-    >>> from gofast.tools.funcutils import _smart_mapper 
+    >>> from gofast.tools.coreutils import _smart_mapper 
     >>> _smart_mapper (10000 , ( 500, 1500, 2000, 3500) )
     Out[158]: 4
     >>> _smart_mapper (10000 , ( 500, 1500, 2000, 3500) , return_dict_map=True)
@@ -4428,7 +4392,7 @@ def zip_extractor(
      
     Examples 
     ----------
-    >>> from gofast.tools.funcutils import zip_extractor 
+    >>> from gofast.tools.coreutils import zip_extractor 
     >>> zip_extractor ('gofast/datasets/data/edis/e.E.zip')
     
     """
@@ -4481,270 +4445,6 @@ def zip_extractor(
     
     return objnames 
 
-    
-def remove_outliers (
-    ar, 
-    method ='IQR',
-    threshold = 3.,
-    fill_value = None, 
-    axis = 1, 
-    interpolate=False, 
-    kind='linear'
-    ): 
-    """ Efficient strategy to remove outliers in the data. 
-    
-    Indeed, an outlier is the data point of the given sample, 
-    observation, or distribution that shall lie outside the overall pattern. 
-    A commonly used rule says that one will consider a data point an 
-    outlier if it has more than 1.5 IQR below the first quartile or above 
-    the third. 
-    
-    Two approaches are used to remove the outliers. 
-
-    - Inter Quartile Range (``IQR``)
-      IQR is the most commonly used and most trusted approach used in 
-      the research field. Said differently, low outliers shall 
-      lie below Q1-1.5 IQR, and high outliers shall lie Q3+1.5IQR. 
-      One needs to calculate median, quartiles, including IQR, Q1, 
-      and Q3. 
-      
-      .. math:: 
-          
-        Q1 = 1/4(n + 1)
-        
-        Q3 = 1/4 (n + 1)
-        
-        Q2 = Q3 – Q1
-      
-      To define the outlier base value is defined above and below 
-      datasets normal range namely Upper and Lower bounds, define the 
-      upper and the lower bound (1.5*IQR value is considered) :
-      
-      .. math:: 
-          
-         upper = Q3 +1.5*IQR
-
-         lower = Q1 – 1.5*IQR
-         
-      In the above formula as according to statistics, the 0.5 
-      scale-up of :math:`IQR (new_IQR = IQR + 0.5*IQR)` is taken, to consider 
-      all the data between 2.7 standard deviations in the Gaussian 
-      Distribution
-    
-    - Z-score 
-      Is also called a standard score. This value/score helps to understand 
-      that how far is the data point from the mean. And after setting up 
-      a threshold value one can utilize z score values of data points 
-      to define the outliers.
-      
-      .. math:: 
-          
-          Zscore = (\text{data_point} -\text{mean}) / \text{std. deviation}
-      
-    Now to define an outlier threshold value is chosen which is 
-    generally 3.0. As 99.7% of the data points lie between +/- 3 standard 
-    deviation (using Gaussian Distribution approach). 
-    
-    .. versionadded: 0.1.5 
-    
-    Parameters 
-    -----------
-    ar: Arraylike, pd.dataframe 
-       Arraylike  containing outliers to remove. 
-       
-       .. versionadded:: 0.2.7 
-          Accepts dataframe and can remove outliers using the `z_score`. 
-          
-    method: str, default='IQR'
-      The selected approach to remove the outliers. It can be
-      ['IQR'|'Z-score']. See Above for outlier explanations.  Note that 
-      when selecting ``"z-score"`` the threshold value greatly influence 
-      the quality of data considering as ooutliers. 
-      
-    threshold: float, default=3 
-      Thershold values is useful for ``"z-score"`` as the value for considering 
-      data above as outliers. 
-      
-    fill_value: float, optional
-      Value to replace the outliers. If not given, outliers are suppressed 
-      in the array. 
-    
-    axis: int, default=1 
-      axis from which to remove values. This is useful when two dimensional 
-      array is supplied. Default, delete outlier from the rows. 
-      
-    interpolate: bool, default=False, 
-       If ``fill_value='NaN'``, interpolation can be triggered to get the 
-       closest value in array to replace missing values. Note that 
-       `fill_value` should be NaN for interpolation to be concise. 
-       
-    kind: str, default='linear'
-      kind of interpolation. It could be ['nearest'|'linear'|'cubic']. 
-      
-    .. versionadded:: 0.2.8 
-       Interpolate NaN value after outliers removal. 
-    
-      
-    Returns
-    --------
-    arr: Array_like 
-        New array whith removed outliers. 
-        
-    Examples
-    ---------
-    >>> import numpy as np 
-    >>> np.random.seed (42 )
-    >>> from gofast.tools.funcutils import remove_outliers 
-    >>> data = np.random.randn (7, 3 )
-    >>> data_r = remove_outliers ( data )
-    >>> data.shape , data_r.shape 
-    (7, 3) (5, 3)
-    >>> remove_outliers ( data, fill_value =np.nan )
-    array([[ 0.49671415, -0.1382643 ,  0.64768854],
-           [ 1.52302986, -0.23415337, -0.23413696],
-           [ 1.57921282,  0.76743473, -0.46947439],
-           [ 0.54256004, -0.46341769, -0.46572975],
-           [ 0.24196227,         nan,         nan],
-           [-0.56228753, -1.01283112,  0.31424733],
-           [-0.90802408,         nan,  1.46564877]])
-    >>> # for one dimensional 
-    >>> remove_outliers ( data[:, 0] , fill_value =np.nan )
-    array([ 0.49671415,  1.52302986,  1.57921282,  0.54256004,  0.24196227,
-           -0.56228753,         nan])
-    >>> remove_outliers ( data[:, 0] , fill_value =np.nan, interpolate=True  )
-    >>> import matplotlib.pyplot as plt 
-    >>> plt.plot (np.arange (len(data ), data, ))
-    """
-    method = str(method).lower()
-    if ( 
-            hasattr ( ar, "__array__") 
-            and hasattr (ar, 'columns')
-            ): 
-        return _remove_outliers( ar, n_std= threshold )
-    
-    arr =np.array (ar, dtype = float)
-    
-    if method =='iqr': 
-        Q1 = np.percentile(arr[~np.isnan(arr)], 25,) 
-        Q3 = np.percentile(arr[~np.isnan(arr)], 75)
-        IQR = Q3 - Q1
-        
-        upper = Q3 + 1.5 * IQR  
-        
-        upper_arr = np.array (arr >= upper) 
-        lower = Q3 - 1.5 * IQR 
-        lower_arr =  np.array ( arr <= lower )
-        # replace the oulier by nan 
-        arr [upper_arr]= fill_value if fill_value else np.nan  
-        arr[ lower_arr]= fill_value if fill_value else np.nan 
-        
-    if method =='z-score': 
-        from scipy import stats
-        z = np.abs(stats.zscore(arr[~np.isnan(arr)]))
-        zmask  = np.array ( z > threshold )
-        arr [zmask]= fill_value if fill_value else np.nan
-        
-    if fill_value is None: 
-        # delete nan if fill value is not provided 
-        arr = arr[ ~np.isnan (arr ).any(axis =1)
-                  ]  if np.ndim (arr) > 1 else arr [~np.isnan(arr)]
-
-    if interpolate: 
-        arr = interpolate_grid (arr, method = kind )
-        
-    return arr 
-
-def _remove_outliers(data, n_std=3):
-    """Remove outliers from a dataframe."""
-    # separate cat feature and numeric features 
-    # if exists 
-    df, numf, catf = to_numeric_dtypes(
-        data , return_feature_types= True,  drop_nan_columns =True )
-    # get on;y the numeric 
-    df = df[numf]
-    for col in df.columns:
-        # print('Working on column: {}'.format(col))
-        mean = df[col].mean()
-        sd = df[col].std()
-        df = df[(df[col] <= mean+(n_std*sd))]
-    # get the index and select only the index 
-    index = df.index 
-    # get the data by index then 
-    # concatename 
-    df_cat = data [catf].iloc [ index ]
-    df = pd.concat ( [df_cat, df ], axis = 1 )
-    
-    return df
-
-def normalizer ( arr, /, method ='naive'): 
-    """ Normalize values to be between 0 and 1. 
-    
-    This normlizer handles NaN values translates data individually such
-    that it is in the given range on the training set, e.g. between
-    zero and one.
-
-    Note that when the transformation is set to the ``method ='MinMax'``,  
-    The transformation is given by::
-
-        X_std = (X - X.min(axis=0)) / (X.max(axis=0) - X.min(axis=0))
-        X_normed = X_std * (max - min) + min
-
-    where min, max = feature_range.
-
-    This transformation is often used as an alternative to zero mean,
-    unit variance scaling.
-
-    Parameters 
-    -----------
-    arr: Arraylike, 
-       Array to normalize, can contain NaN values. 
-    method: str,
-       Can be use 'scikit-learn' :class:`~gofast.exlib.MinMaxScaler` for 
-       normalization. Any other values used the naive normalization.
-     
-    Returns
-    --------
-    arr_norm: Normalized array. 
-    
-    Examples
-    ----------
-    >>> import numpy as np 
-    >>> from gofast.tools.funcutils import normalizer 
-    >>> np.random.seed (42)
-    >>> arr = np.random.randn (3, 2 ) 
-    array([[ 0.49671415, -0.1382643 ],
-           [ 0.64768854,  1.52302986],
-           [-0.23415337, -0.23413696]])
-    >>> normalizer (arr )
-    array([[4.15931313e-01, 5.45697636e-02],
-           [5.01849720e-01, 1.00000000e+00],
-           [0.00000000e+00, 9.34323403e-06]])
-    >>> normalizer (arr , method ='min-max')  # normalize data along axis=0 
-    array([[0.82879654, 0.05456093],
-           [1.        , 1.        ],
-           [0.        , 0.        ]])
-    >>> arr [0, 1] = np.nan; arr [1, 0] = np.nan 
-    >>> normalizer (arr )
-    array([[4.15931313e-01,            nan],
-           [           nan, 1.00000000e+00],
-           [0.00000000e+00, 9.34323403e-06]])
-    >>> normalizer (arr , method ='min-max')
-    array([[ 1., nan],
-           [nan,  1.],
-           [ 0.,  0.]])
-    
-    """   
-    method = str(method).lower() 
-    arr = np.array(arr )
-    
-    if method in ( 'sklearn', 'scikit-learn', 'minmax', 'min-max'): 
-        from sklearn.preprocessing import MinMaxScaler 
-        arr = arr.reshape(-1, 1) if arr.ndim ==1 else arr 
-        return  MinMaxScaler().fit_transform(arr ) 
-    
-    arr_norm  = (arr - np.nanmin(arr))/ (np.nanmax (arr) - np.nanmin(arr))
-    
-    return arr_norm 
 
 def _validate_name_in (name, /, defaults = '', expect_name= None, 
                          exception = None , deep=False ): 
@@ -4773,7 +4473,7 @@ def _validate_name_in (name, /, defaults = '', expect_name= None,
       
     Examples 
     -------
-    >>> from gofast.tools.funcutils import _validate_name_in 
+    >>> from gofast.tools.coreutils import _validate_name_in 
     >>> dnames = ('NAME', 'FIST NAME', 'SUrname')
     >>> _validate_name_in ('name', defaults=dnames )
     False 
@@ -4846,7 +4546,7 @@ def get_confidence_ratio (
            [ 4,  8],
            [10, 19],
            [ 5,  7]])
-    >>> from gofast.tools.funcutils import get_confidence_ratio 
+    >>> from gofast.tools.coreutils import get_confidence_ratio 
     >>> get_confidence_ratio (test)
     >>> array([1., 1.])
     >>> get_confidence_ratio (test, invalid= ( 13, 19) )
@@ -4888,10 +4588,10 @@ def get_confidence_ratio (
     return ratio 
     
 def assert_ratio(
-        v, /, bounds: List[float] = None , 
-        exclude_value:float= None, 
-        in_percent:bool =False , name:str ='rate' 
-        ): 
+    v, /, bounds: List[float] = None , 
+    exclude_value:float= None, 
+    in_percent:bool =False , name:str ='rate' 
+    ): 
     """ Assert rate value between a specific range. 
     
     Parameters 
@@ -4908,9 +4608,6 @@ def assert_ratio(
     in_percent: bool, default=False, 
        Convert the value into a percentage.
        
-       .. versionchanged:: 0.2.3 
-          `as_percent` parameter is changed to `in_percent`. 
-          
     name: str, default='rate' 
        the name of the value for assertion. 
        
@@ -4921,7 +4618,7 @@ def assert_ratio(
        
     Examples
     ---------
-    >>> from gofast.tools.funcutils import assert_ratio
+    >>> from gofast.tools.coreutils import assert_ratio
     >>> assert_ratio('2')
     2.0
     >>> assert_ratio(2 , bounds =(2, 8))
@@ -4968,8 +4665,8 @@ def assert_ratio(
 
     if len(bounds)!=0:
         if ( 
-                low is not None  # use is not None since 0. is
-                and up is not None # consider as False value
+            low is not None  # use is not None since 0. is
+            and up is not None # consider as False value
             and  (v < low or v > up)
             ) :
                 raise err 
@@ -4990,6 +4687,68 @@ def assert_ratio(
          raise ValueError ("{} value should be {}, got: {}".
                            format(name.title(), msg.format(low, up), v  ))
     return v 
+
+def validate_ratio(
+    value: float, 
+    bounds: Optional[Tuple[float, float]] = None, 
+    exclude: Optional[float] = None, 
+    to_percent: bool = False, 
+    param_name: str = 'value'
+) -> float:
+    """Validates and optionally converts a value to a percentage within 
+    specified bounds, excluding specific values.
+
+    Parameters:
+    -----------
+    value : float or str
+        The value to validate and convert. If a string with a '%' sign, 
+        conversion to percentage is attempted.
+    bounds : tuple of float, optional
+        A tuple specifying the lower and upper bounds (inclusive) for the value. 
+        If None, no bounds are enforced.
+    exclude : float, optional
+        A specific value to exclude from the valid range. If the value matches 
+        'exclude', a ValueError is raised.
+    to_percent : bool, default=False
+        If True, the value is converted to a percentage 
+        (assumed to be in the range [0, 100]).
+    param_name : str, default='value'
+        The parameter name to use in error messages.
+
+    Returns:
+    --------
+    float
+        The validated (and possibly converted) value.
+
+    Raises:
+    ------
+    ValueError
+        If the value is outside the specified bounds, matches the 'exclude' 
+        value, or cannot be converted as specified.
+    """
+    if isinstance(value, str) and '%' in value:
+        to_percent = True
+        value = value.replace('%', '')
+    try:
+        value = float(value)
+    except ValueError:
+        raise ValueError(f"Expected a float, got {type(value).__name__}: {value}")
+
+    if to_percent and 0 < value <= 100:
+        value /= 100
+
+    if bounds:
+        if not (bounds[0] <= value <= bounds[1]):
+            raise ValueError(
+                f"{param_name} must be between {bounds[0]} and {bounds[1]}, got: {value}")
+    
+    if exclude is not None and value == exclude:
+        raise ValueError(f"{param_name} cannot be {exclude}")
+
+    if to_percent and value > 1:
+        raise ValueError(f"{param_name} converted to percent must not exceed 1, got: {value}")
+
+    return value
 
 def exist_features (df, features, error='raise', name="Feature"): 
     """Control whether the features exist or not  
@@ -5033,113 +4792,8 @@ def exist_features (df, features, error='raise', name="Feature"):
     
     return isf    
     
-def interpolate_grid (
-    arr, / , 
-    method ='cubic', 
-    fill_value='auto', 
-    view = False,
-    ): 
-    """
-    Interpolate data containing missing values. 
 
-    Parameters 
-    -----------
-    arr: ArrayLike2D 
-       Two dimensional array for interpolation 
-    method: str, default='cubic'
-      kind of interpolation. It could be ['nearest'|'linear'|'cubic']. 
-     
-    fill_value: float, str, default='auto' 
-       Fill the interpolated grid at the egdes or surrounding NaN with 
-       a filled value. The ``auto`` uses the forward and backward 
-       fill strategy. 
-       
-    view: bool, default=False, 
-       Quick visualize the interpolated grid. 
-       
-     
-    .. versionchanged:: 0.2.8 
-       One-dimensional array is henceforth possible. Error no longer raises. 
-       
-    Returns 
-    ---------
-    arri: ArrayLike2d 
-       Interpolated 2D grid. 
-       
-    See also 
-    ---------
-    spi.griddata: 
-        Scipy interpolate Grid data 
-    fillNaN: 
-        Fill missing data strategy. 
-        
-    Examples
-    ---------
-    >>> import numpy as np
-    >>> from gofast.tools.funcutils import interpolate_grid 
-    >>> x = [28, np.nan, 50, 60] ; y = [np.nan, 1000, 2000, 3000]
-    >>> xy = np.vstack ((x, y))._T
-    >>> xyi = interpolate_grid (xy, view=True ) 
-    >>> xyi 
-    array([[  28.        ,   28.        ],
-           [  22.78880663, 1000.        ],
-           [  50.        , 2000.        ],
-           [  60.        , 3000.        ]])
 
-    """
-    is2d = True 
-    if not hasattr(arr, '__array__'): 
-        arr = np.array (arr) 
-    
-    if arr.ndim==1: 
-        #convert to two dimension array
-        arr = np.vstack ((arr, arr ))
-        is2d =False 
-        # raise TypeError(
-        #     "Expect two dimensional array for grid interpolation.")
-        
-    # make x, y array for mapping 
-    x = np.arange(0, arr.shape[1])
-    y = np.arange(0, arr.shape[0])
-    #mask invalid values
-    arr= np.ma.masked_invalid(arr) 
-    xx, yy = np.meshgrid(x, y)
-    #get only the valid values
-    x1 = xx[~arr.mask]
-    y1 = yy[~arr.mask]
-    newarr = arr[~arr.mask]
-    
-    arri = spi.griddata(
-        (x1, y1),
-        newarr.ravel(),
-        (xx, yy), 
-        method=method
-        )
-    
-    if fill_value =='auto': 
-        arri = fillNaN(arri, method ='both ')
-    else:
-        arri [np.isnan(arri)] = float( _assert_all_types(
-            fill_value, float, int, objname ="'fill_value'" )
-            ) 
-
-    if view : 
-        fig, ax  = plt.subplots (nrows = 1, ncols = 2 , sharey= True, )
-        ax[0].imshow(arr ,interpolation='nearest', label ='Raw Grid')
-        ax[1].imshow (arri, interpolation ='nearest', 
-                      label = 'Interpolate Grid')
-        
-        ax[0].set_title ('Raw Grid') 
-        ax[1].set_title ('Interpolate Grid') 
-        
-        plt.show () 
-        
-    if not is2d: 
-        arri = arri[0, :]
-        
-    return arri 
-
-    
 def random_selector (
         arr:ArrayLike, / , value: float | ArrayLike, 
         seed: int = None, shuffle =False ): 
@@ -5169,7 +4823,7 @@ def random_selector (
     Examples 
     ----------
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import random_selector 
+    >>> from gofast.tools.coreutils import random_selector 
     >>> dat= np.arange (42 ) 
     >>> random_selector (dat , 7, seed = 42 ) 
     array([0, 1, 2, 3, 4, 5, 6])
@@ -5480,7 +5134,7 @@ def get_xy_coordinates (d, / , as_frame = False, drop_xy = False,
     Examples 
     ----------
     >>> import gofast as gf 
-    >>> from gofast.tools.funcutils import get_xy_coordinates 
+    >>> from gofast.tools.coreutils import get_xy_coordinates 
     >>> testdata = gf.make_erp ( n_stations =7, seed =42 ).frame 
     >>> xy, d, xynames = get_xy_coordinates ( testdata,  )
     >>> xy , xynames 
@@ -5639,7 +5293,7 @@ def pair_data(
     Examples 
     ----------
     >>> import gofast as gf 
-    >>> from gofast.tools.funcutils import pair_data 
+    >>> from gofast.tools.coreutils import pair_data 
     >>> data = gf.make_erp (seed =42 , n_stations =12, as_frame =True ) 
     >>> table1 = gf.DCProfiling ().fit(data).summary()
     >>> table1 
@@ -5798,7 +5452,7 @@ def read_worksheets(*data):
     Examples 
     -----------
     >>> import os 
-    >>> from gofast.tools.funcutils import read_worksheets 
+    >>> from gofast.tools.coreutils import read_worksheets 
     >>> sheet_file= r'_F:\repositories\gofast\data\erp\sheets\gbalo.xlsx'
     >>> data, snames =  read_worksheets (sheet_file )
     >>> snames 
@@ -5887,7 +5541,7 @@ def key_checker (
     Examples
     --------
     
-    >>> from gofast.tools.funcutils import key_checker
+    >>> from gofast.tools.coreutils import key_checker
     >>> key_checker('h502', valid_keys= ['h502', 'h253','h2601'])  
     Out[68]: 'h502'
     >>> key_checker('h502+h2601', valid_keys= ['h502', 'h253','h2601'])
@@ -5980,7 +5634,7 @@ def random_sampling (
     
     Examples
     ---------
-    >>> from gofast.tools.funcutils import random_sampling 
+    >>> from gofast.tools.coreutils import random_sampling 
     >>> from gofast.datasets import load_hlogs 
     >>> data= load_hlogs().frame
     >>> random_sampling( data, samples = 7 ).shape 
@@ -6086,7 +5740,7 @@ def make_obj_consistent_if (
        
     Examples 
     ----------
-    >>> from gofast.tools.funcutils import make_obj_consistent_if
+    >>> from gofast.tools.coreutils import make_obj_consistent_if
     >>> from gofast.exlib import SVC, LogisticRegression, XGBClassifier 
     >>> classifiers = ["SVC", "LogisticRegression", "XGBClassifier"] 
     >>> classifier_names = ['SVC', 'LR'] 
@@ -6119,72 +5773,112 @@ def make_obj_consistent_if (
         
     return item
     
-    
 def replace_data(
-    X, y =None, 
-    n_times: int  = 1, 
-    axis = 0, 
-    reset_index :bool =...  
-    ): 
-    """ Replace items in data :math:`n` times 
-    
-    Parameters 
+    X:ArrayLike| DataFrame, 
+    y: Optional[ArrayLike | Series] = None, 
+    n: int = 1, 
+    axis: int = 0, 
+    reset_index: bool = False,
+    include_original: bool = False,
+    random_sample: bool = False,
+    shuffle: bool = False
+) -> ArrayLike| DataFrame | Tuple[ArrayLike | DataFrame, ArrayLike| Series]:
+    """
+    Duplicates the data `n` times along a specified axis and applies various 
+    optional transformations to augment the data suitability for further 
+    processing or analysis.
+
+    Parameters
     ----------
-    X: Arraylike 1D or pd.DataFrame 
-      Data to replace. Note Sparse matrices is not allowed. Use 
-      :func:`random_sampling` instead. 
-    y: Arraylike 1d. 
-       Preferably one dimensional data. 
-       
-    n_times: int, 
-      Number of times all items should be replaced in data. 
-      
-    reset_index: bool, default=False. 
-      If ``True`` and dataframe,Index is reset and dropped. 
-      
-    Returns 
-    --------
-    X or (X, y)  : Tuple of data replaced
-       Tuple is returned if y is passed. 
-    
+    X : Union[np.ndarray, pd.DataFrame]
+        The input data to process. Sparse matrices are not supported.
+    y : Optional[Union[np.ndarray, pd.Series]], optional
+        Additional target data to process alongside `X`. Default is None.
+    n : int, optional
+        The number of times to replicate the data. Default is 1.
+    axis : int, optional
+        The axis along which to concatenate the data. Default is 0.
+    reset_index : bool, optional
+        If True and `X` is a DataFrame, resets the index without adding
+        the old index as a column. Default is False.
+    include_original : bool, optional
+        If True, the original data is included in the output alongside
+        the replicated data. Default is False.
+    random_sample : bool, optional
+        If True, samples from `X` randomly with replacement. Default is False.
+    shuffle : bool, optional
+        If True, shuffles the concatenated data. Default is False.
+
+    Returns
+    -------
+    Union[np.ndarray, pd.DataFrame, Tuple[Union[np.ndarray, pd.DataFrame], 
+                                          Union[np.ndarray, pd.Series]]]
+        The augmented data, either as a single array or DataFrame, or as a tuple
+        of arrays/DataFrames if `y` is provided.
+
+    Notes
+    -----
+    The replacement is mathematically formulated as follows:
+    Let :math:`X` be a dataset with :math:`m` elements. The function replicates 
+    :math:`X` `n` times, resulting in a new dataset :math:`X'` of :math:`m * n` 
+    elements if `include_original` is False. If `include_original` is True,
+    :math:`X'` will have :math:`m * (n + 1)` elements.
+
     Examples
-    ---------
+    --------
+    
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import replace_data
+    >>> from gofast.tools.coreutils import replace_data
     >>> X, y = np.random.randn ( 7, 2 ), np.arange(7)
     >>> X.shape, y.shape 
     ((7, 2), (7,))
-    >>> X_new, y_new = replace_data (X, y, n_times =10 )
+    >>> X_new, y_new = replace_data (X, y, n=10 )
     >>> X_new.shape , y_new.shape
-    Out[158]: ((70, 2), (70,))
-    """
-    
-    n = n_times or 1 
-    n= int (_assert_all_types(n, int, float, objname ='n_times'))
-    
-    def concat_data ( ar ,): 
-        if hasattr ( ar, 'columns') or hasattr ( ar, 'series'): 
-            d = pd.concat (  [ ar for i in range(n)], axis = axis ) 
-            if reset_index: 
-                d.reset_index (drop =True, inplace =True  )
-                
-        else: d = np.concatenate ([ ar for i in range(n)], axis = axis  )
-        return d 
-    
-    X = is_iterable(X, exclude_string =True, transform = True )
-    
-    if y is not None: 
-        y = is_iterable( y, exclude_string= True, transform= True)
-    
-    if not hasattr (X, '__array__'): 
-        X = np.array(X)
-        
-    if not hasattr (y, '__array__') and y is not None : 
-        y = np.array(y)
+    ((70, 2), (70,))
+    >>> X = np.array([[1, 2], [3, 4]])
+    >>> replace_data(X, n=2, axis=0)
+    array([[1, 2],
+           [3, 4],
+           [1, 2],
+           [3, 4]])
 
-    return concat_data ( X) if y is None else (
-            concat_data( X) , concat_data(y))
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
+    >>> replace_data(df, n=1, include_original=True, reset_index=True)
+       A  B
+    0  1  3
+    1  2  4
+    2  1  3
+    3  2  4
+    """
+    def concat_data(ar: Union[ArrayLike, DataFrame]) -> Union[ArrayLike, DataFrame]:
+        repeated_data = [ar] * (n + 1) if include_original else [ar] * n
         
+        if random_sample:
+            random_indices = np.random.choice(
+                ar.shape[0], size=ar.shape[0], replace=True)
+            repeated_data = [ar[random_indices] for _ in repeated_data]
+
+        concatenated = pd.concat(repeated_data, axis=axis) if isinstance(
+            ar, pd.DataFrame) else np.concatenate(repeated_data, axis=axis)
+        
+        if shuffle:
+            shuffled_indices = np.random.permutation(concatenated.shape[0])
+            concatenated = concatenated[shuffled_indices] if isinstance(
+                ar, pd.DataFrame) else concatenated.iloc[shuffled_indices]
+
+        if reset_index and isinstance(concatenated, pd.DataFrame):
+            concatenated.reset_index(drop=True, inplace=True)
+        
+        return concatenated
+
+    X = np.array(X) if not isinstance(X, (np.ndarray, pd.DataFrame)) else X
+    y = np.array(y) if y is not None and not isinstance(y, (np.ndarray, pd.Series)) else y
+
+    if y is not None:
+        return concat_data(X), concat_data(y)
+    return concat_data(X)
+
 def convert_value_in (v, /, unit ='m'): 
     """Convert value based on the reference unit.
     
@@ -6203,7 +5897,7 @@ def convert_value_in (v, /, unit ='m'):
        
     Examples 
     ---------
-    >>> from gofast.tools.funcutils import convert_value_in 
+    >>> from gofast.tools.coreutils import convert_value_in 
     >>> convert_value_in (20) 
     20.0
     >>> convert_value_in ('20mm') 
@@ -6256,7 +5950,7 @@ def split_list(lst:List[Any, ...],/,  val:int, fill_value:Any=None ):
     
     Examples
     --------
-    >>> from gofast.tools.funcutils import split_list
+    >>> from gofast.tools.coreutils import split_list
     >>> lst = [1, 2, 3, 4, 5, 6, 7, 8]
     >>> val = 3
     >>> print(split_list(lst, val))
@@ -6329,7 +6023,7 @@ def key_search (
 
     Examples
     ---------
-    >>> from gofast.tools.funcutils import key_search 
+    >>> from gofast.tools.coreutils import key_search 
     >>> key_search('h502-hh2601', default_keys= ['h502', 'h253','HH2601'])
     Out[44]: ['h502']
     >>> key_search('h502-hh2601', default_keys= ['h502', 'h253','HH2601'], 
@@ -6411,7 +6105,7 @@ def repeat_item_insertion(text, /, pos, item ='', fill_value=''):
       
     Examples
     ----------
-    >>> from gofast.tools.funcutils import repeat_item_insertion
+    >>> from gofast.tools.coreutils import repeat_item_insertion
     >>> repeat_item_insertion ( '0125356.45', pos=2, item=':' ) 
     Out[65]: '01:25:35:6.45'
     >>> repeat_item_insertion ( 'Function inserts car in text.', pos=10, item='TK' )
@@ -6494,7 +6188,7 @@ def numstr2dms (
       
     Examples
     --------
-    >>> from gofast.tools.funcutils import numstr2dms
+    >>> from gofast.tools.coreutils import numstr2dms
     >>> numstr2dms ("1134132.08")
     Out[17]: '113:41:32.08
     >>> numstr2dms ("13'41'32.08")
@@ -6635,7 +6329,7 @@ def store_or_write_hdf5 (
   
     Examples
     --------
-    >>> from gofast.tools.funcutils import store_or_write_hdf5
+    >>> from gofast.tools.coreutils import store_or_write_hdf5
     >>> from gofast.datasets import load_bagoue 
     >>> data = load_bagoue().frame 
     >>> data.geol[:5]
@@ -6754,7 +6448,7 @@ def ellipsis2false( *parameters , default_value: Any=False ):
        parameters, uses the trailing comma for collecting the parameters 
        
     :example: 
-        >>> from gofast.tools.funcutils import ellipsis2false 
+        >>> from gofast.tools.coreutils import ellipsis2false 
         >>> var, = ellipsis2false (...)
         >>> var 
         False
@@ -6814,7 +6508,7 @@ def type_of_target(y):
 
     return 'unknown'
 
-def add_noises_to(data, /, noise=.1, seed =None ):
+def add_noises_to(data, /, noise=.1, seed =None, gaussian_noise=False ):
     """
     Adds NaN values to a pandas DataFrame.
 
@@ -6829,6 +6523,9 @@ def add_noises_to(data, /, noise=.1, seed =None ):
         np.random.Generator, optional
        If int, array-like, or BitGenerator, seed for random number generator. 
        If np.random.RandomState or np.random.Generator, use as given.
+    gaussian_noise : bool, default=False
+        If True, adds Gaussian noise to the data. Otherwise,
+        replaces values with NaN.
     Returns
     -------
     pandas.DataFrame
@@ -6836,28 +6533,33 @@ def add_noises_to(data, /, noise=.1, seed =None ):
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import add_noises_to
+    >>> from gofast.tools.coreutils import add_noises_to
     >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': ['x', 'y', 'z']})
     >>> new_df = add_nan_to_dataframe(df, noises=0.2)
+    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    >>> new_df = add_noises_to(df, noise=0.1, gaussian_noise=True)
     """
-    random.seed (seed)
+    np.random.seed(seed)
     if noise is None: 
         return data 
     noise = assert_ratio(noise)
-    # Copy the dataframe to avoid changing the original data
-    df_with_nan = data.copy()
+    if gaussian_noise:
+        # Add Gaussian noise to the data
+        noise_data = data.apply(lambda x: x + np.random.normal(
+            0, noise, size=x.shape))
+        return noise_data
+    else:
+        # Replace values with NaN
+        df_with_nan = data.copy()
+        nan_count_per_column = int(noise * len(df_with_nan))
 
-    # Calculate the number of NaNs to add in each column 
-    # based on the percentage
-    nan_count_per_column = int(noise * len(df_with_nan))
+        for column in df_with_nan.columns:
+            nan_indices = random.sample(range(len(df_with_nan)),
+                                        nan_count_per_column)
+            df_with_nan.loc[nan_indices, column] = np.nan
 
-    for column in df_with_nan.columns:
-        # Randomly pick indices to replace with NaN
-        nan_indices = random.sample(range(len(df_with_nan)),nan_count_per_column)
-        df_with_nan.loc[nan_indices, column] = np.nan
+        return df_with_nan
 
-    return df_with_nan
- 
 def fancier_repr_formatter(obj, max_attrs=7):
     """
     Generates a formatted string representation for any class object.
@@ -6877,7 +6579,7 @@ def fancier_repr_formatter(obj, max_attrs=7):
 
     Examples:
     --------
-    >>> from gofast.tools.funcutils import fancier_repr_formatter
+    >>> from gofast.tools.coreutils import fancier_repr_formatter
     >>> class MyClass:
     >>>     def __init__(self, a, b, c):
     >>>         self.a = a
@@ -6932,7 +6634,7 @@ def generic_getattr(obj, name, default_value=None):
 
     Examples:
     --------
-    >>> from gofast.tools.funcutils import generic_getattr
+    >>> from gofast.tools.coreutils import generic_getattr
     >>> class MyClass:
     >>>     def __init__(self, a, b):
     >>>         self.a = a
@@ -7270,7 +6972,7 @@ def normalize_string(
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import normalize_string
+    >>> from gofast.tools.coreutils import normalize_string
     >>> normalize_string("Hello World", target_strs=["hello", "world"], ignore_case=True)
     'hello world'
     >>> normalize_string("Goodbye World", target_strs=["hello", "goodbye"], 
@@ -7280,12 +6982,12 @@ def normalize_string(
                          raise_exception=True)
     ValueError: Input string not found in target strings.
     """
-    normalized_str = input_str.lower() if ignore_case else input_str
+    normalized_str = str(input_str).lower() if ignore_case else input_str
 
     if not target_strs:
         return normalized_str
     target_strs = is_iterable(target_strs, exclude_string=True, transform =True)
-    normalized_targets = [t.lower() for t in target_strs] if ignore_case else target_strs
+    normalized_targets = [str(t).lower() for t in target_strs] if ignore_case else target_strs
     matched_target = None
 
     for target in normalized_targets:
@@ -7310,7 +7012,10 @@ def normalize_string(
         return (normalized_str, matched_target) if return_target_str else normalized_str
 
     if raise_exception:
-        error_msg = error_msg or f"{input_str!r} not found in {target_strs}."
+        error_msg = error_msg or ( 
+            f"Invalid input. Expect {smart_format(target_strs, 'or')}."
+            f" Got {input_str!r}."
+            )
         raise ValueError(error_msg)
     
     if return_target_only: 
@@ -7348,7 +7053,7 @@ def format_and_print_dict(data_dict, front_space=4):
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import format_and_print_dict
+    >>> from gofast.tools.coreutils import format_and_print_dict
     >>> sample_dict = {
             'gender': {1: 'Male', 0: 'Female'},
             'age': {1: '35-60', 0: '16-35', 2: '>60'}
@@ -7404,7 +7109,7 @@ def fill_nan_in(
     Example
     -------
     >>> import pandas as pd
-    >>> from gofast.tools.funcutils import fill_nan_in
+    >>> from gofast.tools.coreutils import fill_nan_in
     >>> df = pd.DataFrame({'A': [1, 2, np.nan], 'B': [np.nan, 2, 3]})
     >>> df = fill_nan_in(df, method='median')
     >>> print(df)
@@ -7477,7 +7182,7 @@ def get_valid_kwargs(obj_or_func, raise_warning=False, **kwargs):
     
     Examples
     --------
-    >>> from gofast.tools.funcutils import get_valid_kwargs
+    >>> from gofast.tools.coreutils import get_valid_kwargs
     >>> class MyClass:
     ...     def __init__(self, a, b):
     ...         self.a = a
@@ -7771,7 +7476,7 @@ def extract_coordinates(X, Xt=None, columns=None):
     Examples
     --------
     >>> import numpy as np 
-    >>> from gofast.tools.funcutils import extract_coordinates
+    >>> from gofast.tools.coreutils import extract_coordinates
     >>> X = np.array([[1, 2], [3, 4]])
     >>> Xt = np.array([[5, 6], [7, 8]])
     >>> extract_coordinates(X, Xt )
@@ -7903,7 +7608,7 @@ def validate_feature(data: Union[DataFrame, Series], /, features: List[str],
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import validate_feature
+    >>> from gofast.tools.coreutils import validate_feature
     >>> import pandas as pd
     >>> data = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
     >>> result = validate_feature(data, ['A', 'C'], verbose='raise')
@@ -7948,7 +7653,7 @@ def features_in(
     Examples
     --------
     >>> import pandas as pd
-    >>> from gofast.tools.funcutils import features_in
+    >>> from gofast.tools.coreutils import features_in
     >>> data1 = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
     >>> data2 = pd.Series([5, 6], name='C')
     >>> data3 = pd.DataFrame({'X': [7, 8]})
@@ -8058,7 +7763,7 @@ def split_train_test(
     --------
     >>> import pandas as pd
     >>> from sklearn.datasets import load_iris
-    >>> from gofast.tools.funcutils import split_train_test
+    >>> from gofast.tools.coreutils import split_train_test
     >>> data = load_iris(as_frame=True)['data']
     >>> train_set, test_set = split_train_test(data, test_ratio=0.2)
     >>> len(train_set), len(test_set)
@@ -8101,7 +7806,7 @@ def test_set_check_id(
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import test_set_check_id
+    >>> from gofast.tools.coreutils import test_set_check_id
     >>> test_set_check_id(42, test_ratio=0.2, hash=hashlib.md5)
     ... False
     """
@@ -8188,7 +7893,6 @@ def split_train_test_by_id(
 
     return train_set, test_set
 
-  
 def parallelize_jobs(
     function: _F[..., Any],
     tasks: Sequence[Dict[str, Any]] = (),
@@ -8229,7 +7933,7 @@ def parallelize_jobs(
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import parallelize_jobs
+    >>> from gofast.tools.coreutils import parallelize_jobs
     >>> def greet(name, greeting='Hello'):
     ...     return f"{greeting}, {name}!"
     >>> tasks = [
@@ -8265,8 +7969,9 @@ def parallelize_jobs(
     
     return results
  
-def denormalize(data: ArrayLike, min_value: float, max_value: float
-                ) -> ArrayLike:
+def denormalize(
+    data: ArrayLike, min_value: float, max_value: float
+    ) -> ArrayLike:
     """
     Denormalizes data from a normalized scale back to its original scale.
 
@@ -8291,7 +7996,7 @@ def denormalize(data: ArrayLike, min_value: float, max_value: float
     Examples
     --------
     >>> import numpy as np
-    >>> from gofast.tools.funcutils import denormalize
+    >>> from gofast.tools.coreutils import denormalize
     >>> normalized_data = np.array([0, 0.5, 1])
     >>> min_value = 10
     >>> max_value = 20
@@ -8306,6 +8011,9 @@ def denormalize(data: ArrayLike, min_value: float, max_value: float
         `data_norm = (data - min_value) / (max_value - min_value)`
     The denormalize function uses the inverse of this formula to restore the data.
     """
+    if not isinstance (data, (pd.Series, pd.DataFrame)): 
+        data = np.asarray( data )
+        
     return data * (max_value - min_value) + min_value
    
 def download_progress_hook(t):
@@ -8340,8 +8048,8 @@ def download_progress_hook(t):
     return update_to 
 
 def squeeze_specific_dim(
-        arr: np.ndarray, axis: Optional[int] = -1
-        ) -> np.ndarray:
+    arr: np.ndarray, axis: Optional[int] = -1
+    ) -> np.ndarray:
     """
     Squeeze specific dimensions of a NumPy array based on the axis parameter.
     
@@ -8371,7 +8079,7 @@ def squeeze_specific_dim(
     --------
     Squeeze the last dimension:
 
-    >>> from gofast.tools.funcutils import squeeze_specific_dim
+    >>> from gofast.tools.coreutils import squeeze_specific_dim
     >>> arr = np.array([[1], [2], [3]])
     >>> print(squeeze_specific_dim(arr).shape)
     (3,)
@@ -8424,7 +8132,7 @@ def contains_delimiter(s: str, delimiters: Union[str, list, set]) -> bool:
 
     Examples
     --------
-    >>> from gofast.tools.funcutils import contains_delimiter
+    >>> from gofast.tools.coreutils import contains_delimiter
     >>> contains_delimiter("example__string", "__")
     True
 
@@ -8735,34 +8443,38 @@ def process_and_extract_data(
     on_error: str = 'raise',
 ) -> List[np.ndarray]:
     """
-    Extracts and processes data from various input types, focusing on column extraction
-    from pandas DataFrames and conversion of inputs to numpy arrays or pandas Series.
+    Extracts and processes data from various input types, focusing on column 
+    extraction from pandas DataFrames and conversion of inputs to numpy 
+    arrays or pandas Series.
 
     Parameters
     ----------
     *args : ArrayLike
-        A variable number of inputs, each can be a list, numpy array, pandas Series,
-        dictionary, or pandas DataFrame.
+        A variable number of inputs, each can be a list, numpy array, pandas 
+        Series,dictionary, or pandas DataFrame.
     columns : List[Union[str, int]], optional
-        Specific columns to extract from pandas DataFrames. If not provided, the function
-        behaves differently based on `allow_split`.
+        Specific columns to extract from pandas DataFrames. If not provided, 
+        the function behaves differently based on `allow_split`.
     enforce_extraction : bool, default=True
-        Forces the function to try extracting `columns` from DataFrames. If False,
-        DataFrames are returned without column extraction unless `allow_split` is True.
+        Forces the function to try extracting `columns` from DataFrames. 
+        If False, DataFrames are returned without column extraction unless 
+        `allow_split` is True.
         Removing non-conforming elements if True.
     allow_split : bool, default=False
-        If True and a DataFrame is provided without `columns`, splits the DataFrame
-        into its constituent columns.
+        If True and a DataFrame is provided without `columns`, splits the 
+        DataFrame into its constituent columns.
     search_multiple : bool, default=False
-        Allows searching for `columns` across multiple DataFrame inputs. Once a column
-        is found, it is not searched for in subsequent DataFrames.
+        Allows searching for `columns` across multiple DataFrame inputs. Once 
+        a column is found, it is not searched for in subsequent DataFrames.
     ensure_uniform_length : bool, default=False
-        Checks that all extracted arrays have the same length. Raises an error if they don't.
+        Checks that all extracted arrays have the same length. Raises an error
+        if they don't.
     to_array : bool, default=False
         Converts all extracted pandas Series to numpy arrays.
     on_error : str, {'raise', 'ignore'}, default='raise'
-        Determines how to handle errors during column extraction or when enforcing uniform length.
-        'raise' will raise an error, 'ignore' will skip the problematic input.
+        Determines how to handle errors during column extraction or when 
+        enforcing uniform length. 'raise' will raise an error, 'ignore' will 
+        skip the problematic input.
 
     Returns
     -------
@@ -8811,12 +8523,13 @@ def process_and_extract_data(
             target_columns: Optional[List[Union[str, int]]], 
             to_array: bool) -> Optional[np.ndarray]:
         """
-        Processes each input based on its type, extracting specified columns if necessary,
-        and converting to numpy array if specified.
+        Processes each input based on its type, extracting specified columns 
+        if necessary, and converting to numpy array if specified.
         """
         if isinstance(input_data, (list, tuple)):
             input_data = np.array(input_data)
-            return input_data if len(input_data.shape) == 1 or not enforce_extraction else None
+            return input_data if len(input_data.shape
+                                     ) == 1 or not enforce_extraction else None
 
         elif isinstance(input_data, dict):
             input_data = pd.DataFrame(input_data)
@@ -8824,15 +8537,18 @@ def process_and_extract_data(
         if isinstance(input_data, pd.DataFrame):
             if target_columns:
                 for col in target_columns:
-                    if col in input_data.columns and (search_multiple or col not in columns_found):
-                        data_to_add = input_data[col].to_numpy() if to_array else input_data[col]
+                    if col in input_data.columns and (
+                            search_multiple or col not in columns_found):
+                        data_to_add = input_data[col].to_numpy(
+                            ) if to_array else input_data[col]
                         extracted_data.append(data_to_add)
                         columns_found.add(col)
                     elif on_error == 'raise':
                         raise ValueError(f"Column {col} not found in DataFrame.")
             elif allow_split:
                 for col in input_data.columns:
-                    data_to_add = input_data[col].to_numpy() if to_array else input_data[col]
+                    data_to_add = input_data[col].to_numpy(
+                        ) if to_array else input_data[col]
                     extracted_data.append(data_to_add)
             return None
 
@@ -8843,10 +8559,12 @@ def process_and_extract_data(
                     extracted_data.append(arr.squeeze())
                 return None
             elif input_data.ndim > 1 and enforce_extraction and on_error == 'raise':
-                raise ValueError("Multidimensional array found while `enforce_extraction` is True.")
+                raise ValueError("Multidimensional array found while "
+                                 "`enforce_extraction` is True.")
             return input_data if to_array else np.squeeze(input_data)
 
-        return input_data.to_numpy() if to_array and isinstance(input_data, pd.Series) else input_data
+        return input_data.to_numpy() if to_array and isinstance(
+            input_data, pd.Series) else input_data
 
     for arg in args:
         result = _process_input(arg, columns, to_array)
@@ -8900,7 +8618,12 @@ def to_series_if(
     >>> series = to_series_if(0.5, 8, np.array(
         [6.3]), [5], 2, value_names=['a', 'b', 'c', 'd', 'e'])
     >>> print(series)
-
+    a    0.5
+    b    8.0
+    c    6.3
+    d    5.0
+    e    2.0
+    dtype: float64
     >>> series = to_series_if(0.5, 8, np.array([6.3, 7]), [5], 2,
                               value_names=['a', 'b', 'c', 'd', 'e'], error='raise')
     ValueError: Failed to construct series, input types vary.
@@ -9383,6 +9106,8 @@ def closest_color(rgb_color, consider_alpha=False, color_space='rgb'):
     if color_space not in ['rgb', 'lab']:
         raise ValueError(f"Invalid color space '{color_space}'. Choose 'rgb' or 'lab'.")
 
+    if ensure_scipy_compatibility(): 
+        from scipy.spatial import distance 
     # Adjust input color based on consider_alpha flag
     
     # Include alpha channel if consider_alpha is True
@@ -9480,6 +9205,7 @@ def check_uniform_type(
 
     Examples
     --------
+    >>> from gofast.tools.coreutils import check_uniform_type
     >>> check_uniform_type([1, 2, 3])
     True
 
@@ -9489,7 +9215,7 @@ def check_uniform_type(
     >>> deferred_check = check_uniform_type([1, 2, '3'], convert_values=True, 
     ...                                        target_type=int, return_func=True)
     >>> deferred_check()
-    True
+    [1, 2, 3]
 
     Notes
     -----
@@ -9530,7 +9256,7 @@ def check_uniform_type(
         # Check for type uniformity
         if not allow_mismatch and len(common_types) > 1:
             if raise_exception:
-                raise ValueError("Not all values are of the same type.")
+                raise ValueError("Not all values are the same type.")
             return False
 
         # Conversion
@@ -9564,27 +9290,3 @@ def check_uniform_type(
     return operation if return_func else operation()
 
 
-# def closest_color(rgb_color):
-#     """
-#     Finds the closest named CSS4 color to the given RGB(A) color.
-
-#     Parameters
-#     ----------
-#     rgb_color : tuple
-#         A tuple representing the RGB(A) color.
-
-#     Returns
-#     -------
-#     str
-#         The name of the closest CSS4 color.
-#     """
-#     # Remove the alpha channel if present
-#     rgb_color = rgb_color[:3]
-#     min_colors = {}
-#     for key, name in mcolors.CSS4_COLORS.items():
-#         r_c, g_c, b_c = mcolors.to_rgb(name)
-#         rd = (r_c - rgb_color[0]) ** 2
-#         gd = (g_c - rgb_color[1]) ** 2
-#         bd = (b_c - rgb_color[2]) ** 2
-#         min_colors[(rd + gd + bd)] = name
-#     return min_colors[min(min_colors.keys())]

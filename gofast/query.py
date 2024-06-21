@@ -4,17 +4,13 @@
 
 import os 
 import re
-# import sqlite3  
 import pandas as pd
 
-from ._typing import Optional, DataFrame
+from .api.types import Optional, DataFrame
 from .exceptions import NotFittedError 
 from .tools._dependency import import_optional_dependency
 from .tools.coreutils import normalize_string
-
-try: import sqlalchemy
-except: pass 
-
+ 
 class DBAnalysis:
     """
     A class for performing various data analysis tasks using SQL.
@@ -150,7 +146,6 @@ class DBAnalysis:
         - If a database path is provided, the method checks if the specified 
           database exists. If not, it creates a new one.
         """
-        import_optional_dependency("sqlalchemy")
         self.db_path = self.db_path or ':memory:'
         if data is None:
             if self.db_path == ':memory:' or not os.path.exists(self.db_path):
@@ -160,18 +155,52 @@ class DBAnalysis:
         if self.db_path == ':memory:' and self.verbose > 1:
             print("No database path provided. Using a temporary in-memory database.")
         
-        self.engine_ = sqlalchemy.create_engine(f'sqlite:///{self.db_path}')
-        self.connection_ = self.engine_.connect()
-        self.cursor_ = self.connection_.cursor()
-
-        if data is not None:
-            data.to_sql(table_name, self.connection_, index=False)
-
+        self._setup_connection()
+        
+        if hasattr(self.connection_, 'execute'):
+            # Using sqlalchemy to store data
+            data.to_sql(table_name, self.engine_, if_exists='replace', index=False)
+        else:
+            # Using sqlite3 to store data
+            data.to_sql(table_name, self.connection_, if_exists='replace', 
+                        index=False, method='multi')
+    
         return self
+
+    def _setup_connection(self):
+        """Setup the database connection based on the availability of 
+        sqlalchemy."""
+        try:
+            import_optional_dependency("sqlalchemy")
+            from sqlalchemy import create_engine
+            self.engine_ = create_engine(f'sqlite:///{self.db_path}')
+            self.connection_ = self.engine_.connect()
+        except ImportError:
+            import sqlite3
+            self.connection_ = sqlite3.connect(self.db_path)
+
+    @property
+    def cursor_(self):
+        """Get a cursor object to execute SQL commands."""
+        if hasattr(self.connection_, 'execute'):
+            return self.connection_
+        else:
+            return self.connection_.cursor()
 
     def __del__(self):
         if self.connection_:
             self.connection_.close()
+    
+    def execute_query(self, query):
+        if hasattr(self.connection_, 'execute'):
+            # Assuming sqlalchemy connection
+            result = self.connection_.execute(query)
+            return result  # This is the ResultProxy in sqlalchemy
+        else:
+            # Assuming sqlite3 connection
+            cursor = self.connection_.cursor()
+            cursor.execute(query)
+            return cursor  # This is the cursor that can fetchall in sqlite3
 
     def query(self, query: str, return_type: str = 'dataframe') -> DataFrame:
         """
@@ -214,8 +243,8 @@ class DBAnalysis:
         self.inspect 
         self._validate_return_type(return_type )
 
-        self.cursor_.execute(query)
-        return self._format_result(self.cursor_, return_type)
+        result=self.execute_query(query)
+        return self._format_result(result, return_type)
 
     def aggregate(
             self, query: str, return_type: str = 'dataframe'
@@ -274,8 +303,8 @@ class DBAnalysis:
             raise ValueError("The query does not appear to be an aggregation query.")
 
         self._validate_return_type(return_type )
-        self.cursor_.execute(query)
-        return self._format_result(self.cursor_, return_type)
+        result=self.execute_query(query)
+        return self._format_result(result, return_type)
 
     def joinTables(self, query: str, return_type: str = 'dataframe'
                    ) -> DataFrame:
@@ -333,8 +362,8 @@ class DBAnalysis:
             raise ValueError("The query does not appear to be a join query.")
 
         self._validate_return_type(return_type)
-        self.cursor_.execute(query)
-        return self._format_result(self.cursor_, return_type)
+        result=self.execute_query(query)
+        return self._format_result(result, return_type)
 
     def subqueriesAndTempTables(
             self, queries: list, return_type: str = 'dataframe'
@@ -396,11 +425,11 @@ class DBAnalysis:
 
         if return_type not in ['dataframe', 'raw']:
             raise ValueError("Invalid return_type. Choose 'dataframe' or 'raw'.")
-
+        results=[]
         for query in queries:
-            self.cursor_.execute(query)
-
-        return self._format_result(self.cursor_, return_type)
+            result = self._format_result(self.execute_query(query), return_type)
+            results.append(result)
+        return results 
 
     def _format_result(self, cursor, return_type: str) -> DataFrame:
         """
@@ -421,10 +450,22 @@ class DBAnalysis:
         """
         return_type = self._validate_return_type(return_type)
         if return_type == 'dataframe':
-            columns = [col[0] for col in cursor.description]
-            return pd.DataFrame(cursor.fetchall(), columns=columns)
+            if hasattr(cursor, 'fetchall'):
+                # Common method in both sqlite3 cursor and sqlalchemy ResultProxy
+                data = cursor.fetchall()
+                if hasattr(cursor, 'keys'):
+                    # sqlalchemy ResultProxy
+                    columns = cursor.keys()
+                else:
+                    # sqlite3 cursor
+                    columns = [col[0] for col in cursor.description]
+                return pd.DataFrame(data, columns=columns)
+            else:
+                raise AttributeError("The provided cursor result object does"
+                                     " not support fetching data.")
         else:
-            return cursor.fetchall()
+            # Return raw results
+            return cursor.fetchall() if hasattr(cursor, 'fetchall') else []
 
     def manipulate(self, query: str, auto_commit: bool = True, 
                        raise_error: bool = True ) -> None:
@@ -521,7 +562,7 @@ class DBAnalysis:
             raise ValueError("The query does not appear to be a valid"
                              " manipulation or transformation query.")
         try:
-            self.cursor_.execute(query)
+            self.execute_query(query)
             if auto_commit:
                 self.connection_.commit()
         except Exception as e:
@@ -632,8 +673,8 @@ class DBAnalysis:
         if validate_query and "OVER" not in query.upper():
             raise ValueError("The query does not appear to contain SQL window functions.")
 
-        self.cursor_.execute(query)
-        return self._format_result(self.cursor_, return_type)
+        result=self.execute_query(query)
+        return self._format_result(result, return_type)
 
     def storedProcedures(self, procedure_name: str, params: list,
                          return_type: str = 'dataframe') -> DataFrame:
@@ -686,8 +727,8 @@ class DBAnalysis:
         """
         self.inspect 
         try:
-            self.cursor_.callproc(procedure_name, params)
-            return self._format_result(self.cursor_, return_type)
+            result=self.cursor_.callproc(procedure_name, params)
+            return self._format_result(result, return_type)
         except Exception as e:
             raise e
 
@@ -732,7 +773,7 @@ class DBAnalysis:
         """
         self.inspect 
         try:
-            self.cursor_.execute(query)
+            self.execute_query(query)
             if auto_commit:
                 self.connection_.commit()
         except Exception as e:
@@ -778,8 +819,8 @@ class DBAnalysis:
           valid for the specific database being used.
         """
         self.inspect 
-        self.cursor_.execute(query)
-        return self._format_result(self.cursor_, return_type)
+        result=self.execute_query(query)
+        return self._format_result(result, return_type)
 
     def compatibilityIntegration(
             self, query: str, return_type: str = 'dataframe'
@@ -820,8 +861,8 @@ class DBAnalysis:
           valid for the specific database being used.
         """
         self.inspect 
-        self.cursor_.execute(query)
-        return self._format_result(self.cursor_, return_type)
+        result=self.execute_query(query)
+        return self._format_result(result, return_type)
 
     @property 
     def inspect(self): 
@@ -832,7 +873,7 @@ class DBAnalysis:
                " Call 'fit' with appropriate arguments before using"
                " this method."
                )
-        if not hasattr ( self, 'cursor_'):  
+        if not hasattr ( self, 'cursor_') or not hasattr(self, "connection_"):  
             raise NotFittedError(msg.format(expobj=self))
         return 1
     
@@ -847,10 +888,13 @@ class DBAnalysis:
             error_msg=("Invalid return_type. Choose 'dataframe' or 'raw'."), 
             )
         return return_type         
-        
-        
-        
-        
+
+
+    def __repr__(self):
+         conn_status = 'Connected' if self.connection_ else 'Disconnected'
+         return (f"<DBAnalysis(db_path='{self.db_path}', verbose={self.verbose}, "
+                 f"status='{conn_status}')>")     
+         
         
         
         

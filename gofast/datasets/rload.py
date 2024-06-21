@@ -14,7 +14,7 @@ import subprocess
 import shutil  
 import zipfile
 
-from .._typing import Optional
+from ..api.types import Optional
 try: 
     import tqdm
     TQDM_AVAILABLE = True
@@ -347,7 +347,7 @@ class RemoteLoader:
             import zenodo_get
         except ImportError:
             if self._install_zenodo_get():
-                import zenodo_get
+                import zenodo_get  # noqa
             else:
                 _logger.error("Failed to install `zenodo_get`.")
                 return None
