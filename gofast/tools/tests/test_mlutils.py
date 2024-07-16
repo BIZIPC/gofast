@@ -27,65 +27,23 @@ from sklearn.datasets import load_iris
 from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
 
-from gofast.tools.coreutils import  ( 
-    find_features_in, 
-    smart_label_classifier, 
-    cleaner,
-    # is_module_installed
-    )
-from gofast.tools.mlutils import ( 
-    fetch_tgz_from_url, 
-    evaluate_model,
-    select_features, 
-    get_global_score,  
-    get_correlated_features, 
-    codify_variables, 
-    categorize_target, 
-    resampling, 
-    bin_counting, 
-    labels_validator, #  
-    rename_labels_in , # 
-    soft_imputer, 
-    soft_scaler, 
-    select_feature_importances, 
-    make_pipe, 
-    build_data_preprocessor, 
-    load_model, 
-    bi_selector, 
-    get_target, 
-    extract_target,  
-    stats_from_prediction, 
-   #  fetch_tgz,  
-    fetch_model, # 
-    load_csv, 
-    discretize_categories, 
-    stratify_categories, 
-    serialize_data, # 
-    deserialize_data, # 
-    soft_data_split, 
-    laplace_smoothing, 
-    laplace_smoothing_categorical, 
-    laplace_smoothing_word, 
-    handle_imbalance, 
-    smart_split # 
-    
-    )  
+from gofast.datasets.load import load_bagoue, load_hlogs 
+from gofast.tools.coreutils import find_features_in, smart_label_classifier, cleaner 
+from gofast.tools.mlutils import fetch_tgz_from_url, evaluate_model  
+from gofast.tools.mlutils import get_global_score, get_correlated_features    
+from gofast.tools.mlutils import soft_encoder, resampling, bin_counting 
+from gofast.tools.mlutils import soft_imputer, soft_scaler, select_feature_importances 
+from gofast.tools.mlutils import make_pipe, build_data_preprocessor 
+from gofast.tools.mlutils import  load_model, bi_selector
+from gofast.tools.mlutils import stats_from_prediction, fetch_model, load_csv 
+from gofast.tools.mlutils import discretize_categories, stratify_categories, serialize_data # 
+from gofast.tools.mlutils import deserialize_data, soft_data_split 
+from gofast.tools.mlutils import laplace_smoothing, laplace_smoothing_categorical 
+from gofast.tools.mlutils import laplace_smoothing_word, handle_imbalance, smart_split # 
 
-from gofast.datasets.load import load_bagoue
-from gofast.datasets.load import load_hlogs
-DOWNLOAD_FILE='https://raw.githubusercontent.com/WEgeophysics/gofast/main/gofast/datasets/data/bagoue.csv'
+DOWNLOAD_FILE='https://raw.githubusercontent.com/earthai-tech/gofast/main/gofast/datasets/data/bagoue.csv'
 with resources.path ('gofast.datasets.data', "bagoue.csv") as csv_f : 
     csv_file = str(csv_f)
-    
-# from gofast.tools.baseutils import run_shell_command
-# try: 
-#     from pytest import mocker as MOCK # noqa
-#     # import pyfakefs   
-#     from pyfakefs.fake_filesystem_unittest import Patcher   # noqa     
-# except ImportError: 
-#     for module in ("pytest-mock", "pyfakefs"):
-#        run_shell_command(["pip", "install", module], pkg=module)
- # pip install pytest pytest-mock tqdm pyfakefs
 
 # get the data for a test 
 def _prepare_dataset ( return_encoded_data =False, return_raw=False ): 
@@ -122,13 +80,6 @@ X_train, X_test, y_train, y_test = train_test_split(
     Xenc, yenc, test_size =.3 ,random_state=seed )
 
  
-def test_select_features (): 
-    X, _= _prepare_dataset(return_raw= True ) 
-    select_features(X, exclude='number')
-    select_features(  X, include="number") 
-    select_features (X, features = 'ohmS num shape geol lwi', 
-          parse_features =True ) 
-
 
 def test_get_global_score (): 
     # train data and get the CV results 
@@ -165,22 +116,7 @@ def test_bi_selector():
     data = load_hlogs().frame # get the frame 
     num_features, cat_features = bi_selector (data)
     
-def test_categorize_data (): 
-    def binfunc(v): 
-        if v < 3 : return 0 
-        else : return 1 
-    arr = np.arange (10 )
-    # array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    categorize_target(arr, func =binfunc)
-    # array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1], dtype=int64)
-    # array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
-    # array([2, 2, 2, 2, 1, 1, 1, 0, 0, 0]) 
-    categorize_target(arr, labels =3 , order =None )
-    # array([0, 0, 0, 0, 1, 1, 1, 2, 2, 2])
-    categorize_target(arr[::-1], labels =3 , order =None )
-    # array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2]) # reverse does not change
-    categorize_target(arr, labels =[0 , 2,  4]  )
-    # array([0, 0, 0, 2, 2, 4, 4, 4, 4, 4])
+
     
 def test_resampling ( ): 
     try : 
@@ -199,7 +135,7 @@ def test_bin_counting () :
     Xr, _= _prepare_dataset(return_raw= True ) 
     # get the categorical variables 
     num_var , cat_var = bi_selector ( Xr )
-    Xcoded = codify_variables (Xr, columns = cat_var )
+    Xcoded = soft_encoder (Xr, columns = cat_var )
     # get the categ
     Xnew = pd.concat ((X, Xcoded), axis = 1 )
     #Xnew =Xnew.astype (float)
@@ -241,78 +177,6 @@ def test_bin_counting () :
     # 0.0    18       43          61  0.295082  0.704918  0.418605  2.388889
     # 1.0     9       20          29  0.310345  0.689655  0.450000  2.222222      
 
-def store_data  (as_frame =False,  task='None', return_X_y=False ): 
-    def bin_func ( x): 
-        if x ==1 or x==2: 
-            return 1 
-        else: return 0 
-    # ybin = categorize_target( y, func = func_clas)
-        
-    def func_ (x): 
-        if x<=1: return 0 
-        elif x >1 and x<=3: 
-            return 1 
-        else: return 2 
-        
-        
-    X, y = load_bagoue (as_frame =True , return_X_y= True )
-    
-    if str(task).lower().find('bin')>=0: 
-        y = categorize_target ( y, func= bin_func)
-        # y = np.array (y )
-        # y [y <=1] = 0;  y [y > 0]=1 
-        if as_frame : 
-            y = pd.Series ( y, name ='flow') 
-    else: 
-        y= categorize_target ( y, func= func_)
-        
-    # else: 
-    # y = smart_label_classifier (y , values = [1, 3, 10 ], 
-    #                                   labels =['FR0', 'FR1', 'FR2', 'FR3'] 
-    #                                   ) 
-    
-    # prepared data 
-    # 1-clean data 
-   # (array(['FR0', 'FR1', 'FR2'], dtype=object), array([291,  95,  45], dtype=int64))
-   # (array([0, 1, 2]), array([291,  95,  45], dtype=int64))
-    
-    cleaned_data = cleaner (X , columns = 'name num lwi', mode ='drop')
-    #$print(cleaned_data.columns)
-    num_features, cat_features= bi_selector (cleaned_data)
-    # categorizing the labels 
-   
-    # print(yc.unique()) 
-    # # let visualize the number of counts 
-    # print( np.unique (yc, return_counts=True )) 
-    data_imputed = soft_imputer(cleaned_data,  mode= 'bi-impute')
-    num_scaled = soft_scaler (data_imputed[num_features],) 
-    #print(num_scaled.columns)
-    # we can rencoded the target data from `make_naive_pipe` as 
-    pipe= make_pipe ( cleaned_data, y = y  )
-    Xenc, yenc= make_pipe ( cleaned_data, y = y ,  transform=True )
-
-    Xr, _= _prepare_dataset(return_raw= True ) 
-
-    Xr = cleaner ( Xr, columns = 'name num lwi', mode ='drop' )
-    # get the categorical variables 
-    num_var , cat_var = bi_selector ( Xr )
-    
-    Xcoded = codify_variables (Xr, columns = cat_var )
-    # get the categ
-    Xnew = pd.concat ((X[num_var], Xcoded), axis = 1 )
-    Xanalysed= pd.concat ( (num_scaled, Xcoded), axis=1 )
-    
-    #X_train, X_test, y_train, y_test = train_test_split()
-    
-    data = {"preprocessed": ( num_scaled, y ), 
-      "encoded": (Xenc, yenc),
-      "codified": ( Xnew, y ), 
-      "analysed": (Xanalysed, y  ), 
-      "pipe": pipe, 
-          }
-    # import joblib 
-    # joblib.dump ( data , filename ='b.pkl')
-    return data 
 
 def test_codify_variables_simple_encoding():
     # Example data
@@ -323,7 +187,7 @@ def test_codify_variables_simple_encoding():
     df = pd.DataFrame(data)
     
     # Perform simple encoding
-    df_encoded, map_codes = codify_variables(df, return_cat_codes=True)
+    df_encoded, map_codes = soft_encoder(df, return_cat_codes=True)
     
     # Assert that the output is as expected (example based on docstring)
     assert 'Color' in df_encoded.columns
@@ -340,7 +204,7 @@ def test_codify_variables_one_hot_encoding():
     df = pd.DataFrame(data)
     
     # Perform one-hot encoding
-    df_encoded = codify_variables(df, get_dummies=True)
+    df_encoded = soft_encoder(df, get_dummies=True)
     
     # Asserts to check if one-hot encoding is applied correctly
     assert 'Color_Red' in df_encoded.columns
@@ -379,7 +243,8 @@ def test_laplace_smoothing_word():
     assert probability == pytest.approx(0.5)
 
 def test_laplace_smoothing_categorical():
-    data = pd.DataFrame({'feature': ['cat', 'dog', 'cat', 'bird'], 'class': ['A', 'A', 'B', 'B']})
+    data = pd.DataFrame({'feature': ['cat', 'dog', 'cat', 'bird'], 
+                         'class': ['A', 'A', 'B', 'B']})
     probabilities = laplace_smoothing_categorical(data, 'feature', 'class')
     # Asserts based on expected behavior; specific values depend on the implementation
     assert 'cat' in probabilities.index
@@ -415,35 +280,6 @@ def test_get_correlated_features2():
     correlated_features = get_correlated_features(df, corr='pearson', threshold=0.5)
     assert isinstance(correlated_features, pd.DataFrame)
 
-def test_get_target():
-    df = pd.DataFrame({
-        'feature1': [1, 2, 3],
-        'target': [0, 1, 0]
-    })
-    target, modified_df = get_target(df.copy(), 'target', True)
-    
-    assert 'target' in df.columns  # Original DataFrame should remain unchanged
-    assert 'target'  not in modified_df.columns  # Modified DataFrame should not have the target column
-    assert all(target == df['target'])  # Extracted target should match the original target column
-
-def test_get_target2():
-    df = pd.DataFrame({
-        'feature1': [1, 2, 3],
-        'target': ['A', 'B', 'C']
-    })
-    target, modified_df = get_target(df, 'target', inplace=False)
-    assert 'target' in df.columns  # Original df should be unchanged
-    assert all(target == df['target'])  # Target column extracted correctly
-
-def test_select_features2():
-    data = pd.DataFrame({
-        'feature1': [1, 2, 3],
-        'feature2': ['A', 'B', 'C'],
-        'feature3': [0.1, 0.2, 0.3]
-    })
-    selected_data = select_features(data, features=['feature1', 'feature3'])
-    assert list(selected_data.columns) == ['feature1', 'feature3']
-
 def test_get_global_score2():
     cvres = {
         'mean_test_score': np.array([0.8, 0.85, 0.9]),
@@ -452,30 +288,6 @@ def test_get_global_score2():
     mean_score, mean_std = get_global_score(cvres)
     assert pytest.approx(mean_score) == 0.85
     assert pytest.approx(mean_std)== 0.04
-
-def test_get_target_inplace_true():
-    df = pd.DataFrame({'feature': [1, 2, 3], 'target': ['A', 'B', 'C']})
-    target, _ = get_target(df, 'target')
-    assert 'target' not in df.columns
-    assert all(target == ['A', 'B', 'C'])
-
-def test_get_target_inplace_false():
-    df = pd.DataFrame({'feature': [1, 2, 3], 'target': ['A', 'B', 'C']})
-    _, new_df = get_target(df, 'target', inplace=False)
-    assert 'target' in df.columns
-    assert 'target'in new_df.columns
-
-def test_select_features_by_name():
-    df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6], 'C': [7, 8, 9]})
-    result = select_features(df, features=['A', 'C'])
-    assert list(result.columns) == ['A', 'C']
-
-def test_select_features_include_exclude():
-    df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6], 'C': ['x', 'y', 'z']})
-    result = select_features(df, include=['number'])
-    assert 'C' not in result.columns
-    result = select_features(df, exclude=['number'])
-    assert list(result.columns) == ['C']
 
 def test_get_global_score3():
     cvres = {'mean_test_score': [0.9, 0.85, 0.95], 'std_test_score': [0.05, 0.02, 0.03]}
@@ -539,10 +351,6 @@ def test_fetch_tgz_from_url_success():
         # This assumes 'fetch_tgz_from_url' returns None on success
         
         assert result is None, "Expected fetch_tgz_from_url to return None for success"
-        
-        # Verify that 'urlretrieve' and 'open' were called as expected
-        # mock_urlretrieve.assert_called_once_with("http://example.com/data.tgz", "/fake/path/data.tar.gz")
-        # mock_tarfile_open.assert_called_once_with("/fake/path/data.tar.gz", 'r:gz')
 
 def test_load_csv():
     # test_csv_data = "col1,col2\n1,2\n3,4"
@@ -570,21 +378,6 @@ def test_stratify_categories():
     })
     strat_train_set, strat_test_set = stratify_categories(df, 'target')
     assert len(strat_train_set) + len(strat_test_set) == len(df)
-
-def test_extract_target_dataframe():
-    df = pd.DataFrame({
-        'feature1': [1, 2, 3],
-        'target': ['A', 'B', 'C']
-    })
-    target, modified_df = extract_target(df, 'target')
-    assert len(target) == len(['A', 'B', 'C'])
-    assert 'target' not in modified_df.columns
-
-def test_extract_target_array():
-    arr = np.array([[1, 2, 'A'], [3, 4, 'B'], [5, 6, 'C']])
-    target, modified_arr = extract_target(arr, 2,  columns=['feature1', 'feature2', 'target'])
-    assert np.array_equal(np.squeeze (target), np.array(['A', 'B', 'C'])) # for consistency
-    assert modified_arr.shape == (3, 2)  # Ensure target column was removed
 
 
 def test_handle_imbalance_oversample():
@@ -685,22 +478,6 @@ def test_load_saved_model_unsupported_format2():
 #     with pytest.raises(ValueError):
 #         load_saved_model('model.unsupported', storage_format='unsupported')
 
-def test_categorize_target_with_function():
-    arr = np.array([1, 2, 3, 4, 5])
-    def categorize_func(x): return 0 if x <= 3 else 1
-    categorized_arr = categorize_target(arr, func=categorize_func)
-    assert np.array_equal(categorized_arr, np.array([0, 0, 0, 1, 1]))
-
-def test_categorize_target_with_labels():
-    arr = np.array([1, 2, 3, 4, 5])
-    categorized_arr = categorize_target(arr, labels=2)
-    # Assuming the function divides the range into equal intervals
-    assert len(np.unique(categorized_arr)) == 2
-
-def test_categorize_target_with_rename_labels():
-    arr = np.array([1, 2, 3, 4, 5])
-    categorized_arr = categorize_target(arr, labels=2, rename_labels=['A', 'B'], coerce=True)
-    assert set(categorized_arr) == {'A', 'B'}
 
 def test_bi_selector2():
     df = pd.DataFrame({
@@ -803,37 +580,6 @@ def test_soft_imputer_constant_strategy():
     assert imputed_df.isnull().sum().sum() == 0
     assert imputed_df['cat'].iloc[2] == 'missing'
 
-def test_labels_validator_with_existing_labels():
-    y = np.array([0, 1, 2, 0, 1, 2])
-    labels = [0, 1, 2]
-    assert labels_validator(y, labels, return_bool=True)
-
-def test_labels_validator_with_missing_labels():
-    y = np.array([0, 1, 0, 1])
-    labels = [0, 1, 2]
-    assert not labels_validator(y, labels, return_bool=True)
-
-def test_labels_validator_raises_value_error_on_missing_labels():
-    y = np.array([0, 1, 0, 1])
-    labels = [0, 1, 2]
-    try:
-        labels_validator(y, labels)
-    except ValueError as e:
-        assert str(e).startswith("Label value")
-
-def test_rename_labels_in():
-    arr = np.array([0, 1, 2, 0, 1, 2])
-    new_labels = ["A", "B", "C"]
-    expected = np.array(["A", "B", "C", "A", "B", "C"])
-    result = rename_labels_in(arr, new_labels)
-    np.testing.assert_array_equal(result, expected)
-
-def test_rename_labels_in_with_coerce():
-    arr = np.array([0, 1, 2, 0, 1, 2])
-    new_labels = ["A", "B"]  # Intentionally missing label for "2"
-    expected = np.array(["A", "B", 2, "A", "B", 2])  # Original "2" labels should remain unchanged
-    result = rename_labels_in(arr, new_labels, coerce=True)
-    np.testing.assert_array_equal(result, expected)
 
 def test_fetch_model():
     model_path = 'test_model.pkl'

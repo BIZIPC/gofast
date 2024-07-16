@@ -491,6 +491,8 @@ streamlining workflows and improving productivity. The list of the tools are not
    tools.boxcox_transformation
    tools.build_data_preprocessor
    tools.butterworth_filter
+   tools.calculate_binary_iv, 
+   tools.calculate_optimal_bins, 
    tools.categorize_target
    tools.category_count
    tools.check_missing_data
@@ -923,6 +925,7 @@ users to prepare their datasets for machine learning and analysis.
 
    transformers.AttributesCombinator
    transformers.SequentialBackwardSelection
+   transformers.FloatCategoricalToIntTransformer
    transformers.KMeansFeaturizer
    transformers.StratifyFromBaseFeature
    transformers.BaseColumnSelector 

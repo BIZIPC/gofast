@@ -2,9 +2,11 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio
 """
-Base IO code for managing all the datasets 
-Created on Thu Oct 13 14:26:47 2022
+Base IO functions for managing all the datasets.
+Provides functions for loading, retrieving, and managing dataset files, 
+including CSV and text files, as well as dataset descriptions.
 """
+
 import os 
 import csv 
 import shutil 
@@ -13,16 +15,24 @@ import pandas as pd
 from pathlib import Path 
 from importlib import resources
 from collections import namedtuple
-from ..tools.box import Boxspace 
-from ..tools.baseutils import _is_readable 
+from ..api.structures import Boxspace  
+from ..tools.baseutils import is_readable 
 from ..tools.coreutils import random_state_validator, is_iterable
 from ..tools.coreutils import exist_features
+
+__all__=[
+    'csv_data_loader',
+    'description_loader',
+    'get_data',
+    'remove_data',
+    'text_files_loader'
+ ]
 
 DMODULE = "gofast.datasets.data" ; DESCR = "gofast.datasets.descr"
 
 # create a namedtuple for remote data and url 
 RemoteMetadata = namedtuple("RemoteMetadata", ["file", "url", "checksum"])
-RemoteDataURL ='https://raw.githubusercontent.com/WEgeophysics/gofast/master/gofast/datasets/data/'
+RemoteDataURL ='https://raw.githubusercontent.com/earthai-tech/gofast/master/gofast/datasets/data/'
 
 def get_data(data =None) -> str: 
     if data is None:
@@ -119,7 +129,7 @@ def _to_dataframe(data, target_names=None, feature_names=None, target=None):
     """
     
     if isinstance(data, (str, bytes)):
-        data = _is_readable(data)  # Assumes CSV; adjust as necessary.
+        data = is_readable(data)  # Assumes CSV; adjust as necessary.
     elif isinstance(data, np.ndarray) or isinstance(data, list):
         try:
             data = pd.DataFrame(data, columns=feature_names)
@@ -207,7 +217,7 @@ def __to_dataframe(data, tnames=None , feature_names =None, target =None ):
         d0 = pd.DataFrame(data = data, columns = feature_names)
     else : 
         # read with pandas config parsers including the target 
-        df = _is_readable(data)  
+        df = is_readable(data)  
     # if tnames are given convert the array 
     # of target  to a target frame 
     if  ( 

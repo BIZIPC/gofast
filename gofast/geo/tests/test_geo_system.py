@@ -42,7 +42,7 @@ def test_load_data(setup_geo_system, tmp_path):
     temp_geojson.write_text(geojson_content)
 
     # Assuming loadData is implemented to update self.data
-    setup_geo_system.loadData(str(temp_geojson), 'GeoJSON')
+    setup_geo_system.fit(str(temp_geojson))
     assert setup_geo_system.data is not None
     assert len(setup_geo_system.data) > 0
     assert 'name' in setup_geo_system.data.columns
@@ -60,8 +60,7 @@ def test_visualize_data(setup_geo_system):
     })
 
     # Test the visualization method for an interactive map
-    map_result = setup_geo_system.visualizeData(gdf, plot_type='map',
-                                                location=[10.1, 125.6], zoom_start=12)
+    map_result = setup_geo_system.visualizeData(gdf, plot_type='map', location=[10.1, 125.6], zoom_start=12)
     assert isinstance(map_result, folium.Map)
 
 def test_evaluate_impact(setup_geo_system):
@@ -83,7 +82,7 @@ def test_recommend_actions(setup_geo_system):
     })
     objectives = ['profit', 'sustainability_score']
     recommendations = setup_geo_system.recommendActions(
-        data, objectives, optimization_method='maximize')
+       objectives,  data, optimization_method='maximize')
     assert not recommendations.empty
 
 @ensure_pkg("folium", auto_install= True, verbose =True )
@@ -117,8 +116,11 @@ def test_stream_data(setup_geo_system):
     setup_geo_system._stream_data(source=mock_stream)
 
     # Verify: The system correctly handles and stores the streamed data
-    # This assumes that _stream_data or a related method updates `self.streamed_data`
+    # This assumes that _stream_data or a related method updates `self._streamed_data`
     assert hasattr(setup_geo_system, 'streamed_data')
     assert len(setup_geo_system.streamed_data) == len(mock_stream)
     # Further verification can include checking the content of the streamed data
 
+if __name__=='__main__': 
+    
+    pytest.main( [ __file__])

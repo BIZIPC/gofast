@@ -1,11 +1,7 @@
 # -*- coding: utf-8 -*-
 #   Licence:BSD 3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
-#   Copyright (c) 2021-2022
 """
-Decomposition 
-================
-
 Steps behing the principal component analysis (PCA) and matrices decomposition 
 """
 
@@ -16,77 +12,130 @@ from matplotlib.colors import ListedColormap
 from sklearn.preprocessing import StandardScaler 
 from sklearn.model_selection import train_test_split 
 from sklearn.decomposition import PCA 
-from .._docstring import _core_docs 
-from ..tools.coreutils import _assert_all_types 
-# ---
-__all__=[
-    "get_eigen_components", 
-    "plot_decision_regions", 
-    "transform_to_principal_components", 
-    "get_total_variance_ratio" , 
-    "linear_discriminant_analysis"
+
+from ..api.docstring import _core_docs 
+from ..backends.selector import BackendSelector 
+from ..tools.coreutils import _assert_all_types
+from ..tools.validator import validate_positive_integer 
+from ..tools.validator import check_array, parameter_validator   
+
+__all__=["get_eigen_components", "plot_decision_regions", 
+    "transform_to_principal_components", "get_total_variance_ratio" , 
+    "linear_discriminant_analysis", "get_transformation_matrix"
     ]
 
-def get_eigen_components (X): 
-    # standize the features 
-    sc = StandardScaler() 
-    X= sc.fit_transform(X)
-    # constructing the covariance matrix 
-    cov_mat = np.cov(X.T)
-    eigen_vals, eigen_vecs = np.linalg.eig (cov_mat)
+def get_eigen_components(
+        X, scale: bool = True, method: str = 'covariance', backend: str='numpy'):
+    
+    X = check_array(X)
+    method = parameter_validator(
+        "method", target_strs={'covariance', 'correlation'})(method)
+    if scale:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+
+    # Select the matrix calculation method
+    if method == 'covariance':
+        matrix = np.cov(X, rowvar=False)
+    elif method == 'correlation':
+        matrix = np.corrcoef(X, rowvar=False)
+
+    # Eigen decomposition based on the selected backend
+    backend_selector = BackendSelector(preferred_backend=backend)
+    backend = backend_selector.get_backend()
+    if backend.__class__.__name__ in ['NumpyBackend', 'numpy']:
+        eigen_vals, eigen_vecs = np.linalg.eigh(matrix)
+    else:
+        eigen_vals, eigen_vecs = backend.eig(matrix)
+
+    # Sort eigenvalues and eigenvectors in descending order
+    sorted_indices = np.argsort(eigen_vals)[::-1]
+    eigen_vals = eigen_vals[sorted_indices]
+    eigen_vecs = eigen_vecs[:, sorted_indices]
+
     return eigen_vals, eigen_vecs, X
 
-get_eigen_components.__doc__="""\
-A naive approach to extract PCA from training set X 
- 
-Extracting both eigenvalues and eigenvectors, key components in many 
-linear algebra and data analysis applications.
+get_eigen_components.__doc__ = """\
+Computes the eigenvalues and eigenvectors of the covariance or correlation
+matrix of the dataset X.
 
-Parameters 
+Function extracts both eigenvalues and eigenvectors, which are fundamental 
+components in many linear algebra and data analysis applications, providing a 
+basis for Principal Component Analysis (PCA).
+
+Parameters
 ----------
 {params.X}
 
-Returns 
---------
-Tuple (eigen_vals, eigen_vecs, Xsc): 
-    Eigen values , eigen vectors and Xsc scaled (standardized)
+scale : bool, default=True
+    If True, standardize the data before computing eigenvalues and eigenvectors.
+method : str, default='covariance'
+    Method to use for generating the matrix from which eigenvalues and eigenvectors
+    are computed. Options are 'covariance' for covariance matrix and 'correlation'
+    for correlation matrix.
     
-Examples
----------
->>> from gofast.exlib.sklearn import SimpleImputer 
->>> from gofast.utils import selectfeatures 
->>> from gofast.datasets import fetch_data 
->>> from gofast.analysis import extract_pca 
->>> data= fetch_data("bagoue original").get('data=dfy1') # encoded flow categories 
->>> y = data.flow ; X= data.drop(columns='flow') 
->>> # select the numerical features 
->>> X =selectfeatures(X, include ='number')
->>> # imputed the missing data 
->>> X = SimpleImputer().fit_transform(X)
->>> eigval, eigvecs, _ = extract_pca(X)
->>> eigval 
-... array([2.09220756, 1.43940464, 0.20251943, 1.08913226, 0.97512157,
-       0.85749283, 0.64907948, 0.71364687])
-
-Notes 
+backend : str, optional
+    The computational backend to use. Defaults to 'numpy'. Other options are 
+    'scipy', 'cupy', etc., depending on what's available.    
+Returns
 -------
-All consequent principal component (pc) will have the larget variance 
-given the constraint that these component are uncorrelated (orthogonal)  
-to other pc - even if the inputs features are corralated , the 
-resulting of pc will be mutually orthogonal (uncorelated). 
-Note that the PCA directions are highly sensistive to data scaling and we 
-need to standardize the features prior to PCA if the features were measured 
-on different scales and we assign equal importances of all features   
-    
-the numpy function was designed to operate on both symetric and non-symetric 
-squares matrices. However you may find it return complex eigenvalues in 
-certains casesA related function, `numpy.linalg.eigh` has been implemented 
-to decompose Hermetian matrices which is numerically more stable to work with 
-symetric matrices such as the covariance matrix. `numpy.linalg.eigh` always 
-returns real eigh eigenvalues 
-""".format(params = _core_docs["params"]
-)
-    
+tuple
+    A tuple containing eigenvalues, eigenvectors, and the scaled (standardized) 
+    feature matrix:
+    - eigen_vals:  Eigenvalues in descending order. The eigenvalues from
+      the covariance matrix of X if `method` is ``covariance``.
+    - eigen_vecs: Eigenvectors corresponding to the eigenvalues, 
+      each column is an eigenvector..
+    - Xsc: The possibly scaled and transformed input data. the standardized 
+      version of the input dataset X if 'scale' is ``True``.
+
+Examples
+--------
+>>> import numpy as np 
+>>> from sklearn.impute import SimpleImputer
+>>> from sklearn.datasets import load_iris
+>>> from gofast.tools.baseutils import select_features
+>>> from gofast.datasets import fetch_data
+>>> from gofast.analysis.decomposition import get_eigen_components
+
+>>> X = np.random.rand(100, 5)
+>>> eigen_vals, eigen_vecs, X_transformed = get_eigen_components(X)
+
+>>> data = fetch_data("bagoue analyses")  # Encoded flow categories
+>>> y = data['flow']
+>>> X = data.drop(columns='flow')
+>>> # Select the numerical features
+>>> X = select_features(X, include='number')
+>>> # Impute the missing data
+>>> X = SimpleImputer().fit_transform(X)
+>>> eigval, eigvecs, _ = get_eigen_components(X)
+>>> print(eigval)
+[1.97788909 1.34186216 1.14311674 1.02424284 0.94346533 0.92781335
+ 0.75249407 0.68835847 0.22168818]
+
+>>> X = load_iris().data
+>>> eigen_vals, eigen_vecs, _ = get_eigen_components(X, scale=True, method='covariance')
+>>> eigen_vals.shape, eigen_vecs.shape
+((4,), (4, 4))
+
+Notes
+-----
+All subsequent principal components (PCs) will have the largest variance 
+under the constraint that these components are uncorrelated (orthogonal) 
+to each other, even if the input features are correlated. As a result, the 
+principal components will be mutually orthogonal.
+
+Note: PCA directions are highly sensitive to data scaling. It is essential 
+to standardize features prior to PCA, especially if the features were measured 
+on different scales and equal importance is to be assigned to all features.
+
+The numpy function designed to operate on symmetric and non-symmetric square 
+matrices may return complex eigenvalues in certain cases. For symmetric 
+matrices such as covariance matrices, the `numpy.linalg.eigh` function is 
+recommended as it is numerically more stable and always returns real 
+eigenvalues.
+""".format(params=_core_docs["params"])
+   
 def get_total_variance_ratio (X, view =False): 
     eigen_vals, eigen_vcs, _ = get_eigen_components(X)
     tot =sum(eigen_vals)
@@ -108,8 +157,13 @@ def get_total_variance_ratio (X, view =False):
     
     return cum_var_exp 
     
-get_total_variance_ratio.__doc__ ="""\
-Compute the total variance ratio. 
+get_total_variance_ratio.__doc__ = """\
+Compute the total variance ratio.
+
+This function calculates the ratio of each eigenvalue to the total sum of 
+eigenvalues, representing the proportion of variance explained by each principal 
+component. The cumulative sum of these ratios provides insight into the amount 
+of variance captured as we increase the number of principal components considered.
 
 Is the ratio of an eigenvalues :math:`\\lambda_j`, as simply the fraction of 
 and eigen value, :math:`\\lambda_j` and the total sum of the eigen values as: 
@@ -121,32 +175,151 @@ and eigen value, :math:`\\lambda_j` and the total sum of the eigen values as:
 Using numpy cumsum function, we can then calculate the cumulative sum of 
 explained variance which can be plot if `plot` is set to ``True`` via 
 matplotlib set function.    
-    
-Parameters 
---------------
-X: Nd-array, shape(M, N)
-    Array of training set with  M examples and N-features
 
-view: bool, default {'False'}
-    give an overview of the total explained variance. 
-
-Returns 
----------
-cum_var_exp : array-like 
-    Cumulative sum of variance total explained. 
-    
-Examples 
+Parameters
 ----------
->>> from gofast.analysis import total_variance_ratio 
+X : ndarray, shape (M, N)
+    Training set; Denotes data that is observed at training and 
+    prediction time, used as independent variables in learning. 
+    When a matrix, each sample may be represented by a feature vector, 
+    or a vector of precomputed (dis)similarity with each training 
+    sample. :code:`X` may also not be a matrix, and may require a 
+    feature extractor or a pairwise metric to turn it into one  before 
+    learning a model.
+
+view : bool, default=False
+    If True, plots the individual and cumulative explained variances to provide 
+    a visual representation of the variance ratio explained by the principal 
+    components.
+
+Returns
+-------
+cum_var_exp : ndarray
+    Cumulative explained variance ratio. This array represents the cumulative 
+    sum of explained variances, providing insight into how many components are 
+    required to explain a certain proportion of the total variance.
+
+Examples
+--------
+>>> from gofast.analysis.decomposition import get_total_variance_ratio
+>>> from sklearn.datasets import load_iris
+>>> X = load_iris().data
+>>> cum_var_exp = get_total_variance_ratio(X, view=True)
+>>> print(cum_var_exp)
+array([0.92461872, 0.97768521, 0.99478782, 1.        ])
+
 >>> # Use the X value in the example of `extract_eigen_components` function   
->>> cum_var = total_variance_ratio(X, view=True)
+>>> from gofast.datasets import fetch_data 
+>>> data= fetch_data("bagoue analyses") # encoded flow categories 
+>>> y = data.flow ; X= data.drop(columns='flow') 
+>>> # select the numerical features 
+>>> X =select_features(X, include ='number')
+>>> # imputed the missing data 
+>>> X = SimpleImputer().fit_transform(X)
+>>> cum_var = get_total_variance_ratio(X, view=True)
 >>> cum_var
 ... array([0.26091916, 0.44042728, 0.57625294, 0.69786032, 0.80479823,
        0.89379712, 0.97474381, 1.        ])
+
+Notes
+-----
+The explained variance ratio is a useful metric for dimensionality reduction, 
+especially when deciding how many principal components to retain in order to 
+preserve a significant amount of information about the original dataset.
 """
 
+def get_transformation_matrix(
+    n_components: int, 
+    eigen_vals: np.ndarray = None, 
+    eigen_vecs: np.ndarray = None,  
+    X: np.ndarray = None
+) -> np.ndarray:
+    """
+    Construct the transformation matrix from eigenpairs for a specified
+    number of principal components. This matrix can then be used to 
+    transform data into a lower-dimensional space defined by the 
+    principal components.
+
+    Parameters
+    ----------
+    n_components : int
+        The number of principal components to include in the transformation
+        matrix.
+    eigen_vals : np.ndarray, optional
+        Array of eigenvalues from the covariance matrix. Required if `X` is not
+        provided.
+    eigen_vecs : np.ndarray, optional
+        Corresponding matrix of eigenvectors. Required if `X` is not provided.
+    X : np.ndarray, optional
+        Data matrix from which to compute eigenvalues and eigenvectors if they
+        are not directly provided. Shape should be (n_samples, n_features).
+
+    Returns
+    -------
+    np.ndarray
+        The transformation matrix composed of eigenvectors corresponding
+        to the top `n_components` eigenvalues. Shape is (n_features, n_components).
+
+    Raises
+    ------
+    ValueError
+        If required eigenvalues and eigenvectors are not provided, or if
+        `n_components` exceeds the number of available eigenvalues.
+
+    Examples
+    --------
+    >>> X = np.array([[1, 2], [3, 4], [5, 6]])
+    >>> eigen_vals = np.array([2.0, 0.5])
+    >>> eigen_vecs = np.array([[0.6, -0.8], [0.8, 0.6]])
+    >>> get_transformation_matrix(1, eigen_vals, eigen_vecs)
+    array([[0.6],
+           [0.8]])
+
+    Notes
+    -----
+    - It is crucial to ensure that the eigenvalues and eigenvectors are
+      correctly paired and sorted in descending order of the eigenvalues
+      before constructing the transformation matrix.
+    - This function assumes that eigenvectors are provided as columns in
+      `eigen_vecs`.
+    - The function is sensitive to the order and correctness of eigenvalues
+      and eigenvectors, as the transformation matrix directly influences
+      the resulting dimensionality reduction.
+    """
+    
+    # Validate input parameters
+    n_components = validate_positive_integer(n_components, "n_components")
+    if X is not None:
+        eigen_vals, eigen_vecs, _ = get_eigen_components(X)
+    elif eigen_vals is None or eigen_vecs is None:
+        raise ValueError("Either both eigenvalues and eigenvectors must be provided, "
+                         "or a matrix X from which they can be computed.")
+    
+    if eigen_vals is None or eigen_vecs is None:
+        raise ValueError("Eigenvalues and eigenvectors cannot be None.")
+
+    eigen_vals= np.asarray( eigen_vals) 
+    eigen_vecs = np.asarray (eigen_vecs)
+    # Ensure the length of eigenvalues and eigenvectors match
+    if len(eigen_vals) != eigen_vecs.shape[1]:
+        raise ValueError("Mismatch between the number of eigenvalues and the number "
+                         "of columns in eigenvector matrix.")
+    
+    if n_components > len(eigen_vals):
+        raise ValueError("n_components exceeds the number of available eigenvalues")
+
+    # Sort eigenpairs by descending order of eigenvalues
+    eigen_pairs = [(np.abs(eigen_vals[i]), eigen_vecs[:, i]) for i in range(len(eigen_vals))]
+    eigen_pairs.sort(key=lambda x: x[0], reverse=True)
+
+    # Select the top 'n_components' eigenvectors to form the transformation matrix
+    w_matrix = np.hstack([pair[1][:, np.newaxis] for pair in eigen_pairs[:n_components]])
+
+    return w_matrix
+
 def transform_to_principal_components (
-        X, y=None, n_components =2, positive_class=1, view =False):
+        X, y=None, n_components =2, positive_class=1,
+        view =False ):
     
     # select k vectors which correspond to the k largest 
     # eigenvalues , where k is the dimesionality of the new  
@@ -158,21 +331,23 @@ def transform_to_principal_components (
     eigen_pairs.sort(key =lambda k :k[0], reverse =True)
     # collect two eigen vectors that correspond to the two largest 
     # eigenvalues to capture about 60% of the variance of this datasets
-    if n_components !=2 : 
-        #XXX TODO: transform component > 2 
-        warn("N-component > 2 is not implemented yet.", UserWarning)
-    w= np.hstack((eigen_pairs[0][1][:, np.newaxis], 
-                 eigen_pairs [1][1][:, np.newaxis])
-                 ) 
+    
+    # Check if the requested number of components is implemented
+    if n_components > 2:
+        w = get_transformation_matrix(n_components, eigen_vals, eigen_vecs )
+    else:
+        w = np.hstack((eigen_pairs[0][1][:, np.newaxis], eigen_pairs[1][1][:, np.newaxis]))
+    # w= np.hstack((eigen_pairs[0][1][:, np.newaxis], 
+    #              eigen_pairs [1][1][:, np.newaxis])
+    #              ) 
     # In pratice the number of principal component has to be 
     # determined by a tradeoff between computational efficiency 
     # and the performance of the classifier.
-    
     #-> transform X onto a PCA subspace( the pc one on two)
     X_transf = X.dot(w)
     
     if view: 
-        from ..tools.plotutils import make_mpl_properties
+        from ..plot.utils import make_mpl_properties
         if y is None: 
             raise TypeError("Missing the target `y`")
         # markers = tuple (D_MARKERS [:len(np.unique (y))])
@@ -197,44 +372,60 @@ def transform_to_principal_components (
         plt.show() 
         
     return X_transf 
+  
+transform_to_principal_components.__doc__ = """\
+Transforms the dataset X into new principal components derived from the 
+eigen decomposition of the covariance matrix of X.
 
-transform_to_principal_components.__doc__="""\
-Transform  X into  new principal components after decomposing 
-the covariance matrices.    
-    
-Parameters 
+Parameters
 -----------
-{params.X} 
+{params.X}
 {params.y}
+n_components: int, default=2
+    The number of principal components to retain. Specifies the dimensionality 
+    of the transformed data in terms of the most significant principal axes.
+positive_class: int
+    Specifies the class label that should be considered as the positive class 
+    in binary classification tasks. This is used primarily for visualization 
+    to distinguish between the positive and other classes.
+view: bool, default={{'False'}}
+    If set to True, visualizes the transformed principal components along with 
+    the separation between the positive class and other classes. This is helpful 
+    for assessing the quality of the transformation in terms of class separability.
 
-n_components: int, default=2 
-    Number of components with most total variance ratio. 
-positive_class: int, 
-    class label as an integer indenfier within the class representation. 
-    
-view: bool, default {{'False'}}
-    give an overview of the total explained variance. 
+Returns
+---------
+X_transf: ndarray
+    The transformed dataset where each sample is now represented in the reduced 
+    principal component space. This transformation often helps in visualizing 
+    high-dimensional data in a two-dimensional or three-dimensional space.
 
-Returns 
+Examples
 ---------
-X_transf : nd-array 
-    X PCA training set transformed.
-    
-Examples 
----------
->>> from gofast.analysis import feature_transformation 
->>> # Use the X, y value in the example of `extract_pca` function  
->>> Xtransf = feature_transformation(X, y=y,  positive_class = 2 , view =True)
+>>> from gofast.analysis.decomposition import transform_to_principal_components
+>>> from sklearn.datasets import load_iris
+>>> X, y = load_iris(return_X_y=True)
+>>> X_transformed = transform_to_principal_components(X, y, positive_class=1, view=True)
+>>> print(X_transformed.shape)
+(150, 2)
+
+>>> # Use the X, y value in the example of `get_eigen_components` function  
+>>> Xtransf = transform_to_principal_components(X, y=y,  positive_class = 2 , view =True)
 >>> Xtransf[0] 
-... array([-1.0168034 ,  2.56417088])
+array([-1.0168034 ,  2.56417088])
 
-
-""".format(params = _core_docs["params"]
-)
+Notes
+-----
+This function is particularly useful in scenarios where high-dimensional data 
+needs to be visualized or analyzed in a lower-dimensional space. By projecting 
+the data onto the principal components that explain the most variance, 
+significant patterns and structures in the data can often be more easily 
+identified.
+""".format(params=_core_docs["params"])
 
 def _decision_region (X, y, clf, resolution =.02 , ax =None ): 
     """ visuzalize the decision region """
-    from ..tools.plotutils import make_mpl_properties
+    from ..plot.utils import make_mpl_properties
     # setup marker generator and colors map 
     colors = tuple (make_mpl_properties(len(np.unique (y))))
     markers = tuple (make_mpl_properties (
@@ -266,16 +457,19 @@ def _decision_region (X, y, clf, resolution =.02 , ax =None ):
     return ax 
         
 def plot_decision_regions (
-        X, y, clf, Xt =None, yt=None, random_state = 42, test_size = .3 , 
-        scaling =True, split =False,  n_components =2 , view ='X',
-        resolution =.02, return_expl_variance_ratio =False, return_axe =False, 
-        axe =None, 
-        **kws 
-        ): 
+    X, y, clf, Xt =None, yt=None, random_state = 42, test_size = .3 , 
+    scaling =True, split =False,  n_components =2 , view ='X',
+    resolution =.02, return_expl_variance_ratio =False, return_X =False, 
+    axe =None, 
+    **kws 
+    ): 
     view = str(view).lower().strip()
-    if  view in ('xt', 'test'): view ='test'
-    elif view in ('x', 'train'): view = 'train'
-    else:  view =None 
+    if  view in ('xt', 'test'): 
+        view ='test'
+    elif view in ('x', 'train'):
+        view = 'train'
+    else: view =None 
+    
     if split : 
         X, Xt, y, yt = train_test_split(X, y, random_state =random_state, 
                                         test_size =test_size, **kws)
@@ -306,78 +500,84 @@ def plot_decision_regions (
         ax.set_ylabel ("PC2")
         ax.legend (loc= 'lower left')
         plt.show ()
+        
     if return_expl_variance_ratio : 
         pca =PCA(n_components =None )
         X_pca = pca.fit_transform(X)
+        
         return pca.explained_variance_ratio_ 
     
-    return ax if return_axe else X_pca 
+    return X_pca if return_X else  ax 
+   
+plot_decision_regions.__doc__ = """\
+Visualize decision regions for datasets transformed via PCA, showing how 
+a classifier divides the feature space.
 
-plot_decision_regions.__doc__="""\
-View decision regions for the training data reduced to two 
-principal component axes. 
-
-Parameters 
+Parameters
 -----------
 {params.X}
 {params.y}
 {params.Xt}
 {params.yt}
 {params.clf}
-
 random_state : int, default={{42}}
-    Seed for shuffling the data.
+    The seed used by the random number generator for data shuffling.
 test_size : float, default=0.3
-    Size of the test set when splitting the data.
+    Proportion of the dataset to include in the test split.
 split : bool, default=False
-    If True, assume that (X, y) contains the entire dataset, and split it 
-    into training and test sets.
+    If True, splits the dataset into a training set and a test set using 
+    the entire dataset provided in (X, y).
 n_components : int or float, default={{2}}
-    Number of principal components to retain. If a float in the range 
-    (0.0, 1.0) is provided,
-    it specifies the minimum explained variance ratio. 
-    Use <estimator>.n_components_ to access it.
-view : {{'X', 'Xt', None}}, default={{None}}
-    Type of visualization. 'X' and 'Xt' correspond to decision regions 
-    for the training and test sets, respectively.
-    If None, visualization is turned off.
+    The number of principal components to retain for PCA. If a float between 
+    0.0 and 1.0 is provided, it specifies the fraction of variance that must 
+    be retained by the PCA components.
+view :{{'X', 'Xt', None}}, default={{None}}
+    Specifies the subset for which to visualize decision regions:
+    'X' for training data, 'Xt' for test data, or None to disable visualization.
 resolution : float, default={{0.02}}
-    Granularity of the meshgrid for plotting decision regions.
+    The resolution of the grid used in plotting decision regions, determining 
+    the granularity of the meshgrid.
 return_expl_variance_ratio : bool, default=False
-    If True, returns the explained variance ratio of all principal components.
-return_axes : bool, default=False
-    If True, returns the Matplotlib Axes object.
-ax : Matplotlib.Axes object, optional
-    Custom Matplotlib Axes object. If not provided, one will be created.
+    If True, returns the explained variance ratio of the PCA transformation.
+return_X : bool, default=False
+    If True, returns the PCA-transformed dataset.
+ax : Matplotlib.Axes, optional
+    A custom Matplotlib Axes object for the plot; if not provided, a new one 
+    will be created.
+    
 kws : dict, optional
     Additional keyword arguments passed to the scikit-learn function
     sklearn.model_selection.train_test_split.
-
 Returns
 -------
 X_pca : ndarray or array-like
-    PCA-transformed training set or explained variance ratios if return_expl_variance_ratio is True.
+    The PCA-transformed dataset, or the explained variance ratios if 
+    `return_X` is True or `return_expl_variance_ratio` is True.
 ax : Matplotlib.Axes, optional
-    Matplotlib Axes object if return_axes is True.
+    The Matplotlib Axes object useful for further customization of the plot.
 
 Examples
 --------
 >>> from gofast.datasets import fetch_data
->>> from gofast.exlib.sklearn import SimpleImputer, LogisticRegression
->>> from gofast.analysis.decomposition import decision_region
->>> data = fetch_data("bagoue original").get('data=dfy1')  # Encoded flow categories
->>> y = data.flow
->>> X = data.drop(columns='flow')
->>> # Select numerical features
->>> X = select_features(X, include='number')
->>> # Impute missing data
->>> X = SimpleImputer().fit_transform(X)
->>> lr_clf = LogisticRegression(multi_class='ovr', random_state=1, solver='lbfgs')
->>> X_pca = decision_region(X, y, clf=lr_clf, split=True, view='Xt')  # Test set view
->>> X_pca[0]
-array([-1.02925449,  1.42195127])
-""".format(params = _core_docs["params"]
-)
+>>> from sklearn.preprocessing import StandardScaler
+>>> from sklearn.linear_model import LogisticRegression
+>>> from gofast.tools.baseutils import select_features
+>>> from gofast.analysis.decomposition import plot_decision_regions
+>>> data = fetch_data("bagoue analyses")
+>>> y = data['flow']
+>>> X = select_features(data.drop(columns='flow'), include='number')
+>>> X = StandardScaler().fit_transform(X)
+>>> lr_clf = LogisticRegression(random_state=42)
+>>> plot_decision_regions(X, y, clf=lr_clf, n_components=2, view='X', split=True)
+
+Notes
+-----
+The function applies PCA to reduce dimensionality before plotting, which simplifies 
+the visualization of the decision regions. It assumes that the classifier and PCA 
+can handle the dimensionality specified by `n_components`. This function is particularly 
+useful for visualizing the effectiveness of classification boundaries in a 
+lower-dimensional space.
+""".format(params=_core_docs["params"])
 
 def linear_discriminant_analysis (
         X, y, n_components = 2 , view=False, verbose = 0  , return_X=True, 
@@ -471,7 +671,7 @@ def linear_discriminant_analysis (
         plt.legend (loc ='best')
         plt.tight_layout() 
         plt.show () 
-    
+
     # stack the two most discrimative eigen columns 
     # to create the transformation matrix W  for two components 
     # W = np.hstack((eigen_pairs[0][1][:, np.newaxis].real, 
@@ -558,40 +758,66 @@ X:  Ndarray ( M x N matrix where ``M=m-samples``, & ``N=n-features``)
     feature extractor or a pairwise metric to turn it into one  before 
     learning a model.
     
-y: array-like, shape (M, ) ``M=m-samples``, 
-    train target; Denotes data that may be observed at training time 
-    as the dependent variable in learning, but which is unavailable 
-    at prediction time, and is usually the target of prediction. 
+y: Array-like, shape (M,)
+    Training target; Represents dependent variables in supervised learning. y must 
+    be available at training time but is typically unavailable during prediction. 
+    It includes class labels which are crucial for directing the LDA projection.
   
-n_components: int, default =2 
-    Number of components considered as the most discriminative eigen vector.
+n_components: int, optional, default=2
+    The number of components (dimensions) to retain in the transformed output. 
+    This parameter determines the number of linear discriminants (eigenvalues) 
+    to consider based on their ability to maximize class separation.
     
-return_X: bool, default =True 
-    return the transformed training set from `n_components`. 
+view: bool, optional, default=False
+    If True, displays a plot of the discriminability ratio which helps in 
+    visualizing the contribution of each component to class separation.
+    
+verbose: int, optional, default=0
+    Controls the verbosity; higher values provide more detailed output 
+    (useful for debugging or learning the internal operations of the function).
 
-view: bool ,default =False, 
-    Visualize the LDA plot. If set to ``True``, the plot is triggered. 
+return_X: bool, optional, default=True
+    Determines the type of return value. If True, the function returns the 
+    transformed dataset (X projected onto the discriminant vectors). If False, 
+    it returns the matrix W of weights used for the transformation.
     
-Returns 
+Returns
 --------
-X or W: ndarray (n_samples, 2 ) 
-    The transformed train set (X) or matrix (W) from the most discriminative 
-    eigenvector columns
+X or W: ndarray
+    Depending on the value of `return_X`, returns either the transformed dataset 
+    X with dimensions reduced to `n_components` or the transformation matrix W 
+    consisting of the top `n_components` discriminant vectors.
     
 Examples
 ----------
 >>> from gofast.datasets import fetch_data 
->>> from gofast.exlib.sklearn import SimpleImputer, LogisticRegression  
->>> from gofast.analysis.decomposition import linear_discriminant_analysis 
->>> data= fetch_data("bagoue original").get('data=dfy1') # encoded flow
+>>> from sklearn.impute import SimpleImputer
+>>> from sklearn.linear_model import LogisticRegression
+>>> from gofast.tools.baseutils import select_features
+>>> from gofast.analysis.decomposition import linear_discriminant_analysis
 >>> y = data.flow ; X= data.drop(columns='flow') 
 >>> # select the numerical features 
->>> X =selectfeatures(X, include ='number')
+>>> X =select_features(X, include ='number')
 >>> # imputed the missing data 
 >>> X = SimpleImputer().fit_transform(X)
 >>> Xtr= linear_discriminant_analysis (X, y , view =True)
-"""
 
+Notes
+-----
+LDA assumes that the data is approximately normally distributed per class and 
+that the classes have similar covariance matrices. If these assumptions are 
+not met, the effectiveness of LDA as a classifier may be reduced. In practice,
+LDA is quite robust and can perform well even when the normality assumption is 
+somewhat violated.
+
+In addition to its utility in dimensionality reduction, LDA is often used as 
+a linear classification technique. The directions of the axes resulting from LDA 
+are used to separate classes linearly.
+
+The `view` parameter utilizes matplotlib for generating plots; ensure matplotlib 
+is installed and properly configured in your environment if using this feature.
+
+"""
 
 
       

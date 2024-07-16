@@ -2,10 +2,7 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio~@Daniel03 <etanoyau@gmail.com>
 """
-decorators
-=============
-
-This module provides a collection of decorators designed to enhance and simplify 
+Provides a collection of decorators designed to enhance and simplify 
 common programming tasks in Python. These decorators offer functionality ranging 
 from suppressing output and sanitizing docstrings to appending documentation and 
 managing feature importance plots. Each decorator is crafted to be reusable and 
@@ -45,20 +42,863 @@ Contributions:
 """
 
 from __future__ import print_function 
-import functools
-import inspect
 import os
 import re
 import sys
+import inspect
 import warnings
+import functools
 import numpy as np 
 import pandas as pd
 import matplotlib.pyplot as plt 
+
+from typing import Union, Optional, Callable
 from ._gofastlog import gofastlog
-from ._typing import Union, Optional, Callable
 _logger = gofastlog.get_gofast_logger(__name__)
 
 __docformat__='restructuredtext'
+
+__all__= [
+    'AppendDocFrom',
+    'AppendDocReferences',
+    'AppendDocSection',
+    'CheckGDALData',
+    'DataTransformer',
+    'Dataify',
+    'Deprecated',
+    'DynamicMethod',
+    'ExportData',
+    'Extract1dArrayOrSeries',
+    'NumpyDocstring',
+    'NumpyDocstringFormatter',
+    'PlotFeatureImportance',
+    'PlotPrediction',
+    'RedirectToNew',
+    'SignalFutureChange',
+    'SmartProcessor',
+    'SuppressOutput',
+    'Temp2D',
+    'available_if',
+    'example_function',
+    'isdf',
+    'sanitize_docstring',
+    'EnsureFileExists',
+  ]
+
+class SmartProcessor:
+    """
+    A decorator class for data processing which selectively excludes specified 
+    columns from the processing step and reintegrates them afterward. This is 
+    useful for data preprocessing steps like scaling or imputing, where certain
+    columns (e.g., identifiers or target variables) should be omitted from 
+    the processing.
+
+    Parameters
+    ----------
+    func : callable, optional
+        The function to decorate. If not provided at initialization, it must 
+        be provided later as the first positional argument in the call to the 
+        decorator instance.
+    param_name : str, optional
+        The name of the keyword argument in the decorated function that 
+        specifies which columns to exclude from processing. 
+        Defaults to 'column_to_skip' if not provided.
+    fail_silently : bool or 'warn', optional
+        Controls the error handling behavior. If `False` (default), errors 
+        raise exceptions. If `True`, the original data is returned on error. 
+        If set to 'warn', a warning is issued, and the original data is returned.
+    to_dataframe : bool, optional
+        If `True`, converts the output to a pandas DataFrame, regardless of the
+        input type. This is useful when working with NumPy arrays but needing 
+        a DataFrame for the result. Defaults to `False`.
+
+    Notes
+    -----
+    The decorator dynamically adjusts to the data type of the input, supporting
+    both pandas DataFrames and NumPy arrays. When applied, it ensures that the
+    columns specified for exclusion are not modified by the processing function,
+    preserving their original values and positions in the output.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from gofast.decorators import SmartProcessor
+    >>> @SmartProcessor(to_dataframe=True)
+    ... def scale_data(data):
+    ...     return (data - data.mean()) / data.std()
+    ...
+    >>> df = pd.DataFrame({
+    ...     'A': [1, 2, 3],
+    ...     'B': [4, 5, 6],
+    ...     'C': [7, 8, 9]
+    ... })
+    >>> print(scale_data(df, column_to_skip=['C']))
+           A         B  C
+    0 -1.224745 -1.224745  7
+    1  0.000000  0.000000  8
+    2  1.224745  1.224745  9
+
+    Using the decorator with NumPy arrays while skipping specific indices:
+    >>> import numpy as np
+    >>> arr = np.array([[1, 4, 7], [2, 5, 8], [3, 6, 9]])
+    >>> result = scale_data(arr, column_to_skip=[2])
+    >>> print(result)
+    [[-1.22474487 -1.22474487  7.        ]
+     [ 0.          0.          8.        ]
+     [ 1.22474487  1.22474487  9.        ]]
+    """
+    def __init__(self, func=None, *, param_name=None, fail_silently=False, 
+                 to_dataframe=False):
+        self.func = func
+        self.param_name = param_name or 'column_to_skip'
+        self.fail_silently = fail_silently
+        self.to_dataframe = to_dataframe
+        if func:
+            functools.update_wrapper(self, func)
+            
+    def __call__(self, *args, **kwargs):
+        """
+        Call method that makes `SmartProcessor` a callable object which can 
+        act as a decorator.
+    
+        When `SmartProcessor` is used to decorate a function without previously
+        being instantiated with a function, it receives the function as the 
+        first positional argument and returns a new instance of `SmartProcessor`
+        as the decorator. If it was already instantiated with a function, it 
+        processes the input data and handles the exclusion and reintegration of 
+        specified columns.
+    
+        Parameters
+        ----------
+        *args : tuple
+            The positional arguments passed to the function. If called on an 
+            undecorated function, `args[0]` is expected to be the function to 
+            decorate.
+        **kwargs : dict
+            The keyword arguments passed to the function.
+    
+        Returns
+        -------
+        callable or object
+            If called without a function, returns a new instance of 
+            `SmartProcessor` with the function to decorate. If called with a 
+            function, returns the wrapper function that processes the data.
+    
+        Notes
+        -----
+        This method handles two scenarios:
+        1. Initialization of the decorator with a function to decorate.
+        2. Application of the decorator to process data by wrapping the 
+        decorated function and optionally excluding specified columns from 
+        being processed.
+        
+        The actual data processing includes error handling according to the 
+        'fail_silently' attribute, allowing for warnings or silent failures 
+        as configured.
+    
+        Examples
+        --------
+        >>> @SmartProcessor(to_dataframe=True)
+        ... def scale_data(data):
+        ...     return (data - data.mean()) / data.std()
+        ...
+        >>> df = pd.DataFrame({
+        ...     'A': [1, 2, 3],
+        ...     'B': [4, 5, 6],
+        ...     'C': [7, 8, 9]
+        ... })
+        >>> print(scale_data(df, column_to_skip=['C']))
+               A         B  C
+        0 -1.224745 -1.224745  7
+        1  0.000000  0.000000  8
+        2  1.224745  1.224745  9
+        """
+        if not self.func:
+            # If the instance is called with a function to decorate, 
+            # return a new decorated instance
+            return self.__class__(
+                args[0], param_name=self.param_name,
+                fail_silently=self.fail_silently, 
+                to_dataframe=self.to_dataframe
+            )
+    
+        def wrapper(data, *args, **kwargs):
+            columns_to_skip = kwargs.get(self.param_name, None)
+            if isinstance(columns_to_skip, ( str, int)): 
+                columns_to_skip = [columns_to_skip]
+            try:
+                if columns_to_skip is not None:
+                    if isinstance(data, pd.DataFrame):
+                        self._check_columns_exist(data, columns_to_skip)
+                        data_to_process, skipped_data = data.drop(
+                            columns=columns_to_skip), data[columns_to_skip]
+                    elif isinstance(data, np.ndarray):
+                        self._check_indices_valid(data, columns_to_skip)
+                        data_to_process = np.delete(data, columns_to_skip, axis=1)
+                        skipped_data = data[:, columns_to_skip]
+                    else:
+                        raise TypeError(
+                            "Data must be a pandas DataFrame or a NumPy array."
+                            f" Got {type(data).__name_!r}")
+    
+                    processed_data = self.func(data_to_process, *args, **kwargs)
+    
+                    if isinstance(data, pd.DataFrame):
+                        result = pd.concat([processed_data, skipped_data], axis=1)
+                    elif isinstance(data, np.ndarray):
+                        result = self._reintegrate_skipped_numpy(
+                            data, processed_data, skipped_data, columns_to_skip)
+                    
+                    return result if not self.to_dataframe or not isinstance(
+                        result, pd.DataFrame
+                        ) else self.restore_original_column_order (result)
+                  
+                else:
+                    return self.func(data, *args, **kwargs)
+    
+            except Exception as e:
+                if self.fail_silently == 'warn':
+                    warnings.warn(str(e))
+                    return data
+                elif not self.fail_silently or self.fail_silently=='raise':
+                    raise
+    
+        return wrapper(*args, **kwargs)
+    
+    
+    def _check_columns_exist(self, dataframe, columns):
+        """
+        Check if the specified columns exist in the dataframe.
+    
+        Parameters
+        ----------
+        dataframe : pd.DataFrame
+            The DataFrame to check for column existence.
+        columns : list of str
+            List of column names to check in the DataFrame.
+    
+        Raises
+        ------
+        ValueError
+            If any of the specified columns do not exist in the DataFrame, a 
+            ValueError is raised with an appropriate message.
+    
+        Notes
+        -----
+        This method is used internally by the SmartProcessor class to ensure 
+        that the columns specified to be skipped during processing actually 
+        exist in the input DataFrame. This is crucial for preventing runtime 
+        errors during data manipulation.
+        """
+        self._original_columns= dataframe.columns.tolist() 
+        if any(col not in dataframe.columns for col in columns):
+            raise ValueError("Some columns to skip do not exist in the DataFrame")
+    
+    def _check_indices_valid(self, array, indices):
+        """
+        Check if the specified indices are valid for the given NumPy array.
+    
+        Parameters
+        ----------
+        array : np.ndarray
+            The NumPy array to check indices against.
+        indices : list of int
+            List of column indices to check in the NumPy array.
+    
+        Raises
+        ------
+        ValueError
+            If any of the indices are out of the range of the array's second dimension,
+            a ValueError is raised.
+    
+        Notes
+        -----
+        This method ensures that the indices specified for skipping are within the valid
+        range of columns of the NumPy array. It prevents index errors during operations
+        that involve slicing or accessing array elements by index.
+        """
+        if any(index >= array.shape[1] for index in indices):
+            raise ValueError("Column index out of range. Expect indexes"
+                             f" ranged between [0, {array.shape[1]}).")
+    
+    def _reintegrate_skipped_numpy(
+            self, original_data, processed_data, skipped_data, columns_to_skip):
+        """
+        Reintegrate skipped data back into the processed NumPy array.
+    
+        Parameters
+        ----------
+        original_data : np.ndarray
+            The original data from which columns were skipped.
+        processed_data : np.ndarray
+            The data after processing, missing the skipped columns.
+        skipped_data : np.ndarray
+            The columns that were skipped during the processing.
+        columns_to_skip : list of int
+            Indices of the columns that were skipped.
+    
+        Returns
+        -------
+        np.ndarray
+            A new NumPy array that combines both the processed and skipped data 
+            in their original column order.
+    
+        Notes
+        -----
+        This method handles the reintegration of skipped columns back into the
+        NumPy array after the main processing has been completed. It ensures 
+        that the final output maintains the same structure and order as the 
+        original input array, which is essential for consistency in data 
+        processing pipelines.
+        """
+        full_data = np.empty_like(original_data)
+        j = 0  # Index for processed data columns
+        for i in range(original_data.shape[1]):
+            if i in columns_to_skip:
+                # Place skipped data back in its original position
+                full_data[:, i] = skipped_data[:, columns_to_skip.index(i)]
+            else:
+                # Insert processed data in the remaining positions
+                full_data[:, i] = processed_data[:, j]
+                j += 1
+        return full_data
+    
+    def reoder_dataframe_columns (self , result): 
+        # reoder dataframe columns like the original positions after concatena
+        # tion 
+        if not self.dataframe or isinstance ( result, pd.DataFrame): 
+            return result 
+        else: 
+            result =pd.DataFrame(result) 
+        
+        if hasattr (self, '_original_columns'): 
+            try :
+                # try to place the original columns in order after concatenation. 
+                result = result[ self._original_columns]
+            except : pass # do nothing 
+        
+        return  result 
+    
+    def restore_original_column_order(self, result):
+        """
+        Restore the column order of a DataFrame to match the original column order
+        stored in `_original_columns`. If `result` is not a DataFrame, it attempts to
+        convert it into one.
+    
+        Parameters
+        ----------
+        result : pd.DataFrame or convertible to pd.DataFrame
+            The result DataFrame whose columns need to be reordered.
+    
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns reordered to match the original order, if possible.
+    
+        Notes
+        -----
+        This method relies on the presence of an attribute `_original_columns` which 
+        is expected to be a list of column names in their original order. The method 
+        only modifies the column order if `result` is a DataFrame and `_original_columns`
+        is set.
+    
+        If the reordering process fails (e.g., due to missing columns), the method 
+        fails silently and returns the DataFrame as is without reordering.
+    
+        Examples
+        --------
+        >>> df = pd.DataFrame({
+        ...     'B': [4, 5, 6],
+        ...     'A': [1, 2, 3],
+        ...     'C': [7, 8, 9]
+        ... })
+        >>> self._original_columns = ['A', 'B', 'C']
+        >>> restored_df = self.restore_original_column_order(df)
+        >>> print(restored_df.columns)
+        Index(['A', 'B', 'C'], dtype='object')
+        """
+        
+        if not isinstance(result, pd.DataFrame):
+            result = pd.DataFrame(result)
+        
+        if hasattr(self, '_original_columns'):
+            try:
+                # Try to reorder columns according to the original order
+                result = result[self._original_columns]
+            except KeyError:
+                # Fails silently if reordering is not possible due to missing columns
+                pass
+    
+        return result
+        
+            
+class DataTransformer:
+    """
+    A decorator class for transforming the output of functions that return
+    pandas DataFrames or Series. It can adjust the return value based on
+    specified parameters, including renaming columns, resetting indexes, or
+    setting a specific index. This class is useful for ensuring that the
+    output of data processing functions conforms to a specific structure or
+    naming convention.
+
+    Parameters
+    ----------
+    name : str, optional
+        The name of the keyword argument in the decorated function that 
+        contains the data to be transformed. If not specified, the first 
+        positional argument is used.
+    data_index : int, optional
+        The index of the data within the return value if the return is a 
+        tuple or list. This parameter is only used if the return value is 
+        not a single DataFrame or Series. Default is None, which implies 
+        that the first item in the return tuple/list is used in 'lazy' mode.
+    reset_index : bool, optional
+        If True, the index of the DataFrame or Series is reset. Default is False.
+    mode : {'lazy', 'hardworker'}, optional
+        The mode of operation. In 'lazy' mode, minimal changes are made to the 
+        return value. In 'hardworker' mode, the decorator attempts more 
+        extensive transformations. Default is 'lazy'.
+    verbose : bool, optional
+        If True, the decorator will print information about the transformations
+        it performs and any errors or warnings. Default is False.
+    set_index : bool, optional
+        If True and `original_attrs` has an 'index', the decorator will set 
+        this index to the return value. Default is False.
+    rename_columns : bool, optional
+        If True and `original_attrs` has 'columns', the decorator will rename 
+        the columns of the return value. This is only applicable if the return 
+        value is a DataFrame. Default is False.
+
+    Examples
+    --------
+    Use as a decorator to automatically convert the return value of a function 
+    to a DataFrame and rename columns based on a predefined structure:
+
+    >>> import pandas as pd
+    >>> from gofast.decorators import DataTransformer
+    >>> @DataTransformer(rename_columns=True, verbose=True)
+    ... def process_data():
+    ...     return pd.DataFrame([[1, 2], [3, 4]], columns=['A', 'B'])
+    ...
+    >>> df = process_data()
+    DataTransformer: Finished processing the result.
+    
+    The `process_data` function will return a DataFrame with columns renamed 
+    according to `original_attrs`, if they were collected and `rename_columns`
+    was set to True.
+
+    """
+    def __init__(
+        self, 
+        name=None, 
+        data_index=None, 
+        reset_index=False, 
+        mode='lazy', 
+        verbose=False, 
+        set_index=False, 
+        rename_columns=False
+    ):
+        self.name = name
+        self.data_index = data_index
+        self.reset_index = reset_index
+        self.mode = mode
+        self.verbose = verbose
+        self.set_index = set_index
+        self.rename_columns = rename_columns
+        self.original_attrs = {}
+         
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Pre-function execution: Data collection and attribute setup
+            if args:
+                self._collect_data_attributes(*args, **kwargs)
+            result = func(*args, **kwargs)
+            # Post-function execution: Data re-construction and manipulation
+            result = self._reconstruct_data(result)
+            if self.verbose: 
+                print( "DataTransformer: Finished processing the result.")
+            return result
+        return wrapper
+    
+    def _collect_data_attributes(self, *args, **kwargs):
+        if self.name:
+            data = kwargs.get(self.name)
+        else:
+            data = args[0]  # Use the first positional argument if name is not specified
+        # Use tolist() to ensure JSON serializability if needed
+        if isinstance(data, pd.DataFrame):
+            self.original_attrs['columns'] = data.columns.tolist()  
+            self.original_attrs['index'] = data.index.tolist()
+        elif isinstance(data, pd.Series):
+            self.original_attrs['name'] = data.name
+            self.original_attrs['index'] = data.index.tolist()
+
+    def _reconstruct_data(self, result):
+        is_tuple_result = isinstance(result, (tuple, list))
+        data_index = self.data_index if self.data_index is not None else 0
+        
+        if is_tuple_result:
+            if data_index >= len(result):
+                if self.verbose:
+                    print(f"DataTransformer: Data position {data_index} is out"
+                          f" of range for the result size {len(result)}.")
+                return result
+            data = result[data_index]
+        else:
+            data = result
+        
+        # In lazy mode and data is already in the correct format, no need to reconstruct
+        if self.mode == 'lazy' and isinstance(data, (pd.DataFrame, pd.Series)):
+            return result
+
+        data = self._convert_and_adjust_data(data)
+        
+        # Re-insert transformed data into the original result structure if needed
+        if is_tuple_result:
+            result = list(result)  # Convert to list for mutability
+            result[data_index] = data
+            result = tuple(result)  # Convert back if originally a tuple
+        else:
+            result = data
+        
+        return result
+
+    def _convert_and_adjust_data(self, data):
+        if isinstance(data, np.ndarray):
+            data = self._convert_ndarray_to_pandas(data)
+        # Add additional conversion logic here for other data 
+        # types like lists or dictionaries
+
+        if isinstance(data, pd.DataFrame) and self.rename_columns:
+            data = self._rename_columns(data)
+
+        if (isinstance(data, (pd.DataFrame, pd.Series)) and self.set_index) or self.reset_index:
+            data = self._apply_index_and_name_settings(data)
+
+        return data
+
+    def _convert_ndarray_to_pandas(self, ndarray):
+        try:
+            if ndarray.ndim == 1:
+                return pd.Series(ndarray, name=self.original_attrs.get('name'))
+            elif ndarray.ndim > 1:
+                return pd.DataFrame(ndarray, columns=self.original_attrs.get('columns'))
+        except Exception as e:
+            if self.verbose:
+                print(f"DataTransformer: Error converting numpy array to DataFrame/Series - {e}")
+        return ndarray
+
+    def _rename_columns(self, dataframe):
+        try:
+            dataframe.columns = self.original_attrs['columns']
+        except Exception as e:
+            if self.verbose:
+                print(f"DataTransformer: Error renaming columns - {e}")
+        return dataframe
+
+    def _apply_index_and_name_settings(self, data):
+        if self.reset_index:
+            data.reset_index(drop=True, inplace=True)
+        elif self.set_index:
+            try:
+                data.index = self.original_attrs['index']
+            except Exception as e:
+                if self.verbose:
+                    print(f"DataTransformer: Error setting index - {e}")
+        return data
+    
+class Extract1dArrayOrSeries:
+    """
+    A decorator and callable that preprocesses input data to ensure it is 
+    provided to the decorated/called function as a one-dimensional NumPy 
+    array or Pandas Series.
+
+    This utility is designed to facilitate data extraction and conversion 
+    from various input formats (lists, dictionaries, Pandas DataFrames, 
+    and NumPy ndarrays) into a one-dimensional array or series. It is 
+    particularly useful for functions expecting standardized input data 
+    formats. The class supports dynamic parameter updates for `column`, 
+    `index`, `axis`, and `verbose` when used as a decorator.
+
+    Parameters
+    ----------
+    func : callable, optional
+        The function to be decorated. If None, the instance acts as a 
+        factory for partials with preset parameters.
+    column : str or int, optional
+        Specifies which column to extract from the input if it is a DataFrame
+        or multidimensional ndarray. Use an integer for index selection or a 
+        string for a DataFrame column name.
+    index : int, optional
+        Specifies which row to extract from the input if it is a DataFrame 
+        or ndarray.
+    axis : int, optional
+        Specifies the axis along which to extract a one-dimensional array 
+        from an ndarray. Valid values are 0 or 1.
+    method : {'strict', 'soft'}, default 'strict'
+        Specifies the behavior when a specified column or index is not found,
+        or when no specification is provided. 'soft' uses the first column 
+        if the specified one is missing without raising an error.
+    as_series : bool, default False
+        Determines whether the output should be a Pandas Series. If False, 
+        the output is a NumPy array.
+    verbose : int, default 0
+        Controls the verbosity of the process. A value greater than 0 
+        activates verbose output.
+    squeeze_arr : bool, default True
+        Determines whether to squeeze the input array to one dimension. 
+        Applicable to ndarrays only.
+
+    Returns
+    -------
+    The decorator returns the modified function with input data processed 
+    according to the specified parameters.
+
+    Raises
+    ------
+    TypeError
+        If the input is not a list, dictionary, Pandas DataFrame, or 
+        NumPy ndarray.
+    ValueError
+        If the specified conditions (e.g., column/index out of range, 
+        incorrect axis specification) are not met.
+
+    Examples
+    --------
+    Using as a decorator to ensure input data is a one-dimensional array:
+
+    >>> import numpy as np 
+    >>> import pandas as pd 
+    >>> from gofast.decorators import Extract1dArrayOrSeries
+    >>> @Extract1dArrayOrSeries(column=0, as_series=True, verbose=1)
+    >>> def compute_average(data):
+    ...     return data.mean()
+
+    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    >>> print(compute_average(df))
+
+    Dynamically overriding decorator parameters in function call:
+
+    >>> @Extract1dArrayOrSeries(column='A', as_series=True)
+    >>> def summarize_data(data):
+    ...     return {'mean': data.mean(), 'std': data.std()}
+
+    >>> new_df = pd.DataFrame({'A': [10, 20, 30], 'B': [40, 50, 60]})
+    >>> # Overriding the 'column' parameter dynamically
+    >>> print(summarize_data(new_df, column='B'))
+    
+    Using as a callable:
+
+    >>> def process_data(data):
+    ...     # Expect data to be a one-dimensional NumPy array or Pandas Series
+    ...     return np.mean(data)
+
+    >>> decorated_function = Extract1dArrayOrSeries(process_data, column=0, as_series=False)
+    >>> ndarray = np.array([[1, 2, 3], [4, 5, 6]])
+    >>> print(decorated_function(ndarray))
+    """
+    def __init__(
+        self, 
+        func=None, *, 
+        column=None, 
+        index=None, 
+        axis=None, 
+        method='strict',
+        as_series=False, 
+        verbose=0, 
+        squeeze_arr=True
+        ):
+        self.func = func
+        self.column = column
+        self.index = index
+        self.axis = axis
+        self.method = method
+        self.as_series = as_series
+        self.verbose = verbose
+        self.squeeze_arr = squeeze_arr
+        
+        if func is not None:
+            functools.wraps(func)(self)
+
+    def __call__(self, *args, **kwargs):
+        # Dynamically update only specific 
+        # parameters if they are explicitly passed
+        dynamic_params = ['column', 'index', 'axis', 'verbose']
+        for param in dynamic_params:
+            if param in kwargs:
+                setattr(self, param, kwargs[param])
+        if self.func:
+            # Proceed with the possibly updated instance attributes
+            return self._wrapper(*args, **kwargs)
+        else:
+            return self._partial(*args, **kwargs)
+
+    def _partial(self, func):
+        @functools.wraps(func)
+        def wrapped(*args, **kwargs):
+            return self.__class__(
+                func, column=self.column, 
+                index=self.index, 
+                axis=self.axis,
+                method=self.method, 
+                as_series=self.as_series,
+                verbose=self.verbose, 
+                squeeze_arr=self.squeeze_arr
+            )(*args, **kwargs)
+        return wrapped
+    
+    def _wrapper(self, arr, *args, **kwargs):
+        arr = self._convert_input(arr)
+        
+        if isinstance (arr, pd.Series): 
+            result= arr.copy() 
+        elif isinstance(arr, pd.DataFrame):
+            result = self._extract_from_dataframe(arr)
+        elif isinstance(arr, np.ndarray):
+            result = self._extract_from_ndarray(arr)
+        else:
+            raise TypeError("The input must be either a Pandas DataFrame or a NumPy ndarray.")
+        
+        if self.as_series and isinstance(result, np.ndarray):
+            result = pd.Series(result)
+        elif not self.as_series and isinstance(result, pd.Series):
+            result = result.to_numpy()
+        
+        return self.func(result, *args, **kwargs)
+    
+    def __get__(self, instance, owner):
+        return self.__class__(
+            self.func.__get__(instance, owner), column=self.column, 
+            index=self.index, axis=self.axis,
+            method=self.method, as_series=self.as_series, verbose=self.verbose, 
+            squeeze_arr=self.squeeze_arr)
+
+    def _convert_input(self, arr):
+        """Convert input data to numpy array or pandas DataFrame if
+        it's a list or dictionary, respectively."""
+        if isinstance(arr, list):
+            arr = np.array(arr)
+        elif isinstance(arr, dict):
+            arr = pd.DataFrame(arr)
+        return arr
+        
+    def _extract_from_dataframe(self, arr):
+        """Extract data from a pandas DataFrame based on the 
+        specified column or index."""
+        if self.column is not None:
+            if isinstance(self.column, int):  # Column by integer index
+                self._validate_column_index(arr, self.column)
+                result = arr.iloc[:, self.column]
+            elif isinstance(self.column, str):  # Column by name
+                self._validate_column_name(arr, self.column)
+                result = arr[self.column]
+        elif self.index is not None:
+            result = arr.iloc[self.index]
+        else:
+            result = self._default_dataframe_extraction(arr)
+        return result
+    
+    def _extract_from_ndarray(self, arr):
+        """Extract a specific slice from a numpy ndarray based on 
+        the provided parameters."""
+        if arr.ndim > 1:
+            result = self._handle_multidimensional_array(arr)
+        else:
+            result = np.squeeze(arr) if self.squeeze_arr else arr
+        return result
+    
+    def _validate_column_index(self, arr, index):
+        """Validate if the provided column index is within the valid range."""
+        if index < 0 or index >= arr.shape[1]:
+            raise ValueError("The specified column index is out of range."
+                             " Please provide a valid index.")
+            
+    def _validate_column_name(self, arr, name):
+        """Validate if the provided column name exists in the DataFrame."""
+        if name not in arr.columns:
+            raise ValueError(f"The specified column name '{name}' does"
+                             " not exist in the DataFrame.")
+            
+    def _default_dataframe_extraction(self, arr):
+        """Extract the first column from a DataFrame by default when no 
+        specific column or index is provided."""
+        if self.method == 'soft':
+            if self.verbose:
+                print("No specific column or index provided; extracting"
+                      " the first column by default.")
+            return arr.iloc[:, 0]
+        else:
+            raise ValueError("No specific column or index was provided while "
+                             "a DataFrame was passed, and 'soft' method is not"
+                             " enabled.")
+    
+    def _handle_multidimensional_array(self, arr):
+        """
+        Handle the extraction from a multidimensional numpy array
+        based on axis and other parameters.
+        
+        This method takes into account the specified axis, column, index, and
+        the extraction method to retrieve a one-dimensional array from a 
+        multidimensional numpy array.
+        """
+        if self.axis is not None:
+            if self.axis == 0:
+                if self.index is not None:
+                    # Extract specific row
+                    result = arr[self.index, :]
+                else:
+                    if self.method == "soft":
+                        if self.column is not None and isinstance(self.column, int):
+                            self._validate_column_index(arr, self.column)
+                            result = arr[:, self.column]
+                            if self.verbose:
+                                print("Column specified, extracting based on "
+                                      "column index in 'soft' mode.")
+                        else:
+                            raise ValueError("Column must be an integer for "
+                                             "ndarray when 'soft' method is "
+                                             "used and axis=0.")
+                    else:
+                        raise ValueError("Column cannot be used for axis=0 "
+                                         "unless method is set to 'soft'.")
+            elif self.axis == 1:
+                if self.column is not None and isinstance(self.column, int):
+                    # Extract specific column
+                    self._validate_column_index(arr, self.column)
+                    result = arr[:, self.column]
+                elif self.index is not None:
+                    # Index behaves dually; here it acts 
+                    # as column extraction for axis=1
+                    if self.verbose:
+                        print("Index is treated as column for numpy array when axis=1.")
+                    self._validate_column_index(arr, self.index)
+                    result = arr[:, self.index]
+                else:
+                    raise ValueError("Either column or index needs to be "
+                                     "specified when axis is 1.")
+            else:
+                raise ValueError("Axis must be 0 or 1.")
+        else:
+            if self.squeeze_arr:
+                result = np.squeeze(arr)
+                if result.ndim >= 2:
+                    # Squeeze failed to convert to 1D; likely 
+                    # a matrix without a specified axis
+                    raise ValueError("Unable to automatically convert 2D array"
+                                     " to 1D without axis specification.")
+            else:
+                # No squeezing; ensure arr is already 1D or has a 
+                # single dimension to be treated as 1D
+                if arr.ndim == 2 and (arr.shape[0] == 1 or arr.shape[1] == 1):
+                    # Treat as 1D if one of the dimensions is 1,
+                    # regardless of orientation
+                    result = arr.flatten()
+                else:
+                    raise ValueError("Array is multidimensional and requires"
+                                     " axis specification for extraction.")
+        
+        return result
 
 class DynamicMethod:
     """
@@ -75,61 +915,75 @@ class DynamicMethod:
         - 'numeric': Only numeric columns are considered.
         - 'categorical': Only categorical columns are considered.
         - 'both': Both numeric and categorical columns are considered.
-        Defaults to 'numeric'.
+        Defaults to ``'numeric'``.
 
     capture_columns : bool, optional
         If set to True, the decorator filters the DataFrame columns to those 
-        specified in the 'columns' keyword argument passed to the decorated function.
-        Defaults to False.
+        specified in the 'columns' keyword argument passed to the decorated 
+        function. 
+        Defaults to ``False``.
 
     treat_int_as_categorical : bool, optional
-        When True, integer columns in the DataFrame are treated as categorical data,
-        which can be particularly useful for statistical operations that distinguish
-        between numeric and categorical data types, such as ANOVA tests.
-        Defaults to False.
+        When True, integer columns in the DataFrame are treated as categorical 
+        data, which can be particularly useful for statistical operations that
+        distinguish between numeric and categorical data types, such as ANOVA 
+        tests. 
+        Defaults to ``False``.
 
     encode_categories : bool, optional
-        If True, categorical columns are encoded into integer values. This is especially
-        useful for models that require numerical input for categorical data.
-        Defaults to False.
+        If True, categorical columns are encoded into integer values. This is
+        especially useful for models that require numerical input for 
+        categorical data.
+        Defaults to ``False``.
 
     drop_na : bool, optional
-        Determines whether rows or columns with missing values should be dropped. The
-        specific rows or columns to drop are dictated by `na_axis` and `na_thresh`.
-        Defaults to False.
+        Determines whether rows or columns with missing values should be dropped.
+        The specific rows or columns to drop are dictated by `na_axis` and
+        `na_thresh`.
+        Defaults to ``False``.
 
     na_axis : Union[int, str], optional
-        Specifies the axis along which to drop missing values. Acceptable values are:
+        Specifies the axis along which to drop missing values. Acceptable 
+        values are:
         - 0 or 'row': Drop rows with missing values.
         - 1 or 'col': Drop columns with missing values.
-        Defaults to 0.
+        Defaults to ``0``.
 
     na_thresh : Optional[float], optional
-        Sets a threshold for dropping rows or columns with missing values. This can be
-        specified as an absolute number of non-NA values or a proportion (0 < value <= 1)
-        of the total number of values in a row or column.
-        Defaults to None.
+        Sets a threshold for dropping rows or columns with missing values. 
+        This can be specified as an absolute number of non-NA values or a
+        proportion (0 < value <= 1) of the total number of values in a row
+        or column.
+        Defaults to ``None``.
 
     transform_func : Optional[Callable], optional
-        A custom function to apply to the DataFrame before passing it to the decorated
-        function. This allows for flexible data transformations as needed.
-        Defaults to None.
+        A custom function to apply to the DataFrame before passing it to the
+        decorated function. This allows for flexible data transformations 
+        as needed.
+        Defaults to ``None``.
 
     condition : Optional[Callable[[pd.DataFrame], bool]], optional
-        A condition function that takes the DataFrame as an argument and returns True
-        if the decorated function should be executed. This enables conditional processing
-        based on the data.
-        Defaults to None.
+        A condition function that takes the DataFrame as an argument and 
+        returns ``True`` if the decorated function should be executed. This
+        enables conditional processing based on the data.
+        Defaults to ``None``.
 
     reset_index : bool, optional
-        If True, the DataFrame index is reset before processing. This is useful after
-        filtering rows to ensure the index is continuous.
-        Defaults to False.
-
+        If True, the DataFrame index is reset before processing. This is useful
+        after filtering rows to ensure the index is continuous.
+        Defaults to ``False``.
+        
+    prefixer : str or None, optional
+        A string to prefix the function name with when adding it as a method 
+        to DataFrame and Series objects. If set to "exclude" or 'false' 
+        (case-insensitive), the prefix is omitted, and the original function 
+        name is used. If None or not provided, a default prefix of 'go' is 
+        used to denote the method's origin from the gofast package.
+        
     verbose : bool, optional
-        Controls the verbosity of the decoration process. If True, detailed information
-        about the preprocessing steps is printed.
-        Defaults to False.
+        Controls the verbosity of the decoration process. If True, detailed 
+        information about the preprocessing steps is printed.
+        Defaults to ``False``.
 
     Raises
     ------
@@ -170,7 +1024,8 @@ class DynamicMethod:
         na_thresh: Optional[float] = None, 
         transform_func: Optional[Callable] = None, 
         condition: Optional[Callable[[pd.DataFrame], bool]] = None, 
-        reset_index: bool = False
+        reset_index: bool = False,
+        prefixer:Optional[str]=None, 
         ):
         self.expected_type = expected_type
         self.capture_columns = capture_columns
@@ -182,6 +1037,7 @@ class DynamicMethod:
         self.transform_func = transform_func
         self.condition = condition
         self.reset_index = reset_index
+        self.prefixer = prefixer
         self.verbose = verbose
 
     def __call__(self, func: Callable):
@@ -197,11 +1053,11 @@ class DynamicMethod:
             data = self._process_data(data, **kwargs)
             return func(data, *args[1:], **kwargs)
         
-        self._add_method_to_pandas (wrapper)
+        self._add_method_to_pandas (
+            wrapper, prefixer= self.prefixer)
         
         return wrapper
 
-    
     def _validate_and_prepare_data(self, data, **kwargs):
         """
         Validates the input data and converts it to a pandas DataFrame if
@@ -403,26 +1259,64 @@ class DynamicMethod:
             thresh = self.na_thresh
         # Drop missing values based on the specified axis and threshold
         return data.dropna(axis=na_axis, thresh=thresh)
-                    
-    def _add_method_to_pandas(self, func):
+                                  
+    def _add_method_to_pandas(self, func, prefixer=None):
         """
-        Dynamically adds a new method to pandas DataFrame and Series 
-        objects with a 'go' prefix.
-        
-        This function checks if the method named 'go' + `func.__name__` does 
-        not already exist in the pandas DataFrame and Series classes. If not,
-        it adds `func` as a method to these classes, allowing for seamless 
-        integration of custom functionality into pandas objects, accessible 
-        with a 'go' prefix.
-        
+        Dynamically adds a custom method to pandas DataFrame and Series classes. 
+        This enhancement allows for extending pandas objects with additional 
+        functionality in a flexible manner. The method can be optionally prefixed 
+        to denote its origin or purpose, enhancing readability and avoiding 
+        namespace collisions.
+    
+        The method checks if a function, optionally prefixed, already exists 
+        as a method within the pandas DataFrame and Series classes. If the 
+        method does not exist, it is added, making it accessible directly 
+        from DataFrame and Series instances.
+    
         Parameters
         ----------
         func : function
-            The function to add as a method to DataFrame and Series objects.
-            The name of the function (`func.__name__`) prefixed with 'go' will 
-            be used as the method name.
+            The function to be added as a method. This function should accept a 
+            DataFrame or Series as its first argument, followed by any additional 
+            arguments or keyword arguments the function requires.
+        prefixer : str or None, optional
+            A string to prefix the function name with when adding it as a method 
+            to DataFrame and Series objects. If set to "exclude" or 'false' 
+            (case-insensitive), the prefix is omitted, and the original function 
+            name is used. If None or not provided, a default prefix of 'go' is 
+            used to denote the method's origin from the gofast package.
+    
+        Examples
+        --------
+        Suppose `custom_func` is a function intended to be added to DataFrame and 
+        Series objects, and we want to prefix it with 'go_':
+    
+            >>> def custom_func(df, *args, **kwargs):
+            ...     # Implementation here
+            ...     pass
+            >>> gofast_instance._add_method_to_pandas(custom_func)
+    
+        Now, `custom_func` can be called on DataFrame and Series objects like so:
+    
+            >>> df.go_custom_func(*args, **kwargs)
+    
+        If `dynamic_prefixer` is set to "exclude", the 'go_' prefix is omitted:
+    
+            >>> gofast_instance._add_method_to_pandas(custom_func, dynamic_prefixer="exclude")
+            >>> df.custom_func(*args, **kwargs)
+    
+        Raises
+        ------
+        Exception
+            If an error occurs while adding the method, it is caught and a message 
+            is printed. This behavior can be modified to log the error or handle 
+            it as needed.
         """
-        method_name = "go" + func.__name__
+        # Determine whether to use a prefix based on `prefixer`
+        method_name = func.__name__ if prefixer in (
+            "exclude", 'false') else "go_" + func.__name__
+    
+        # Attempt to add the method to both DataFrame and Series classes
         for cls in [pd.DataFrame, pd.Series]:
             if not hasattr(cls, method_name):
                 try:
@@ -430,8 +1324,8 @@ class DynamicMethod:
                 except Exception as e:
                     if self.verbose:
                         print(f"Failed to add method {method_name}: {e}")
-                    # Optionally log the error or handle it as needed
-                    # print(f"Error adding method {func.__name__} to {cls.__name__}: {e}")
+                    # Optionally log or handle the error as needed
+                    
 class ExportData:
     """
     A decorator for exporting data into various formats post-function execution. 
@@ -1548,8 +2442,57 @@ def available_if(check):
     """
     return lambda fn: _AvailableIfDescriptor(fn, check, attribute_name=fn.__name__)
 
+def isdf(func):
+    """
+    Advanced decorator that ensures the first positional argument 
+    (after `self` for methods) passed to the decorated callable is a pandas 
+    DataFrame. If it's not, attempts to convert it to a DataFrame using an 
+    optional `columns` keyword argument. 
+    
+    Function is designed to  be flexible and efficient, suitable for 
+    both functions and methods.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Determine if we're decorating a method or a function
+        args_list = list(args)
+        if args and hasattr(args_list[0], func.__name__):
+            # If the first argument has an attribute with the same name as `func`,
+            # it's likely an instance method where `self` or `cls` is the first argument.
+            self_or_cls, data_arg_index = args_list[0], 1
+        else:
+            self_or_cls, data_arg_index = None, 0
 
-def df_if(func: Callable) -> Callable:
+        # Retrieve the data argument and `columns` keyword argument if provided
+        data = args_list[data_arg_index]
+        columns = kwargs.get('columns', None)
+        if isinstance(columns, str):
+            columns = [columns]
+
+        # Proceed with conversion if necessary
+        if not isinstance(data, pd.DataFrame):
+            try:
+                data = pd.DataFrame(data, columns=columns)
+                if columns and len(columns) != data.shape[1]:
+                    data = pd.DataFrame(data)
+            except Exception as e:
+                raise ValueError(f"Unable to convert to DataFrame: {e}")
+            # Update the data argument in the arguments list
+            args_list[data_arg_index] = data
+            
+            # Reconstruct args from the potentially modified args_list
+            args = tuple(args_list)
+
+        # Call the original function or method, passing `self` or 
+        # `cls` explicitly if necessary
+        if self_or_cls is not None:
+            return func(self_or_cls, *args[1:], **kwargs)
+        else:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+def isdf0(func: Callable) -> Callable:
     """
     A decorator that ensures the first positional argument passed to the 
     decorated function is a pandas DataFrame.
@@ -1575,8 +2518,8 @@ def df_if(func: Callable) -> Callable:
 
     Examples
     --------
-    >>> from gofast.decorators import dataify
-    >>> @df_if
+    >>> from gofast.decorators import isdf
+    >>> @isdf
     ... def my_function(data, /, columns=None, **kwargs):
     ...     print(data)
     ...     print("Columns:", columns)
@@ -1864,15 +2807,19 @@ class NumpyDocstringFormatter:
         This method provides a conceptual approach and requires a Sphinx 
         environment to be properly implemented.
         """
-        from docutils import nodes
-        from docutils.core import publish_doctree
         from .tools._dependency import import_optional_dependency
         
         try: 
             import_optional_dependency ("docutils")
         except: 
+            from .tools.coreutils import is_module_installed 
             from .tools.funcutils import install_package
-            install_package('docutils' )
+            if not is_module_installed("docutils"): 
+                install_package('docutils', infer_dist_name=True)
+            
+        from docutils import nodes
+        from docutils.core import publish_doctree
+        
         try:
             # Create a new document for parsing
             settings_overrides = {'report_level': 2, 'warning_stream': False}
@@ -2002,7 +2949,7 @@ class Dataify:
                         return func(*args, **kwargs)
                     else:
                         raise
-
+                        
             return func(data, *args[1:], **kwargs)
         return wrapper
 
@@ -2068,8 +3015,221 @@ class Dataify:
             else:
                 raise ValueError(f"Error converting data to DataFrame: {e}")
         
-        return df   
+        return df  
     
+class EnsureFileExists:
+    """
+    Class decorator to ensure a file or URL exists before calling the 
+    decorated function.
+
+    This decorator checks if the specified file or URL exists before executing  
+    the decorated function. If the file does not exist, it raises a
+    FileNotFoundError. If the URL does not exist, it raises a ConnectionError. 
+    The decorator can be configured to print verbose messages during the check.
+    It also handles other data types based on the specified action.
+
+    Parameters
+    ----------
+    file_param : int or str, optional
+        The index of the parameter that specifies the file path or URL or 
+        the name of the keyword argument (default is 0). If an integer is 
+        provided, it refers to the position of the argument in the function 
+        call. If a string is provided, it refers to the keyword argument name.
+    verbose : bool, optional
+        If True, prints messages indicating the file or URL check status 
+        (default is False).
+    action : str, optional
+        Action to take if the parameter is not a file or URL. Options are 
+        'ignore', 'warn', or 'raise' (default is 'raise').
+
+    Examples
+    --------
+    Basic usage with verbose output:
+    
+    >>> from gofast.decorators import EnsureFileExists
+    >>> @EnsureFileExists(verbose=True)
+    ... def process_data(file_path: str):
+    ...     print(f"Processing data from {file_path}")
+    >>> process_data("example_file.txt")
+
+    Basic usage without parentheses:
+    
+    >>> from gofast.decorators import EnsureFileExists
+    >>> @EnsureFileExists
+    ... def process_data(file_path: str):
+    ...     print(f"Processing data from {file_path}")
+    >>> process_data("example_file.txt")
+
+    Checking URL existence:
+    
+    >>> from gofast.decorators import EnsureFileExists
+    >>> @EnsureFileExists(file_param='url', verbose=True)
+    ... def fetch_data(url: str):
+    ...     print(f"Fetching data from {url}")
+    >>> fetch_data("https://example.com/data.csv")
+    
+    Notes
+    -----
+    This decorator is particularly useful for functions that require a file path 
+    or URL as an argument and need to ensure the file or URL exists before 
+    proceeding with further operations. It helps in avoiding runtime errors 
+    due to missing files or unreachable URLs.
+    
+    See Also
+    --------
+    os.path.isfile : Checks if a given path is an existing regular file.
+    requests.head : Sends a HEAD request to a URL to check its existence.
+    
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in Python. 
+           Proceedings of the 9th Python in Science Conference, 51-56.
+    
+    """
+    def __init__(
+            self, file_param: Union[int, str] = 0, 
+            verbose: bool = False, 
+            action: str = 'raise'
+            ):
+        self.file_param = file_param
+        self.verbose = verbose
+        self.action = action
+
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> any:
+            # Determine the file path or URL from args or kwargs
+            file_path_or_url = None
+            if isinstance(self.file_param, int):
+                if len(args) > self.file_param:
+                    file_path_or_url = args[self.file_param]
+            elif isinstance(self.file_param, str):
+                file_path_or_url = kwargs.get(self.file_param)
+    
+            if self.verbose:
+                print(f"Checking if path or URL exists: {file_path_or_url}")
+    
+            # Check if the file path or URL exists
+            if file_path_or_url is None:
+                self.handle_action(f"File or URL not specified: {file_path_or_url}")
+            elif isinstance(file_path_or_url, str):
+                if file_path_or_url.startswith(('http://', 'https://')):
+                    if not self.url_exists(file_path_or_url):
+                        self.handle_action(f"URL not reachable: {file_path_or_url}")
+                    elif self.verbose:
+                        print(f"URL exists: {file_path_or_url}")
+                else:
+                    if not os.path.isfile(file_path_or_url):
+                        self.handle_action(f"File not found: {file_path_or_url}")
+                    elif self.verbose:
+                        print(f"File exists: {file_path_or_url}")
+            else:
+                if self.action == 'ignore':
+                    if self.verbose:
+                        print(f"Ignoring non-file, non-URL argument: {file_path_or_url}")
+                elif self.action == 'warn':
+                    warnings.warn(f"Non-file, non-URL argument provided: {file_path_or_url}")
+                else:
+                    raise TypeError(f"Invalid file or URL argument: {file_path_or_url}")
+    
+            return func(*args, **kwargs)
+    
+        return wrapper
+
+    def handle_action(self, message: str):
+        """
+        Handle the action based on the specified action parameter.
+
+        Parameters
+        ----------
+        message : str
+            The message to display or include in the raised exception.
+        """
+        if self.action == 'ignore':
+            if self.verbose:
+                print(f"Ignoring: {message}")
+        elif self.action == 'warn':
+            warnings.warn(message)
+        elif self.action == 'raise':
+            raise FileNotFoundError(message)
+        else:
+            raise ValueError(f"Invalid action: {self.action}")
+
+    @staticmethod
+    def url_exists(url: str) -> bool:
+        """
+        Check if a URL exists.
+
+        Parameters
+        ----------
+        url : str
+            The URL to check.
+
+        Returns
+        -------
+        bool
+            True if the URL exists, False otherwise.
+        """
+        import requests
+        try:
+            response = requests.head(url, allow_redirects=True)
+            return response.status_code == 200
+        except requests.RequestException:
+            return False
+
+    @classmethod
+    def ensure_file_exists(
+        cls, func: Optional[Callable] = None, *, 
+        file_param: Union[int, str] = 0, 
+        verbose: bool = False, 
+        action: str = 'raise'):
+        """
+        Class method to allow the decorator to be used without parentheses.
+
+        This method enables the decorator to be applied directly without 
+        parentheses, by using the first positional argument as the file or URL 
+        to check. It also allows setting the `file_param`, `verbose`, and `action`
+        parameters when called with parentheses.
+
+        Parameters
+        ----------
+        func : Callable, optional
+            The function to be decorated.
+        file_param : int or str, optional
+            The index of the parameter that specifies the file path or URL 
+            or the name of the keyword argument (default is 0).
+        verbose : bool, optional
+            If True, prints messages indicating the file or URL check status 
+            (default is False).
+        action : str, optional
+            Action to take if the parameter is not a file or URL. 
+            Options are 'ignore', 'warn', or 'raise' (default is 'raise').
+
+        Returns
+        -------
+        Callable
+            The decorated function with file or URL existence check.
+
+        Examples
+        --------
+        >>> from gofast.decorators import EnsureFileExists
+        >>> @EnsureFileExists(verbose=True)
+        ... def process_data(file_path: str):
+        ...     print(f"Processing data from {file_path}")
+        >>> process_data("example_file.txt")
+
+        >>> from gofast.decorators import EnsureFileExists
+        >>> @EnsureFileExists
+        ... def process_data(file_path: str):
+        ...     print(f"Processing data from {file_path}")
+        >>> process_data("example_file.txt")
+        """
+        if func is not None:
+            return cls(file_param, verbose, action)(func)
+        return cls(file_param, verbose, action)
+
+# Allow decorator to be used without parentheses
+EnsureFileExists = EnsureFileExists.ensure_file_exists
 
 @NumpyDocstringFormatter(include_sections=['Parameters', 'Returns'], validate_with_sphinx=True)
 def example_function(param1, param2=None):

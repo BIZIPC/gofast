@@ -27,7 +27,6 @@ class InvalidParameterError(ValueError, TypeError):
 
     # Inherits from ValueError and TypeError to keep backward compatibility.
 
-
 def validate_parameter_constraints(parameter_constraints, params, caller_name):
     """Validate types and values of given parameters.
 

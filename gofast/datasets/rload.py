@@ -3,9 +3,10 @@
 #   Author: LKouadio <etanoyau@gmail.com> 
 
 """
-Remote Loader 
-==============
 Fetch data online from zenodo record or repository.  
+Provides functions and classes for loading and managing datasets, including 
+remote loading, extracting from archives, and moving
+
 """
 from __future__ import print_function , annotations 
 import os 
@@ -14,7 +15,7 @@ import subprocess
 import shutil  
 import zipfile
 
-from .._typing import Optional
+from ..api.types import Optional
 try: 
     import tqdm
     TQDM_AVAILABLE = True
@@ -347,7 +348,7 @@ class RemoteLoader:
             import zenodo_get
         except ImportError:
             if self._install_zenodo_get():
-                import zenodo_get
+                import zenodo_get  # noqa
             else:
                 _logger.error("Failed to install `zenodo_get`.")
                 return None

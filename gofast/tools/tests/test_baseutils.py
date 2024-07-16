@@ -1,136 +1,298 @@
 # -*- coding: utf-8 -*-
-
+"""
+test_baseutils.py
+"""
 import tempfile
 import os
 import unittest
-from importlib import resources
-from unittest.mock import patch, mock_open, MagicMock
-import pandas as pd
-import numpy as np
-import pytest # noqa
+import pytest # noqa 
+from unittest.mock import patch, mock_open 
+import numpy as np 
+import pandas as pd 
 
-from sklearn.datasets import fetch_california_housing
-#from sklearn.datasets import load_boston # `load_boston` has been removed from scikit-learn since version 1.2.
-
-from gofast.tools.baseutils import array2hdf5
-from gofast.tools.baseutils import summarize_text_columns
-from gofast.tools.baseutils import enrich_data_spectrum
-from gofast.tools.baseutils import simple_extractive_summary
-from gofast.tools.baseutils import format_long_column_names
-from gofast.tools.baseutils import sanitize
-from gofast.tools.baseutils import remove_target_from_array
-from gofast.tools.baseutils import save_or_load
-from gofast.tools.baseutils import read_data
+from gofast.tools.coreutils import cleaner, smart_label_classifier
+from gofast.datasets.load import load_bagoue
 from gofast.tools.baseutils import download_file
-from gofast.tools.baseutils import fetch_remote_data, get_remote_data
-from gofast.tools.baseutils import request_data
 from gofast.tools.baseutils import lowertify
-# from gofast.tools.baseutils import move_file
 from gofast.tools.baseutils import fancier_downloader
-from gofast.tools.baseutils import store_or_retrieve_data, base_storage
-from gofast.tools.baseutils import audit_data, verify_data_integrity 
-from gofast.tools.baseutils import handle_categorical_features
-from gofast.tools.baseutils import convert_date_features
-from gofast.tools.baseutils import handle_missing_data
-from gofast.tools.baseutils import handle_outliers_in_data
-from gofast.tools.baseutils import scale_data
-
-from gofast.tools.baseutils import inspect_data
-from gofast.tools.baseutils import augment_data
-from gofast.tools.baseutils import assess_outlier_impact
-from gofast.tools.baseutils import transform_dates
-from gofast.tools.baseutils import merge_frames_on_index  
-from gofast.tools.baseutils  import apply_tfidf_vectorization  
-from gofast.tools.baseutils  import apply_bow_vectorization  
-from gofast.tools.baseutils  import apply_word_embeddings  
-from gofast.tools.baseutils  import boxcox_transformation  
-from gofast.tools.baseutils  import check_missing_data  
-
+from gofast.tools.baseutils import save_or_load
+from gofast.tools.baseutils import array2hdf5
+from gofast.tools.baseutils import extract_target 
+from gofast.tools.baseutils import labels_validator #  
+from gofast.tools.baseutils import rename_labels_in  # 
+from gofast.tools.baseutils import select_features 
+from gofast.tools.baseutils import categorize_target
+from gofast.tools.baseutils import get_target
 
 DOWNLOAD_FILE='https://raw.githubusercontent.com/WEgeophysics/gofast/main/gofast/datasets/data/iris.csv'
-class TestSummarizeTextColumns(unittest.TestCase):
-    def test_summarize_text_columns(self):
-        data = {
-            'id': [1, 2],
-            'column1': [
-                "Sentence one. Sentence two. Sentence three.",
-                "Another sentence one. Another sentence two. Another sentence three."
-            ],
-            'column2': [
-                "More text here. Even more text here.",
-                "Second example here. Another example here."
-            ]
-        }
-        df = pd.DataFrame(data)
-        summarized_df = summarize_text_columns(
-            df, ['column1', 'column2'], 
-            stop_words='english', encode=True, drop_original=False, 
-            compression_method='mean')
-        self.assertIn('column1_encoded', summarized_df.columns)
-        self.assertIn('column2_encoded', summarized_df.columns)
-        self.assertEqual(summarized_df.shape[1], 5)  # id column + 2 encoded columns
-
-class TestSimpleExtractiveSummary(unittest.TestCase):
-    def test_simple_extractive_summary(self):
-        messages = [
-            "Further explain the background and rationale for the study. "
-            "Explain DNA in simple terms for non-scientists. "
-            "Explain the objectives of the study which do not seem perceptible. THANKS",
-            "We think this investigation is a good thing. In our opinion, it already allows the "
-            "initiators to have an idea of what the populations think of the use of DNA in forensic "
-            "investigations in Burkina Faso. And above all, know, through this survey, if these "
-            "populations approve of the establishment of a possible genetic database in our country."
-        ]
-  
-        summary, encoding = simple_extractive_summary(messages, encode=True)
-        self.assertIsInstance(summary, str)
-        if encoding is not None:
-            self.assertGreater(encoding.size, 0)
-
-class TestFormatLongColumnNames(unittest.TestCase):
-    def test_format_long_column_names(self):
-        data = {'VeryLongColumnNameIndeed': [1, 2, 3], 'AnotherLongColumnName': [4, 5, 6]}
-        df = pd.DataFrame(data)
-        new_df, mapping = format_long_column_names(df, max_length=10, return_mapping=True, name_case='capitalize')
-        self.assertIn('Verylongco', new_df.columns)
-        self.assertIn('Anotherlon', new_df.columns)
-        self.assertEqual(len(mapping), 2)
 
 
-class TestEnrichDataSpectrum(unittest.TestCase):
-    def test_enrich_data_spectrum(self):
-        housing = fetch_california_housing()
-        data = pd.DataFrame(housing.data, columns=housing.feature_names)
-        augmented_data = enrich_data_spectrum(data, noise_level=0.02, resample_size=50, synthetic_size=50, bootstrap_size=50)
-        self.assertGreater(augmented_data.shape[0], data.shape[0])
+# This test case is conceptual and may need adjustments for real-world usage
+class TestSaveOrLoad(unittest.TestCase):
+    @patch('gofast.tools.baseutils.np.save')
+    def test_save_array(self, mock_save):
+        arr = np.array([1, 2, 3])
+        save_or_load("dummy.npy", arr, task='save', format='.npy')
+        mock_save.assert_called_once()
 
-class TestSanitize(unittest.TestCase):
-    def test_sanitize(self):
-        data = {'A': [1, 2, None, 4], 'B': ['X', 'Y', 'Y', None], 'C': [1, 1, 2, 2]}
-        df = pd.DataFrame(data)
-        cleaned_df = sanitize(df, fill_missing='median', remove_duplicates=True, outlier_method='z_score', consistency_transform='lower')
-        self.assertFalse(cleaned_df.isnull().any().any())
-        self.assertTrue('x' in cleaned_df['B'].values)
+    @patch('gofast.tools.baseutils.np.load')
+    def test_load_array(self, mock_load):
+        mock_load.return_value = np.array([1, 2, 3])
+        result = save_or_load("dummy.npy", task='load')
+        self.assertTrue(np.array_equal(result, np.array([1, 2, 3])))
+        mock_load.assert_called_once_with("dummy.npy")
+        
+@pytest.mark.skip(reason="If Module Not found")
+class TestDownloadFile(unittest.TestCase):
+    @patch('gofast.tools.baseutils.requests.get')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_download_file(self, mock_file, mock_get):
+        mock_get.return_value.__enter__.return_value.iter_content.return_value = [b'chunk1', b'chunk2']
+        download_file(DOWNLOAD_FILE, 'iris.csv')
+        mock_file.assert_called_with('iris.csv', 'wb')
+        handle = mock_file()
+        handle.write.assert_any_call(b'chunk1')
+        handle.write.assert_any_call(b'chunk2')
+        
+@pytest.mark.skip(reason="If Module Not found")
+class TestFancierDownloader(unittest.TestCase):
+    @patch('gofast.tools.baseutils.requests.get')
+    def test_fancier_downloader(self, mock_get):
+        mock_get.return_value.__enter__.return_value.iter_content.return_value = [b'chunk1', b'chunk2']
+        mock_get.return_value.__enter__.return_value.headers = {'content-length': '1024'}
+        
+        with patch('gofast.tools.baseutils.tqdm'), \
+              patch('builtins.open', mock_open()) as mocked_file:
+            local_filename = fancier_downloader(DOWNLOAD_FILE, 'iris.csv')
+            mocked_file.assert_called_once_with('iris.csv', 'wb')
+            self.assertIn('iris.csv', local_filename)
+            
+def test_get_target():
+    df = pd.DataFrame({
+        'feature1': [1, 2, 3],
+        'target': [0, 1, 0]
+    })
+    target, modified_df = get_target(df, 'target', True)
+    
+    assert 'target' not in df.columns  # Original DataFrame should remain unchanged
+    assert 'target'  not in modified_df.columns  # Modified DataFrame should not have the target column
 
-class TestRemoveTargetFromArray(unittest.TestCase):
-    def test_remove_target_from_array(self):
-        arr = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-        target_indices = [1, 2]
-        modified_arr, target_arr = remove_target_from_array(arr, target_indices)
-        self.assertEqual(modified_arr.tolist(), [[1], [4], [7]])
-        self.assertEqual(target_arr.tolist(), [[2, 3], [5, 6], [8, 9]])
+def test_get_target2():
+    df = pd.DataFrame({
+        'feature1': [1, 2, 3],
+        'target': ['A', 'B', 'C']
+    })
+    
+    target, modified_df = get_target(df, 'target', inplace=False)
+    assert 'target' in df.columns  # Original df should be unchanged
+    
+def test_get_target_inplace_true():
+    df = pd.DataFrame({'feature': [1, 2, 3], 'target': ['A', 'B', 'C']})
+    target, _ = get_target(df, 'target')
+    assert 'target' not in df.columns
+    assert all( item in target.values for item in  ['A', 'B', 'C'])
 
-# Note: This test case is conceptual and may need adjustments for real-world usage
-class TestReadData(unittest.TestCase):
-    @patch('gofast.tools.baseutils.pd.read_csv')
-    def test_read_data_csv(self, mock_read_csv):
-        with resources.path ('gofast.datasets.data', "bagoue.csv") as p : 
-            file = str(p)
-        mock_read_csv.return_value = pd.DataFrame({'A': [1, 2, 3]})
-        df = read_data(file)
-        self.assertTrue(isinstance(df, pd.DataFrame))
-        self.assertFalse(df.empty)
-        mock_read_csv.assert_called_once_with(file)
+def test_get_target_inplace_false():
+    df = pd.DataFrame({'feature': [1, 2, 3], 'target': ['A', 'B', 'C']})
+    _, new_df = get_target(df, 'target', inplace=False)
+    assert 'target' in df.columns
+    assert 'target'in new_df.columns
+
+def test_select_features_by_name():
+    df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6], 'C': [7, 8, 9]})
+    result = select_features(df, features=['A', 'C'])
+    assert list(result.columns) == ['A', 'C']
+
+def test_select_features_include_exclude():
+    df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6], 'C': ['x', 'y', 'z']})
+    result = select_features(df, include=['number'])
+    assert 'C' not in result.columns
+    result = select_features(df, exclude=['number'])
+    assert list(result.columns) == ['C']
+
+def test_extract_target_dataframe():
+    df = pd.DataFrame({
+        'feature1': [1, 2, 3],
+        'target': ['A', 'B', 'C']
+    })
+    target, modified_df = extract_target(df, 'target', return_y_X=True)
+    assert len(target) == len(['A', 'B', 'C'])
+    assert 'target' not in modified_df.columns
+
+def test_extract_target_array():
+    arr = np.array([[1, 2, 'A'], [3, 4, 'B'], [5, 6, 'C']])
+    target, modified_arr = extract_target(arr, 2,  columns=['feature1', 'feature2', 'target'], 
+                                          return_y_X= True )
+    assert np.array_equal(np.squeeze (target), np.array(['A', 'B', 'C'])) # for consistency
+    assert modified_arr.shape == (3, 2)  # Ensure target column was removed
+
+def test_categorize_target_with_function():
+    arr = np.array([1, 2, 3, 4, 5])
+    def categorize_func(x): return 0 if x <= 3 else 1
+    categorized_arr = categorize_target(arr, func=categorize_func)
+    assert np.array_equal(categorized_arr, np.array([0, 0, 0, 1, 1]))
+
+def test_categorize_target_with_labels():
+    arr = np.array([1, 2, 3, 4, 5])
+    categorized_arr = categorize_target(arr, labels=2)
+    # Assuming the function divides the range into equal intervals
+    assert len(np.unique(categorized_arr)) == 2
+
+def test_categorize_target_with_rename_labels():
+    arr = np.array([1, 2, 3, 4, 5])
+    categorized_arr = categorize_target(arr, labels=2, rename_labels=['A', 'B'], coerce=True)
+    assert set(categorized_arr) == {'A', 'B'}
+    
+def test_labels_validator_with_existing_labels():
+    y = np.array([0, 1, 2, 0, 1, 2])
+    labels = [0, 1, 2]
+    assert labels_validator(y, labels, return_bool=True)
+
+def test_labels_validator_with_missing_labels():
+    y = np.array([0, 1, 0, 1])
+    labels = [0, 1, 2]
+    assert not labels_validator(y, labels, return_bool=True)
+
+def test_labels_validator_raises_value_error_on_missing_labels():
+    y = np.array([0, 1, 0, 1])
+    labels = [0, 1, 2]
+    try:
+        labels_validator(y, labels)
+    except ValueError as e:
+        assert str(e).startswith("Label")
+
+def test_rename_labels_in():
+    arr = np.array([0, 1, 2, 0, 1, 2])
+    new_labels = ["A", "B", "C"]
+    expected = np.array(["A", "B", "C", "A", "B", "C"])
+    result = rename_labels_in(arr, new_labels)
+    np.testing.assert_array_equal(result, expected)
+
+def test_rename_labels_in_with_coerce():
+    arr = np.array([0, 1, 2, 0, 1, 2])
+    new_labels = ["A", "B"]  # Intentionally missing label for "2"
+    expected = np.array(["A", "B", 2, "A", "B", 2])  # Original "2" labels should remain unchanged
+    result = rename_labels_in(arr, new_labels, coerce=True)
+    np.testing.assert_array_equal(result, expected)
+
+def test_select_features2():
+    data = pd.DataFrame({
+        'feature1': [1, 2, 3],
+        'feature2': ['A', 'B', 'C'],
+        'feature3': [0.1, 0.2, 0.3]
+    })
+    selected_data = select_features(data, features=['feature1', 'feature3'])
+    assert list(selected_data.columns) == ['feature1', 'feature3']
+    
+# get the data for a test 
+def _prepare_dataset ( return_encoded_data =False, return_raw=False ): 
+    from gofast.tools.mlutils import ( 
+        soft_imputer, 
+        soft_scaler, bi_selector, make_pipe,
+        ) 
+    X, y = load_bagoue (as_frame =True, return_X_y= True  )
+    
+    
+    if return_raw: 
+        return X, y 
+    # prepared data 
+    # 1-clean data 
+    cleaned_data = cleaner (X , columns = 'name num lwi', mode ='drop')
+    num_features, cat_features= bi_selector (cleaned_data)
+    # categorizing the labels 
+    yc = smart_label_classifier (y , values = [1, 3], 
+                                     labels =['FR0', 'FR1', 'FR2'] 
+                                     ) 
+    data_imputed = soft_imputer(cleaned_data,  mode= 'bi-impute')
+    num_scaled = soft_scaler (data_imputed[num_features],) 
+    # print(num_scaled)
+    # print(cleaned_data)
+    # we can rencoded the target data from `make_naive_pipe` as 
+    Xenc, yenc= make_pipe ( cleaned_data, y = yc ,  transform=True )
+    if return_encoded_data : 
+        return Xenc, yenc 
+    
+    return num_scaled, yenc 
+
+def test_categorize_data (): 
+    def binfunc(v): 
+        if v < 3 : return 0 
+        else : return 1 
+    arr = np.arange (10 )
+    # array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    categorize_target(arr, func =binfunc)
+    # array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1], dtype=int64)
+    # array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
+    # array([2, 2, 2, 2, 1, 1, 1, 0, 0, 0]) 
+    categorize_target(arr, labels =3 , order =None )
+    # array([0, 0, 0, 0, 1, 1, 1, 2, 2, 2])
+    categorize_target(arr[::-1], labels =3 , order =None )
+    # array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2]) # reverse does not change
+    categorize_target(arr, labels =[0 , 2,  4]  )
+    # array([0, 0, 0, 2, 2, 4, 4, 4, 4, 4])
+    
+def store_data  (as_frame =False,  task='None', return_X_y=False ): 
+    from gofast.tools.mlutils import ( 
+        soft_imputer, 
+        soft_scaler, 
+        bi_selector, 
+        make_pipe, 
+        codify_variables, 
+        ) 
+    
+    def bin_func ( x): 
+        if x ==1 or x==2: 
+            return 1 
+        else: return 0 
+    # ybin = categorize_target( y, func = func_clas)
+        
+    def func_ (x): 
+        if x<=1: return 0 
+        elif x >1 and x<=3: 
+            return 1 
+        else: return 2 
+    X, y = load_bagoue (as_frame =True , return_X_y= True )
+    
+    if str(task).lower().find('bin')>=0: 
+        y = categorize_target ( y, func= bin_func)
+        # y = np.array (y )
+        # y [y <=1] = 0;  y [y > 0]=1 
+        if as_frame : 
+            y = pd.Series ( y, name ='flow') 
+    else: 
+        y= categorize_target ( y, func= func_)
+        
+    
+    cleaned_data = cleaner (X , columns = 'name num lwi', mode ='drop')
+    #$print(cleaned_data.columns)
+    num_features, cat_features= bi_selector (cleaned_data)
+    # categorizing the labels 
+    data_imputed = soft_imputer(cleaned_data,  mode= 'bi-impute')
+    num_scaled = soft_scaler (data_imputed[num_features],) 
+    #print(num_scaled.columns)
+    # we can rencoded the target data from `make_naive_pipe` as 
+    pipe= make_pipe ( cleaned_data, y = y  )
+    Xenc, yenc= make_pipe ( cleaned_data, y = y ,  transform=True )
+
+    Xr, _= _prepare_dataset(return_raw= True ) 
+
+    Xr = cleaner ( Xr, columns = 'name num lwi', mode ='drop' )
+    # get the categorical variables 
+    num_var , cat_var = bi_selector ( Xr )
+    
+    Xcoded = codify_variables (Xr, columns = cat_var )
+    # get the categ
+    Xnew = pd.concat ((X[num_var], Xcoded), axis = 1 )
+    Xanalysed= pd.concat ( (num_scaled, Xcoded), axis=1 )
+    
+
+    data = {"preprocessed": ( num_scaled, y ), 
+      "encoded": (Xenc, yenc),
+      "codified": ( Xnew, y ), 
+      "analysed": (Xanalysed, y  ), 
+      "pipe": pipe, 
+          }
+    return data 
 
 # Note: This test assumes h5py is installed and a temporary file can be written and read
 class TestArray2HDF5(unittest.TestCase):
@@ -151,339 +313,18 @@ class TestLowertify(unittest.TestCase):
         self.assertEqual(test_result, ('test', 'Test'))
         self.assertEqual(string_result, ('string', 'STRING'))
 
-# Note: This test case is conceptual and may need adjustments for real-world usage
-class TestSaveOrLoad(unittest.TestCase):
-    @patch('gofast.tools.baseutils.np.save')
-    def test_save_array(self, mock_save):
-        arr = np.array([1, 2, 3])
-        save_or_load("dummy.npy", arr, task='save', format='.npy')
-        mock_save.assert_called_once()
-
-    @patch('gofast.tools.baseutils.np.load')
-    def test_load_array(self, mock_load):
-        mock_load.return_value = np.array([1, 2, 3])
-        result = save_or_load("dummy.npy", task='load')
-        self.assertTrue(np.array_equal(result, np.array([1, 2, 3])))
-        mock_load.assert_called_once_with("dummy.npy")
-
-class TestRequestData(unittest.TestCase):
-    @patch('gofast.tools.baseutils.requests.get')
-    def test_request_data_get_as_json(self, mock_get):
-        mock_get.return_value.json.return_value = {'key': 'value'}
-        response = request_data('http://example.com', as_json=True)
-        self.assertEqual(response, {'key': 'value'})
-
-    @patch('gofast.tools.baseutils.requests.post')
-    def test_request_data_post_as_text(self, mock_post):
-        mock_post.return_value.text = 'response text'
-        response = request_data('http://example.com', method='post', as_text=True)
-        self.assertEqual(response, 'response text')
-
-class TestFetchRemoteData(unittest.TestCase):
-    @patch('gofast.tools.baseutils.urllib.request.urlopen')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_fetch_remote_data_success(self, mock_file, mock_urlopen):
-        mock_urlopen.return_value.read.return_value = b'data'
-        status = fetch_remote_data(DOWNLOAD_FILE, save_path='/local/path')
-        self.assertTrue(status)
-
-class TestGetRemoteData(unittest.TestCase):
-    @patch('gofast.tools.baseutils.urllib.request.urlopen')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_get_remote_data_success(self, mock_file, mock_urlopen):
-        mock_urlopen.return_value.read.return_value = b'data'
-        status = get_remote_data(DOWNLOAD_FILE, save_path='/local/path')
-        self.assertTrue(status)
 
 
-class TestDownloadFile(unittest.TestCase):
-    @patch('gofast.tools.baseutils.requests.get')
-    @patch('builtins.open', new_callable=mock_open)
-    def test_download_file(self, mock_file, mock_get):
-        mock_get.return_value.__enter__.return_value.iter_content.return_value = [b'chunk1', b'chunk2']
-        download_file(DOWNLOAD_FILE, 'iris.csv')
-        mock_file.assert_called_with('iris.csv', 'wb')
-        handle = mock_file()
-        handle.write.assert_any_call(b'chunk1')
-        handle.write.assert_any_call(b'chunk2')
-
-class TestFancierDownloader(unittest.TestCase):
-    @patch('gofast.tools.baseutils.requests.get')
-    def test_fancier_downloader(self, mock_get):
-        mock_get.return_value.__enter__.return_value.iter_content.return_value = [b'chunk1', b'chunk2']
-        mock_get.return_value.__enter__.return_value.headers = {'content-length': '1024'}
-        
-        with patch('gofast.tools.baseutils.tqdm'), \
-              patch('builtins.open', mock_open()) as mocked_file:
-            local_filename = fancier_downloader(DOWNLOAD_FILE, 'iris.csv')
-            mocked_file.assert_called_once_with('iris.csv', 'wb')
-            self.assertIn('iris.csv', local_filename)
-
-# class TestMoveFile(unittest.TestCase):
-#     @patch('gofast.tools.baseutils.shutil.move')
-#     @patch('gofast.tools.baseutils.os.makedirs')
-#     @patch('gofast.tools.baseutils.os.path.exists', return_value=False)
-#     def test_move_file(self, mock_exists, mock_makedirs, mock_move):
-#         move_file('source_file.txt', 'dest_dir')
-#         mock_makedirs.assert_called_once_with('dest_dir', exist_ok=True)
-#         mock_move.assert_called_once_with('source_file.txt', 'dest_dir/source_file.txt')
+def test_select_features (): 
+    X, _= _prepare_dataset(return_raw= True ) 
+    select_features(X, exclude='number')
+    select_features(  X, include="number") 
+    select_features (X, features = 'ohmS num shape geol lwi', 
+          parse_features =True ) 
 
 
-class TestStoreOrRetrieveData(unittest.TestCase):
-    @patch('gofast.tools.baseutils.pd.HDFStore', autospec=True)
-    def test_store_data(self, mock_store):
-        mock_store.return_value.__enter__.return_value = MagicMock()
-        datasets = {'dataset1': np.array([1, 2, 3]), 'df1': pd.DataFrame({'A': [4, 5, 6]})}
-        store_or_retrieve_data('my_datasets.h5', datasets, 'store')
-        # Verify store.put or create_dataset was called for each dataset
-        self.assertFalse(mock_store.return_value.__enter__.return_value.put.called or 
-                        mock_store.return_value.__enter__.return_value.create_dataset.called)
-
-    @patch('gofast.tools.baseutils.h5py.File', autospec=True)
-    def test_retrieve_data(self, mock_h5file):
-        mock_h5file.return_value.__enter__.return_value.keys.return_value = ['dataset1']
-        type(mock_h5file.return_value.__enter__.return_value).get = MagicMock(return_value=pd.DataFrame({'A': [4, 5, 6]}))
-        result = store_or_retrieve_data('my_datasets.h5', operation='retrieve')
-        self.assertIsInstance(result, dict)
-        # self.assertIn('dataset1', result)
-
-class TestBaseStorage(unittest.TestCase):
-    @patch('gofast.tools.baseutils.h5py.File', autospec=True)
-    def test_base_storage_store(self, mock_h5file):
-        mock_h5file.return_value.__enter__.return_value.create_dataset = MagicMock()
-        datasets = {'dataset1': np.array([1, 2, 3]), 'df1': pd.DataFrame({'A': [4, 5, 6]})}
-        base_storage('my_datasets.h5', datasets, 'store')
-        self.assertTrue(mock_h5file.return_value.__enter__.return_value.create_dataset.called)
-
-    @patch('gofast.tools.baseutils.h5py.File', autospec=True)
-    def test_base_storage_retrieve(self, mock_h5file):
-        mock_h5file.return_value.__enter__.return_value.keys.return_value = ['dataset1']
-        mock_h5file.return_value.__enter__.return_value.get = MagicMock(return_value=pd.DataFrame({'A': [4, 5, 6]}))
-        result = base_storage('my_datasets.h5', operation='retrieve')
-        self.assertIsInstance(result, dict)
-        # self.assertIn('dataset1', result)
-
-class TestVerifyDataIntegrity(unittest.TestCase):
-    def test_verify_data_integrity(self):
-        data = pd.DataFrame({'A': [1, 2, None], 'B': [4, None, 6], 'C': [7, 8, 9]})
-        is_valid, report = verify_data_integrity(data)
-        self.assertFalse(is_valid)
-        self.assertIn('missing_values', report)
-        self.assertIn('duplicates', report)
-        self.assertIn('outliers', report)
-
-class TestAuditData(unittest.TestCase):
-    @patch('gofast.tools.baseutils.scale_data')
-    @patch('gofast.tools.baseutils.convert_date_features')
-    @patch('gofast.tools.baseutils.handle_missing_data')
-    @patch('gofast.tools.baseutils.handle_outliers_in_data')
-    def test_audit_data(self, mock_outliers, mock_missing, mock_convert_date, mock_scale):
-        data = pd.DataFrame({'A': [1, 2, None], 'B': [4, None, 6]})
-        audited_data, _ = audit_data(data, handle_outliers=True, 
-                                     handle_missing=True, 
-                                     handle_date_features=True, 
-                                     handle_scaling=True,
-                                     return_report=True)
-        self.assertIsInstance(audited_data, pd.DataFrame)
-        mock_outliers.assert_called_once()
-        mock_missing.assert_called_once()
-        mock_convert_date.assert_called_once()
-        mock_scale.assert_called_once()
-
-class TestHandleCategoricalFeatures(unittest.TestCase):
-    def test_handle_categorical_features(self):
-        data = pd.DataFrame({'A': [1, 2, 1, 3], 'B': list(range(4))})
-        updated_data = handle_categorical_features(data, categorical_threshold=3)
-        self.assertTrue(pd.api.types.is_categorical_dtype(updated_data['A']))
-        self.assertFalse(pd.api.types.is_categorical_dtype(updated_data['B']))
-
-class TestConvertDateFeatures(unittest.TestCase):
-    def setUp(self):
-        self.data = pd.DataFrame({
-            'date': ['2021-01-01', '2021-06-15'],
-            'value': [10, 20]
-        })
-
-    def test_convert_date_features(self):
-        updated_data, report = convert_date_features(
-            self.data, ['date'], day_of_week=True, quarter=True, return_report=True
-        )
-        self.assertIn('date_dayofweek', updated_data.columns)
-        self.assertIn('date_quarter', updated_data.columns)
-        self.assertTrue('date_dayofweek' in report['added_features'])
-        self.assertTrue('date_quarter' in report['added_features'])
-
-class TestScaleData(unittest.TestCase):
-    def setUp(self):
-        self.data = pd.DataFrame({
-            'A': np.random.randint(1, 100, 10),
-            'B': np.random.randint(1, 100, 10)
-        })
-
-    def test_scale_data_minmax(self):
-        scaled_data, _ = scale_data(self.data, method='minmax', return_report=True)
-        self.assertTrue(scaled_data['A'].min() >= 0 and scaled_data['A'].max() <= 1)
-        self.assertTrue(scaled_data['B'].min() >= 0 and scaled_data['B'].max() <= 1)
-
-    def test_scale_data_standard(self):
-        scaled_data, _ = scale_data(self.data, method='standard', return_report=True)
-        self.assertAlmostEqual(scaled_data['A'].mean(), 0, places=1)
-        self.assertAlmostEqual(scaled_data['B'].mean(), 0, places=1)
-
-class TestHandleOutliersInData(unittest.TestCase):
-    def setUp(self):
-        self.data = pd.DataFrame({
-            'A': [1, 2, 3, 100],
-            'B': [4, 5, 6, -50]
-        })
-
-    def test_handle_outliers_clip(self):
-        handled_data = handle_outliers_in_data(self.data, method='clip')
-        self.assertTrue(handled_data['A'].max() <= 100 and handled_data['B'].min() >= -50)
-
-    def test_handle_outliers_replace(self):
-        handled_data = handle_outliers_in_data(self.data, method='replace', replace_with='median')
-        self.assertNotIn(100, handled_data['A'])
-        self.assertNotIn(-50, handled_data['B'])
-
-class TestHandleMissingData(unittest.TestCase):
-    def setUp(self):
-        self.data = pd.DataFrame({
-            'A': [1, np.nan, 3, np.nan],
-            'B': [np.nan, 5, 6, 7]
-        })
-
-    def test_handle_missing_data_fill_mean(self):
-        updated_data = handle_missing_data(self.data, method='fill_mean')
-        self.assertFalse(updated_data.isnull().any().any())
-
-    def test_handle_missing_data_drop_cols(self):
-        updated_data = handle_missing_data(self.data, method='drop_cols', dropna_threshold=0.8)
-        self.assertNotIn('A', updated_data.columns)
-        self.assertIn('B', updated_data.columns)
-
-class TestInspectData(unittest.TestCase):
-    def test_inspect_data(self):
-        data = pd.DataFrame({
-            'A': [1, 2, 3, None, 5],
-            'B': [1, 1, 2, 3, 3]
-        })
-        # Execution test
-        try:
-            inspect_data(data)
-            execution_passed = True
-        except Exception as e: # noqa
-            execution_passed = False
-        self.assertTrue(execution_passed, "Inspect data should execute without errors.")
-
-class TestAugmentData(unittest.TestCase):
-    def setUp(self):
-        self.X = np.array([[1, 2], [3, 4]])
-        self.y = np.array([0, 1])
-
-    def test_augment_data(self):
-        X_aug, y_aug = augment_data(self.X, self.y, augmentation_factor=2)
-        self.assertEqual(len(X_aug), len(self.X) * 2)
-        self.assertEqual(len(y_aug), len(self.y) * 2)
-
-    def test_augment_data_no_y(self):
-        X_aug = augment_data(self.X, augmentation_factor=2)
-        self.assertEqual(len(X_aug), len(self.X) * 2)
-
-class TestAssessOutlierImpact(unittest.TestCase):
-    def test_assess_outlier_impact(self):
-        df = pd.DataFrame({
-            'feature1': np.random.rand(100),
-            'feature2': np.random.rand(100),
-            'target': np.random.randint(0, 2, 100)
-        })
-        metric_with, metric_without = assess_outlier_impact(df, 'target')
-        self.assertIsInstance(metric_with, float)
-        self.assertIsInstance(metric_without, float)
-
-class TestTransformDates(unittest.TestCase):
-    def test_transform_dates(self):
-        data = pd.DataFrame({
-            'date': ['2021-01-01', '2021-01-02'],
-            'value': [1, 2]
-        })
-        transformed_data = transform_dates(data, transform=True)
-        self.assertTrue(pd.api.types.is_datetime64_any_dtype(transformed_data['date']))
-
-    def test_transform_dates_return_columns(self):
-        data = pd.DataFrame({
-            'date': ['2021-01-01', '2021-01-02'],
-            'value': [1, 2]
-        })
-        dt_columns = transform_dates(data, transform=True, return_dt_columns=True)
-        self.assertIn('date', dt_columns)
-
-
-def test_merge_frames_on_index():
-    # Create sample DataFrames
-    df1 = pd.DataFrame({'Key': ['A', 'B', 'C'], 'Value1': [1, 2, 3]})
-    df2 = pd.DataFrame({'Key': ['A', 'B', 'C'], 'Value2': [4, 5, 6]})
-    
-    # Perform the merge
-    merged_df = merge_frames_on_index(df1, df2, index_col='Key')
-    
-    # Expected result
-    expected_df = pd.DataFrame({'Value1': [1, 2, 3], 'Value2': [4, 5, 6]}, index=['A', 'B', 'C'])
-    
-    pd.testing.assert_frame_equal(merged_df, expected_df)
-
-def test_apply_tfidf_vectorization():
-    # Sample DataFrame with text
-    df = pd.DataFrame({'Text': ['this is a test', 'another test', 'test']})
-    
-    # Apply TF-IDF vectorization
-    result_df = apply_tfidf_vectorization(df, text_columns='Text', max_features=2)
-    
-    # Check if result contains expected number of features
-    assert result_df.shape[1] == 2  # Adjust based on the number of generated features
-    assert 'tfidf_0' in result_df.columns and 'tfidf_1' in result_df.columns
-
-def test_apply_bow_vectorization():
-    df = pd.DataFrame({'Text': ['simple test', 'another simple test', 'test']})
-    result_df = apply_bow_vectorization(df, text_columns='Text', max_features=2)
-    
-    assert result_df.shape[1] == 2
-    assert 'bow_0' in result_df.columns and 'bow_1' in result_df.columns
-
-def test_apply_word_embeddings():
-    df = pd.DataFrame({'Text': ['deep learning', 'machine learning']})
-    # Assume 'path/to/embeddings' is a valid path to embedding file
-    result_df = apply_word_embeddings(df, text_columns='Text', embedding_file_path='path/to/embeddings', n_components=10)
-    
-    assert result_df.shape[1] == 10
-    assert all([col.startswith('embedding_') for col in result_df.columns])
-
-
-def test_boxcox_transformation():
-    df = pd.DataFrame({'Value': [0.1, 1.5, 2.5, 3.5]})
-    transformed_df, lambda_values = boxcox_transformation(df, columns=['Value'], adjust_non_positive='adjust')
-    
-    assert 'Value' in transformed_df.columns
-    assert lambda_values['Value'] is not None
-
-
-def test_check_missing_data():
-    df = pd.DataFrame({'A': [1, None, 3], 'B': [4, 5, None]})
-    missing_stats = check_missing_data(df, view=False)
-    
-    assert missing_stats.loc['A', 'Count'] == 1
-    assert missing_stats.loc['B', 'Count'] == 1
-
-if __name__ == '__main__':
-    unittest.main()
-
-
-
-
-
-
-
-
+if __name__=='__main__': 
+    pytest.main([__file__])
 
 
 

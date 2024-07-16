@@ -4,119 +4,120 @@
 
 """
 GOFast: Accelerate Your Machine Learning Workflow
-"""
+=================================================
 
+:code:`gofast` is designed to streamline and accelerate every step of your 
+data science workflow, enhancing productivity, ease of use, and community-driven
+improvements.
+"""
 import os
-import sys
 import logging
 import warnings
+import importlib
 
-# Only modify sys.path if necessary, avoid inserting unnecessary paths
-package_dir = os.path.dirname(__file__)
-if package_dir not in sys.path:
-    sys.path.insert(0, package_dir)
-
-# Configure logging with lazy loading
+# Configure basic logging and suppress certain third-party library warnings
 logging.basicConfig(level=logging.WARNING)
 logging.getLogger('matplotlib.font_manager').disabled = True
 
-# Environment setup for compatibility
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "True")
-os.environ.setdefault("KMP_INIT_AT_FORK", "FALSE")
+# Dynamic import function
+def _lazy_import(module_name, alias=None):
+    """Lazily import a module to reduce initial package load time."""
+    def _lazy_loader():
+        return importlib.import_module(module_name)
+    if alias:
+        globals()[alias] = _lazy_loader
+    else:
+        globals()[module_name] = _lazy_loader
 
-# Suppress FutureWarnings globally, consider doing it locally if possible
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
-if not __package__:
-    __package__ = 'gofast'
-
-
-# Dynamic import to reduce initial load time
-def lazy_import(module_name, global_name=None):
-    if global_name is None:
-        global_name = module_name
-    import importlib
-    globals()[global_name] = importlib.import_module(module_name)
-
-# Generate version
+# Define the version
 try:
-    from ._version import version
-    __version__ = version.split('.dev')[0]
+    from ._version import version as __version__
 except ImportError:
     __version__ = "0.1.0"
 
-# Check and import main dependencies lazily
-_main_dependencies = {
-    "numpy": None,
-    "scipy": None,
-    "scikit-learn": "sklearn",
-    "matplotlib": None,
-    "pandas": None,
-    "seaborn": None,
-    "tqdm":None,
-}
+# Dependency check
+_required_dependencies = [
+    ("numpy", None),
+    ("pandas", None),
+    ("scipy", None),
+    ("matplotlib", None),
+    ("seaborn", None),
+    ("tqdm", None), 
+    ("sklearn", "scikit-learn"),
+    ("statsmodels", None)
+]
 
 _missing_dependencies = []
-
-for module, import_name in _main_dependencies.items():
+for package, import_name in _required_dependencies:
     try:
-        lazy_import(module if not import_name else import_name, module)
+        if import_name:
+            _lazy_import(import_name, package)
+        else:
+            _lazy_import(package)
     except ImportError as e:
-        _missing_dependencies.append(f"{module}: {e}")
+        _missing_dependencies.append(f"{package}: {str(e)}")
 
 if _missing_dependencies:
-    raise ImportError("Unable to import required dependencies:\n" + "\n".join(
-        _missing_dependencies))
+    warnings.warn("Some dependencies are missing. GOFast may not function correctly:\n" +
+                  "\n".join(_missing_dependencies), ImportWarning)
+
+# Suppress FutureWarnings if desired, but allow users to re-enable them
+_warnings_state = {"FutureWarning": "ignore"}
+def suppress_warnings(suppress=True):
+    """Function to suppress or re-enable future warnings."""
+    for warning, action in _warnings_state.items():
+        if suppress:
+            warnings.filterwarnings(action, category=FutureWarning)
+        else:
+            warnings.filterwarnings("default", category=FutureWarning)
+
+suppress_warnings()
+
+# Disable oneDNN custom operations
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 
-# Set a default LOG_PATH if it's not already set
-os.environ.setdefault('LOG_PATH', os.path.join(package_dir, 'gflogs'))
+# Setup logging configuration
+from .util import setup_logging
+setup_logging()
 
-# Import the logging setup function from _gofastlog.py
-from ._gofastlog import gofastlog
+# Public API flag
+PUBLIC = False
 
-# Define the path to the _gflog.yml file
-config_file_path = os.path.join(package_dir, '_gflog.yml')
+def check_public_api():
+    """Check if public API should be made available."""
+    global __all__
+    if config._set_public:
+        from . import _public  # noqa
+        from .assistance import assist_me, gofast_explorer as explore
+        __all__.extend(["assist_me", "explore"])
+        globals().update({"assist_me": assist_me, "explore": explore})
+        # print("Public API has been enabled.")
+        warnings.warn("Public API has been enabled.", UserWarning)
 
-# Set up logging with the path to the configuration file
-gofastlog.load_configuration(config_file_path)
+# Property to automatically check public API when __set_public__ changes
+class GoFastConfig:
+    def __init__(self):
+        self._set_public = False
 
+    @property
+    def PUBLIC(self):
+        return self._set_public
+
+    @PUBLIC.setter
+    def PUBLIC(self, value):
+        self._set_public = value
+        check_public_api()
+
+config = GoFastConfig()
+
+# Update the module to use the new property
+__builtins__['PUBLIC'] = config.PUBLIC
+
+__doc__ += f"\nVersion: {__version__}\n"
 
 # Public API
-# __all__ = ['show_versions']
+__all__ = ["setup_logging", "__version__", "check_public_api"]
 
-# Seed control function, consider moving it to a utilities module
-def setup_module(module):
-    """Fixture for the tests to assure globally controllable seeding of RNGs"""
-    import numpy as np
-    import random
-
-    _random_seed = os.environ.get("GOFAST_SEED", np.random.randint(0, 2**32 - 1))
-    print(f"I: Seeding RNGs with {_random_seed}")
-    np.random.seed(int(_random_seed))
-    random.seed(int(_random_seed))
-
-# Reset warnings to default
-warnings.simplefilter(action='default', category=FutureWarning)
-
-__doc__= """\
-Accelerate Your Machine Learning Workflow
-==========================================
-
-:code:`gofast` is a comprehensive machine learning toolbox designed to 
-streamline and accelerate every step of your data science workflow. 
-Its objectives are: 
-    
-* `Enhance Productivity`: Reduce the time spent on routine data tasks.
-* `User-Friendly`: Whether you're a beginner or an expert, gofast is designed 
-  to be intuitive and accessible for all users in the machine learning community.
-* `Community-Driven`: welcoming contributions and suggestions from the community
-  to continuously improve and evolve.
-
-`GoFast`_ focused on delivering high-speed tools and utilities that 
-assist users in swiftly navigating through the critical stages of data 
-analysis, processing, and modeling.
-
-.. _GoFast: https://github.com/WEgeophysics/gofast
-
-"""
+# Make sure to extend the `__all__` list correctly
+check_public_api()

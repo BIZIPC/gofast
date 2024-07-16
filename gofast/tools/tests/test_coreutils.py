@@ -13,18 +13,16 @@ from gofast.tools.coreutils import  (
     reshape, 
     to_numeric_dtypes, 
     smart_label_classifier, 
-    remove_outliers,
-    normalizer, 
     cleaner, 
     random_selector, 
-    interpolate_grid, 
     pair_data, 
     random_sampling, 
     replace_data, 
     ) 
-
+from gofast.tools.baseutils import normalizer, interpolate_grid
 from gofast.datasets.load import load_bagoue
 from gofast.datasets.load import load_hlogs
+from gofast.tools.baseutils import remove_outliers 
 # get the data for a test 
 X, y = load_bagoue (as_frame =True , return_X_y=True ) 
 

@@ -1,28 +1,45 @@
+# -*- coding: utf-8 -*-
+#   Licence:BSD 3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides utilities for geographic information system (GIS) operations, 
+including coordinate transformations, EPSG code handling, UTM zone conversions, 
+and validation of geographic data."""
 
 import numpy as np
-
 from .._gofastlog import gofastlog
-from ..decorators import (
-    deprecated ,
-    gdal_data_check
-    )
-from ..exceptions import ( 
-    GISError
-    )
-  
+from ..decorators import Deprecated ,CheckGDALData # noqa
+
+from ..exceptions import GISError # noqa
 try : 
-    from ._set_gdal import HAS_GDAL, EPSG_DICT, NEW_GDAL 
+    from ._set_gdal import HAS_GDAL, EPSG_DICT, NEW_GDAL # noqa
     if HAS_GDAL:
         from osgeo import osr
-        from osgeo.ogr import OGRERR_NONE
+        from osgeo.ogr import OGRERR_NONE # noqa
     else:
-        import pyproj
+        import pyproj # noqa
 except :
     HAS_GDAL =False
     pass 
 
 _logger = gofastlog.get_gofast_logger(__name__)
+
+
+__all__= [
+    'adjust_time_component',
+     'assert_lat_lon_values',
+     'assert_xy_coordinate_system',
+     'convert_lat_lon_to_utm',
+     'convert_position_float2str',
+     'convert_position_str2float',
+     'convert_position_str2float2',
+     'convert_utm_to_lat_lon',
+     'get_utm_string_from_sr',
+     'get_utm_zone_2',
+     'll_to_utm',
+     'utm_to_ll',
+     'validate_elevation'
+ ]
 
 _deg2rad = np.pi / 180.0
 _rad2deg = 180.0 / np.pi
@@ -83,6 +100,7 @@ epsg_dict = {
     32618: ['+proj=utm +zone=18 +ellps=WGS84 +datum=WGS84 +units=m +no_defs', 18],
     32619: ['+proj=utm +zone=19 +ellps=WGS84 +datum=WGS84 +units=m +no_defs', 19]
 }
+
 
 def ll_to_utm(reference_ellipsoid, lat, lon):
     """
@@ -596,121 +614,6 @@ def utm_to_ll(reference_ellipsoid, northing, easting, zone):
     return _calculate_lat_lon(phi1_rad, ecc_squared, n1, t1, c1, r1, d, long_origin)
 
 
-
-# # Deprecated function
-# @deprecated("This function may be removed in a later release."
-#             " gofast.geo.gisutils.project_point_ll2utm() should be "
-#             "used instead.")
-# def ll_to_utm0(reference_ellipsoid, lat, lon):
-#     """
-#     Converts latitude and longitude to UTM coordinates. (Deprecated)
-
-#     Parameters
-#     ----------
-#     reference_ellipsoid : int
-#         The index of the reference ellipsoid from the `_ellipsoid` list.
-#     lat : float or str
-#         Latitude in decimal degrees or DD:MM:SS.ms format.
-#     lon : float or str
-#         Longitude in decimal degrees or DD:MM:SS.ms format.
-
-#     Returns
-#     -------
-#     tuple
-#         UTM zone, easting, and northing coordinates.
-
-#     Deprecated
-#     ----------
-#     This function is deprecated and may be removed in a later release. Use `gofast.geo.gisutils.project_point_ll2utm()`
-#     instead.
-
-#     Examples
-#     --------
-#     >>> ll_to_utm(23, 42.0, -71.0)
-#     ('18T', 321875.5348340456, 4654642.366709269)
-
-#     >>> ll_to_utm(1, "51:28:38.5", "-0:0:24.6")
-#     ('30U', 699745.948, 5706456.731)
-#     """
-#     a = _ellipsoid[reference_ellipsoid][_equatorial_radius]
-#     ecc_squared = _ellipsoid[reference_ellipsoid][_eccentricity_squared]
-#     k0 = 0.9996
-#     if isinstance(lat, str):
-#         lat = convert_position_str2float(lat)
-#     if isinstance(lon, str):
-#         lon = convert_position_str2float(lon)
-
-#     # Make sure the longitude is between -180.00 .. 179.9
-#     long_temp = (lon + 180) - int((lon + 180) / 360) * 360 - 180  # -180.00 .. 179.9
-
-#     lat_rad = lat * _deg2rad
-#     long_rad = long_temp * _deg2rad
-
-#     zone_number = int((long_temp + 180) / 6) + 1
-
-#     if 56.0 <= lat < 64.0 and 3.0 <= long_temp < 12.0:
-#         zone_number = 32
-
-#     # Special zones for Svalbard
-#     if 72.0 <= lat < 84.0:
-#         if 0.0 <= long_temp < 9.0:
-#             zone_number = 31
-#         elif 9.0 <= long_temp < 21.0:
-#             zone_number = 33
-#         elif 21.0 <= long_temp < 33.0:
-#             zone_number = 35
-#         elif 33.0 <= long_temp < 42.0:
-#             zone_number = 37
-
-#     long_origin = (zone_number - 1) * 6 - 180 + 3  # +3 puts origin in middle of zone
-#     long_origin_rad = long_origin * _deg2rad
-
-#     # compute the UTM Zone from the latitude and longitude
-#     utm_zone = "%d%c" % (zone_number, _utm_letter_designator(lat))
-
-#     ecc_prime_squared = ecc_squared / (1 - ecc_squared * np.sin(lat_rad) ** 2)
-#     N = a / np.sqrt(1 - ecc_squared * np.sin(lat_rad) ** 2)
-#     T = np.tan(lat_rad) ** 2
-#     C = ecc_prime_squared * np.cos(lat_rad) ** 2
-#     A = np.cos(lat_rad) * (long_rad - long_origin_rad)
-
-#     M = a * (
-#         (1
-#          - ecc_squared / 4
-#          - 3 * ecc_squared ** 2 / 64
-#          - 5 * ecc_squared ** 3 / 256) * lat_rad
-#         - (3 * ecc_squared / 8
-#            + 3 * ecc_squared ** 2 / 32
-#            + 45 * ecc_squared ** 3 / 1024) * np.sin(2 * lat_rad)
-#         + (15 * ecc_squared ** 2 / 256
-#            + 45 * ecc_squared ** 3 / 1024) * np.sin(4 * lat_rad)
-#         - (35 * ecc_squared ** 3 / 3072) * np.sin(6 * lat_rad))
-
-#     utm_easting = (k0 * N * (A
-#                              + (1 - T + C) * A ** 3 / 6
-#                              + (5 - 18 * T
-#                                 + T ** 2
-#                                 + 72 * C
-#                                 - 58 * ecc_prime_squared) * A ** 5 / 120)
-#                    + 500000.0)
-
-#     utm_northing = (k0 * (M
-#                           + N * np.tan(lat_rad) * (A ** 2 / 2
-#                                                    + (5
-#                                                       - T
-#                                                       + 9 * C
-#                                                       + 4 * C ** 2) * A ** 4 / 24
-#                                                    + (61
-#                                                       - 58 * T
-#                                                       + T ** 2
-#                                                       + 600 * C
-#                                                       - 330 * ecc_prime_squared
-#                                                       ) * A ** 6 / 720)))
-
-#     if lat < 0:
-#         utm_northing = utm_northing + 10000000.0  # 10000000 meter offset for southern hemisphere
-#     return utm_zone, utm_easting, utm_northing
-
 def assert_xy_coordinate_system(x, y):
     """
     Determine the coordinate system of the given x and y coordinates.
@@ -990,7 +893,7 @@ def validate_elevation(elevation):
         _logger.warning(f"{elevation} is not a number, setting elevation to 0.0")
         return 0.0
     
-@deprecated("NATO UTM zone is used in other parts of gofast; this function "
+@Deprecated("NATO UTM zone is used in other parts of gofast; this function "
             "is for Standard UTM")
 def get_utm_string_from_sr(spatialreference):
     """

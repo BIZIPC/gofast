@@ -4,75 +4,2201 @@
 """
 Utilities to process and compute parameters. Module for Algebra calculus.
 """
-from __future__ import annotations 
 import copy 
 import inspect 
 import warnings 
-
+import itertools
 import numpy as np
 import pandas as pd 
+import matplotlib.pyplot as plt
+
+import scipy.stats as spstats
+from scipy._lib._util import float_factorial
+from scipy.cluster.hierarchy import linkage 
+from scipy.linalg import lstsq
+from scipy.ndimage import convolve1d
+from scipy.stats import rankdata
 from scipy.signal import argrelextrema 
 from scipy.optimize import curve_fit
-from scipy.cluster.hierarchy import  linkage 
-from scipy.linalg import lstsq
-from scipy._lib._util import float_factorial
-from scipy.ndimage import convolve1d
 from scipy.spatial.distance import pdist, squareform 
-import  matplotlib.pyplot as plt
+from scipy.stats import pearsonr, spearmanr, kendalltau
 
-from ._arraytools import axis_slice
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
+from sklearn.utils.multiclass import unique_labels
+from sklearn.preprocessing import label_binarize, LabelEncoder 
+
 from .._gofastlog import gofastlog
-from .._docstring import refglossary
+from ..api.box import KeyBox
+from ..api.docstring import refglossary
+from ..api.types import _T, _F,_SP, List, Tuple, Union
+from ..api.types import ArrayLike, NDArray, Optional
+from ..api.types import Series, DataFrame,  Dict
+from ..api.summary import ResultSummary 
 from ..decorators import AppendDocReferences
 from ..exceptions import SiteError
-from .._typing import (
-    _T, 
-    _F,
-    List, 
-    Tuple,
-    Union,
-    ArrayLike,
-    NDArray,
-    DType,
-    Optional,
-    _SP, 
-    Series, 
-    DataFrame,
-    Dict,
-)
-from .box import Boxspace 
-from .coreutils import (
-    _assert_all_types, 
-    _validate_name_in, 
-    assert_ratio,
-    concat_array_from_list, 
-    remove_outliers, 
-    find_close_position,
-    to_numeric_dtypes, 
-    ellipsis2false, 
-    fancy_printer,
-    smart_format,
-    is_iterable, 
-    reshape,
-    fillNaN, 
-    spi,     
-)
-from .validator import ( 
-    _is_arraylike_1d, 
-    _is_numeric_dtype,
-    check_consistency_size,
-    check_y,
-    check_array,
-    assert_xy_in, 
-    build_data_if
-    )
-try: import scipy.stats as spstats
-except: pass 
+
+from ._arraytools import axis_slice
+from .coreutils import _assert_all_types, _validate_name_in
+from .coreutils import concat_array_from_list
+from .coreutils import find_close_position, normalize_string 
+from .coreutils import to_numeric_dtypes, ellipsis2false
+from .coreutils import smart_format, type_of_target, is_iterable 
+from .coreutils import reshape, assert_ratio
+from .validator import _is_arraylike_1d, _is_numeric_dtype, validate_multioutput 
+from .validator import check_consistent_length 
+from .validator import check_classification_targets, check_y
+from .validator import assert_xy_in, _ensure_y_is_valid, ensure_non_negative
+from .validator import check_epsilon, parameter_validator, is_binary_class 
+from .validator import validate_sample_weights, validate_multiclass_target
+from .validator import validate_length_range, validate_scores, ensure_2d
+from .validator import is_frame 
 
 _logger =gofastlog.get_gofast_logger(__name__)
 
 mu0 = 4 * np.pi * 1e-7 
 
+__all__=[
+    'adaptive_moving_average', 
+    'adjust_for_control_vars',
+    'calculate_adjusted_lr', 
+    'calculate_binary_iv', 
+    'calculate_optimal_bins', 
+    'calculate_residuals', 
+    'compute_balance_accuracy',
+    'compute_effort_yield',
+    'compute_errors', 
+    'compute_sunburst_data',
+    'compute_cost_based_threshold', 
+    'compute_sensitivity_specificity', 
+    'compute_youdens_index',
+    'cubic_regression', 
+    'exponential_regression', 
+    'get_bearing', 
+    'get_distance',
+    'infer_sankey_columns', 
+    'label_importance',
+    'linear_regression',
+    'linkage_matrix', 
+    'logarithmic_regression',
+    'make_mxs', 
+    'minmax_scaler',
+    'normalize',
+    'optimized_spearmanr', 
+    'quadratic_regression', 
+    'rank_data', 
+    'savgol_filter', 
+    'sinusoidal_regression',
+    'standard_scaler', 
+    'step_regression',
+    'weighted_spearman_rank', 
+    'compute_p_values'
+    ]
+
+def compute_p_values(
+    data, depvar,
+    method: str='pearson', 
+    significance_threshold: float=0.05, 
+    ignore: Optional [Union [str, list]]=None
+    ):
+    """
+    Compute p-values for the correlation between each independent variable
+    and a dependent variable.
+
+    Parameters
+    ----------
+    data : pandas DataFrame
+        The DataFrame containing the dataset.
+    depvar : str or pandas Series
+        The name of the dependent variable as a string or a pandas Series.
+    method : {'pearson', 'spearman', 'kendall'}, optional
+        The correlation method to use. Default is 'pearson'.
+    significance_threshold : float, optional
+        The significance threshold for p-values. Default is 0.05.
+    ignore : str or list, optional
+        Columns to ignore during computation.
+
+    Returns
+    -------
+    p_values : :class:`gofast.api.summary.ResultSummary` object 
+        A dictionary containing independent variables as keys and their 
+        corresponding p-values.
+
+    Raises
+    ------
+    ValueError
+        If depvar is not found in DataFrame columns or if an invalid 
+        correlation method is specified.
+
+    Notes
+    -----
+    - If depvar is a string, it checks whether it exists in the DataFrame's 
+      columns. If it doesn't exist, it raises a ValueError.
+    - The function computes p-values for the specified correlation method 
+      between each independent variable
+      and the dependent variable. It excludes the depvar column from the 
+      computation if it's in the DataFrame.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from gofast.tools.mathex import compute_p_values
+    >>> np.random.seed(0)
+    >>> data = pd.DataFrame({
+    ...     'x1': np.random.randn(100),
+    ...     'x2': np.random.randn(100),
+    ...     'y': np.random.randn(100)
+    ... })
+    >>> p_values = compute_p_values(data, 'y', method='pearson') 
+    >>> print(p_values ) 
+    P-values(
+      {
+
+           x1 : None
+           x2 : None
+
+      }
+    )
+
+    [ 2 entries ]
+    >>> p_values = compute_p_values(data, 'y', method='pearson',
+    ...                             significance_threshold=None)
+    >>> p_values
+    Out[76]: <P-values with 2 entries. Use print() to see detailed contents.>
+
+    >>> print(p_values)
+    P-values(
+      {
+
+           x1 : 0.4516405974318084
+           x2 : 0.5797578201347333
+
+      }
+    )
+
+    [ 2 entries ]
+    """
+    if isinstance (data, pd.Series): 
+        data = data.to_frame() 
+        
+    if not isinstance (data, pd.DataFrame): 
+        raise TypeError(f"'data' should be a frame, not {type(data).__name__!r}")
+        
+    if isinstance (depvar, str):
+        if depvar not in data.columns:
+            raise ValueError(f"'{depvar}' not found in DataFrame columns.")
+        depvar = data[depvar]
+        data = data.drop(columns=depvar.name)
+        
+    elif hasattr (depvar, '__array__'): 
+        depvar = depvar.squeeze () 
+        if depvar.ndim ==2: 
+            raise TypeError ("Dependent variable 'depvar' should be Series or"
+                             " one-dimensional array, not a two-dimensional.")
+        if not isinstance (depvar, pd.Series): 
+            depvar = pd.Series ( depvar, name = 'depvar')
+            
+    if ignore is not None: 
+        if isinstance ( ignore, str): 
+            ignore =[ignore]
+        # check whether column is in data 
+        column2ignore = [ col for col in ignore if col in data.columns]
+        data = data.drop (columns= column2ignore)
+        
+    check_consistent_length(data, depvar)
+    
+    corr_methods = {
+        'pearson': pearsonr,
+        'spearman': spearmanr,
+        'kendall': kendalltau
+    }
+     
+    # Select only numeric columns
+    data = data.select_dtypes([np.number])
+    if data.empty:
+        raise ValueError("P-value calculations expect numeric data, but"
+                         " the DataFrame contains no numeric data.")
+    
+    if method not in corr_methods:
+        raise ValueError("Invalid correlation method. Supported methods:"
+                         " 'pearson', 'spearman', 'kendall'.")
+
+    p_values = {}
+    for column in data.columns:
+        if column != depvar.name and (ignore is None or column not in ignore):
+            corr_func = corr_methods[method]
+            corr, p_value = corr_func(data[column], depvar)
+            if significance_threshold: 
+                p_values[column] = ( 
+                    p_value if p_value <= significance_threshold else "reject"
+                    )
+            else: 
+                p_values[column] = p_value 
+            
+    p_values = ResultSummary("P-values").add_results(p_values)
+    
+    return p_values
+
+def compute_balance_accuracy(
+    y_true, y_pred, 
+    epsilon:float=1e-15,
+    zero_division: int=0, 
+    strategy: str="ovr",
+    normalize: bool=False, 
+    sample_weight:Optional[ArrayLike]=None):
+    """
+    Compute the balanced accuracy for binary or multiclass classification 
+    problems, determining the appropriate calculation method based on the 
+    label type and specified strategy.
+
+    Parameters
+    ----------
+    y_true : array-like of shape (n_samples,)
+        True labels for the classification task.
+    y_pred : array-like of shape (n_samples,)
+        Predicted labels from the classifier.
+    epsilon : float, default=1e-15
+        A small constant added to the denominator in calculations to prevent
+        division by zero.
+    zero_division : int, default=0
+        The value to return when a zero division occurs during calculation, 
+        typically encountered when a class is missing in the predictions.
+    strategy : {'ovr', 'ovo'}, default='ovr'
+        Strategy for handling multiclass classification:
+        - 'ovr': One-vs-Rest, calculates balanced accuracy for each class
+          against all others.
+        - 'ovo': One-vs-One, calculates balanced accuracy for each pair 
+          of classes.
+    normalize : bool, default=False
+        If True, normalizes the confusion matrix before calculating the 
+        balanced accuracy.
+    sample_weight : array-like of shape (n_samples,), optional
+        Weights for each sample. If provided, the calculation will take 
+        these into account.
+
+    Returns
+    -------
+    float or np.ndarray
+        The balanced accuracy score. Returns a single float for binary 
+        classification or an array of scores for multiclass classification, 
+        depending on the strategy.
+
+    Notes
+    -----
+    Balanced accuracy is particularly useful for evaluating classifiers 
+    on imbalanced datasets. It calculates the average of recall obtained on 
+    each class, effectively handling classes without bias.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import compute_balance_accuracy
+    >>> y_true = [0, 1, 1, 0, 1]
+    >>> y_pred = [0, 1, 0, 0, 1]
+    >>> compute_balance_accuracy(y_true, y_pred)
+    0.833333333333333
+
+    For multiclass using One-vs-Rest strategy:
+    >>> y_true = [0, 1, 2, 0, 1]
+    >>> y_pred = [0, 2, 1, 0, 1]
+    >>> compute_balance_accuracy(y_true, y_pred, strategy='ovr')
+    array([1.        , 0.58333333, 0.375     ])
+
+    For multiclass using One-vs-One strategy:
+    >>> compute_balance_accuracy(y_true, y_pred, strategy='ovo')
+    array([1.        , 0.16666667, 0.16666667])
+    """
+    y_true, y_pred = _ensure_y_is_valid(y_true, y_pred, y_numeric=True)
+
+    # Check whether y_true is binary and compute balanced accuracy accordingly
+    if is_binary_class(y_true):
+        return _compute_balanced_accuracy_binary(
+            y_true=y_true, y_pred=y_pred, 
+            zero_division=zero_division, 
+            normalize=normalize, 
+            sample_weight=sample_weight)
+
+    # Validate the strategy parameter
+    strategy = parameter_validator(
+        "strategy", target_strs={"ovr", "ovo"})(strategy)
+    
+    labels = unique_labels(y_true, y_pred)
+    labels = np.unique(np.concatenate([y_true, y_pred]))
+    
+    # Compute balanced accuracy based on the specified strategy
+    if strategy == 'ovr':
+        scores = _balanced_accuracy_ovr(
+            y_true=y_true, y_pred=y_pred, 
+            labels=labels, 
+            epsilon=epsilon, 
+            zero_division=zero_division, 
+            normalize=normalize, 
+            sample_weight=sample_weight)
+    elif strategy == 'ovo':
+        labels = np.unique(np.concatenate([y_true, y_pred]))
+        scores = _balanced_accuracy_ovo(
+            y_true=y_true, y_pred=y_pred, 
+            labels=labels, sample_weight=sample_weight)
+
+    return scores
+
+def _compute_balanced_accuracy_binary(
+    y_true, y_pred, epsilon=1e-15,
+    zero_division=0, normalize =False, 
+    sample_weight=None
+    ):
+    cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight )
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    sensitivity = cm[1, 1] / (cm[1, 1] + cm[1, 0] + epsilon)
+    specificity = cm[0, 0] / (cm[0, 0] + cm[0, 1] + epsilon)
+    return (sensitivity + specificity) / 2  if not np.isnan(
+        sensitivity + specificity) else zero_division
+
+def _balanced_accuracy_ovr(
+    y_true, y_pred, labels, epsilon=1e-15,
+    zero_division=0, normalize=False, 
+    sample_weight =None
+  ):
+    bal_acc_scores = []
+    for label in labels:
+        binary_y_true = (y_true == label).astype(int)
+        binary_y_pred = (y_pred == label).astype(int)
+        score = _compute_balanced_accuracy_binary(
+            binary_y_true, binary_y_pred, epsilon, zero_division,
+            normalize=normalize, sample_weight= sample_weight )
+        bal_acc_scores.append(score)
+    return np.array(bal_acc_scores)
+
+def _balanced_accuracy_ovo(y_true, y_pred, labels, sample_weight=None):
+    le = LabelEncoder()
+    y_true_encoded = le.fit_transform(y_true)
+    y_bin = label_binarize(y_true_encoded, classes=range(len(labels)))
+    
+    bal_acc_scores = []
+    for i, label_i in enumerate(labels[:-1]):
+        for j, label_j in enumerate(labels[i+1:]):
+            specific_y_true = y_bin[:, i]
+            specific_y_pred = y_bin[:, j]
+            auc_score = roc_auc_score(
+                specific_y_true, specific_y_pred, sample_weight=sample_weight)
+            bal_acc_scores.append(auc_score)
+            
+    return np.array(bal_acc_scores)
+
+def compute_cost_based_threshold(
+    y_true, y_scores, costs, *, 
+    sample_weight=None
+    ):
+    """
+    Compute threshold using a cost-based approach.
+
+    This method computes the total cost for each potential threshold and 
+    selects the one that minimizes this cost.
+    
+    Parameters:
+    -----------
+    y_true : array-like of shape (n_samples,)
+        True binary labels.
+    y_scores : array-like of shape (n_samples,)
+        Target scores, can either be probability estimates of the positive class,
+        confidence values, or non-thresholded measure of decisions (as returned
+        by decision_function on some classifiers).
+    costs : tuple (C_FP, C_FN)
+        Costs associated with false positives (C_FP) and false negatives (C_FN).
+    sample_weight : array-like of shape (n_samples,), optional (default=None)
+        Sample weights.
+
+    Returns
+    --------
+    optimal_threshold : float
+        The threshold that minimizes the total cost.
+    total_cost : float
+        The total cost at the optimal threshold.
+
+    Examples
+    ---------
+    >>> from gofast.tools.mathex import compute_cost_based_threshold
+    >>> y_true = [0, 1, 1, 0, 1]
+    >>> y_scores = [0.1, 0.8, 0.3, 0.6, 0.9]
+    >>> costs = (1, 2)  # Cost of FP = 1, Cost of FN = 2
+    >>> optimal_threshold, total_cost = compute_cost_based_threshold(y_true, y_scores, costs)
+    >>> print("Optimal Threshold:", optimal_threshold)
+    Optimal Threshold: 0.8
+    >>> print("Total Cost:", total_cost)
+    Total Cost: 4.0
+    """
+    y_true, y_scores = _ensure_y_is_valid(y_true, y_scores, y_numeric=True)
+    # Get unique thresholds from the scores
+    thresholds = np.unique(y_scores)
+    
+    # Initialize variables to store the best threshold and minimum cost
+    best_threshold = None
+    C_FP, C_FN = validate_length_range(costs, param_name="costs")
+    min_cost = float('inf')
+
+    # If sample weights are not provided, set them to ones
+    if sample_weight is None:
+        sample_weight = np.ones_like(y_true)
+        
+    # Validate sample weights 
+    sample_weight = validate_sample_weights(
+        sample_weight, y_true, normalize=True)
+    # Iterate over each unique threshold
+    for threshold in thresholds:
+        # Predict labels based on the current threshold
+        predicted_labels = (y_scores >= threshold).astype(int)
+        
+        # Calculate false positives (FP) and false negatives (FN) using sample weights
+        FP = np.sum((predicted_labels == 1) & (y_true == 0) & (sample_weight > 0))
+        FN = np.sum((predicted_labels == 0) & (y_true == 1) & (sample_weight > 0))
+        
+        # Calculate total cost using the provided costs and weighted FP/FN counts
+        total_cost = C_FP * FP + C_FN * FN
+        
+        # Update the minimum cost and best threshold if the current cost is lower
+        if total_cost < min_cost:
+            min_cost = total_cost
+            best_threshold = threshold
+
+    # Return the best threshold and its corresponding minimum cost
+    return best_threshold, min_cost
+
+def compute_youdens_index(
+    y_true, y_scores, *, 
+    sample_weight=None, 
+    pos_label=None, 
+    drop_intermediate=True
+    ):
+    """
+    Compute Youden's Index and optimal threshold.
+
+    Youden's Index is a single statistic that captures the performance of a
+    binary classification test. 
+    It's defined as the maximum vertical distance between the ROC curve and 
+    the diagonal line.
+    Mathematically, it is calculated as:
+    
+    .. math::
+        J = \text{True Positive Rate} - \text{False Positive Rate}
+
+    Parameters:
+    -----------
+    y_true : array-like of shape (n_samples,)
+        True binary labels.
+    y_scores : array-like of shape (n_samples,)
+        Target scores, can either be probability estimates of the positive class,
+        confidence values, or non-thresholded measure of decisions (as returned
+        by decision_function on some classifiers).
+    sample_weight : array-like of shape (n_samples,), optional (default=None)
+        Sample weights.
+    pos_label : int or str, optional (default=None)
+        The label of the positive class.
+    drop_intermediate : bool, optional (default=True)
+        Whether to drop some suboptimal thresholds that do not appear
+        on a ROC curve with vertical drops.
+
+    Returns:
+    --------
+    optimal_threshold : float
+        The optimal threshold that maximizes Youden's Index.
+    optimal_youden : float
+        The value of Youden's Index at the optimal threshold.
+    
+    Examples:
+    ---------
+    >>> from gofast.tools.mathex import compute_youdens_index
+    >>> y_true = [0, 1, 1, 0, 1]
+    >>> y_scores = [0.1, 0.8, 0.3, 0.6, 0.9]
+    >>> optimal_threshold, optimal_youden = compute_youdens_index(y_true, y_scores)
+    >>> print("Optimal Threshold:", optimal_threshold)
+    Optimal Threshold: 0.8
+    >>> print("Youden's Index:", optimal_youden)
+    Youden's Index: 0.6
+    
+    """
+    # Ensure input arrays y_true and y_scores are valid
+    y_true, y_scores = _ensure_y_is_valid(y_true, y_scores, y_numeric=True)
+    
+    # Check if the class labels are binary
+    if not is_binary_class(y_true):
+        raise ValueError("Youden's index calculation requires binary class"
+                         "labels. Provided labels are not binary.")
+
+    # Validate scores as proper probability distributions
+    y_scores = validate_scores(y_scores, y_true, mode="passthrough")
+
+    # Calculate the ROC curve and the corresponding AUC
+    fpr, tpr, thresholds = roc_curve(
+        y_true, y_scores, pos_label=pos_label, 
+        sample_weight=sample_weight, 
+        drop_intermediate=drop_intermediate
+    )
+    
+    # Calculate Youden's Index for each threshold
+    youdens_index = tpr - fpr
+    
+    # Find the optimal threshold (maximizes Youden's Index)
+    optimal_idx = np.argmax(youdens_index)
+    optimal_threshold = thresholds[optimal_idx]
+    optimal_youden = youdens_index[optimal_idx]
+    
+    return optimal_threshold, optimal_youden
+
+def calculate_multiclass_avg_lr(
+    y_true, y_pred, *, 
+    strategy='ovr',
+    consensus="positive", 
+    sample_weight=None, 
+    multi_output='uniform_average', 
+    epsilon=1e-10
+    ):
+    """
+    Calculate the average likelihood ratio for multiclass classification 
+    based on the average sensitivity and specificity across all classes or 
+    class pairs.
+
+    This function supports one-versus-rest (OvR) and one-versus-one (OvO) 
+    strategies for multiclass data and computes the likelihood ratio either 
+    positively or negatively based on the specified consensus.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True class labels as integers.
+    y_pred : array-like
+        Predicted class labels as integers.
+    strategy : str, optional
+        Specifies the computation strategy: 'ovr' for one-versus-rest or 'ovo' 
+        for one-versus-one.
+    consensus : str, optional
+        'positive' for positive likelihood ratio or 'negative' for negative 
+        likelihood ratio.
+    sample_weight : array-like, optional
+        Weights applied to classes in averaging sensitivity and specificity. 
+        If None, equal weighting is assumed.
+    epsilon : float, optional
+        A small value to prevent division by zero in calculations. 
+        Default is 1e-10.
+
+    Returns
+    -------
+    float
+        The computed average likelihood ratio.
+    float
+        The average sensitivity computed across classes or class pairs.
+    float
+        The average specificity computed across classes or class pairs.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import calculate_multiclass_avg_lr
+    >>> y_true = [0, 1, 2, 2, 1, 0]
+    >>> y_pred = [0, 2, 1, 2, 1, 0]
+    >>> lr, avg_sens, avg_spec = calculate_multiclass_avg_lr(
+    ...    y_true, y_pred, strategy='ovr', consensus='positive')
+    >>> print(f"Likelihood Ratio: {lr:.2f}, 
+    ...          Average Sensitivity: {avg_sens:.2f},
+    ...          Average Specificity: {avg_spec:.2f}")
+    """
+    _ensure_y_is_valid( y_true, y_pred, y_numeric =True)
+    ensure_non_negative(
+        y_true, y_pred,
+        err_msg="y_true and y_pred must contain non-negative values."
+    )
+    epsilon = check_epsilon(epsilon, y_true, y_pred )
+
+    consensus = parameter_validator( 
+        "consensus", target_strs={'negative', 'positive'})(consensus)
+    strategy = parameter_validator( 
+        "strategy", target_strs={'ovr', 'ovo'})( strategy)
+    
+    classes = np.unique(y_true)
+    sensitivities, specificities = [], []
+    # validate multitarget and samples weigths if exists 
+    y_true = validate_multiclass_target( y_true )
+    
+    if sample_weight is not None: 
+        sample_weight =validate_sample_weights( sample_weight, y_true)
+        
+    if strategy == 'ovr':
+        y_true_binarized = label_binarize(y_true, classes=classes)
+        for i, cls in enumerate(classes):
+            sensitivity, specificity = _compute_sensitivity_specificity(
+                y_true_binarized[:, i], (y_pred == cls).astype(int),
+                sample_weight=sample_weight,  
+                epsilon=epsilon
+            )
+            sensitivities.append(sensitivity)
+            specificities.append(specificity)
+
+    elif strategy == 'ovo':
+        for cls1, cls2 in itertools.combinations(classes, 2):
+            relevant_mask = (y_true == cls1) | (y_true == cls2)
+            y_true_binary = (y_true[relevant_mask] == cls1).astype(int)
+            y_pred_binary = (y_pred[relevant_mask] == cls1).astype(int)
+            sensitivity, specificity = _compute_sensitivity_specificity(
+                y_true_binary, y_pred_binary,
+                sample_weight=sample_weight,  
+                epsilon=epsilon
+                )
+            sensitivities.append(sensitivity)
+            specificities.append(specificity)
+
+    # Weighted averages if sample_weight is provided
+    if  multi_output=='uniform_average': 
+        avg_sensitivity = np.average(sensitivities)
+        avg_specificity = np.average(specificities)
+    else: 
+        avg_sensitivity = np.asarray(sensitivities)
+        avg_specificity = np.asarray(specificities)
+        
+    # Compute LR based on average values
+    lr = calculate_adjusted_lr(
+        avg_sensitivity, avg_specificity, 
+        consensus = consensus,max_lr = 100.
+        )
+    return lr, avg_sensitivity, avg_specificity
+
+def calculate_multiclass_lr(
+    y_true, y_pred, *, 
+    consensus='positive',
+    sample_weight=None, 
+    strategy='ovr', 
+    epsilon=1e-10, 
+    multi_output='uniform_average', 
+    apply_log_scale=False,
+    include_metrics=False
+    ):
+    """
+    Calculate the multiclass likelihood ratio for classification using either 
+    one-versus-rest (OvR) or one-versus-one (OvO) strategies. Optionally applies 
+    logarithmic scaling to the likelihood ratios and can return sensitivity and 
+    specificity values.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True class labels as integers.
+    y_pred : array-like
+        Predicted class labels as integers.
+    consensus : str, optional
+        Specifies the type of likelihood ratio to compute: 'positive' 
+        (default) or 'negative'.
+    strategy : str, optional
+        Specifies the computation strategy: 'ovr' (one-versus-rest, default) 
+        or 'ovo' (one-versus-one).
+    epsilon : float, optional
+        A small value to prevent division by zero in calculations. 
+        Default is 1e-10. 
+    multi_output : str, optional
+        If 'uniform_average', returns the average of the computed likelihood 
+        ratios. If 'raw_values', returns the likelihood ratios for each class 
+        comparison.
+    apply_log_scale : bool, optional
+        If True, applies the natural logarithm to the likelihood ratios, 
+        returning the log-likelihood ratios.
+    include_metrics : bool, optional
+        If True, returns a tuple containing the likelihood ratios and arrays 
+        of sensitivities and specificities.
+
+    Returns
+    -------
+    float or tuple
+        Depending on 'multi_output' and 'include_metrics', returns either the 
+        average likelihood ratio, an array of likelihood ratios, or a tuple 
+        containing the likelihood ratios and metrics arrays.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import calculate_multiclass_lr
+    >>> y_true = [0, 1, 2, 2, 1, 0]
+    >>> y_pred = [0, 2, 1, 2, 1, 0]
+    >>> calculate_multiclass_lr(y_true, y_pred, consensus='positive', strategy='ovr')
+    1.6765
+    
+    >>> from gofast.tools.mathex import calculate_multiclass_lr
+    >>> y_true = [0, 1, 2, 2, 1, 0]
+    >>> y_pred = [0, 2, 1, 2, 1, 0]
+    >>> calculate_multiclass_lr(y_true, y_pred, consensus='positive', strategy='ovr')
+    1.6765
+    
+    >>> calculate_multiclass_lr(y_true, y_pred, consensus='negative', strategy='ovo')
+    0.9890
+    
+    Notes
+    -----
+    The likelihood ratio (LR) for a given class or class pair is calculated as:
+    
+    .. math::
+        LR_+ = \\frac{\\text{sensitivity}}{1 - \\text{specificity}}
+    
+    or
+    
+    .. math::
+        LR_- = \\frac{1 - \\text{sensitivity}}{\\text{specificity}}
+    
+    If `apply_log_scale` is True, the log-likelihood ratio (LLR) is computed, 
+    which transforms the LR using the natural logarithm:
+    
+    .. math::
+        LLR = \\log(LR)
+    
+    This transformation helps manage extreme values and improves the interpretability
+    of the results, especially when dealing with very high or very low likelihood ratios.
+    """
+    y_true, y_pred = _ensure_y_is_valid(y_true, y_pred, y_numeric=True)
+    ensure_non_negative(
+        y_true, y_pred,
+        err_msg="y_true and y_pred must contain non-negative values."
+    )
+    epsilon = check_epsilon(epsilon, y_true, y_pred)
+
+    consensus = parameter_validator(
+        "consensus", target_strs={'negative', 'positive'})(consensus)
+    strategy = parameter_validator(
+        "strategy", target_strs={'ovr', 'ovo'})(strategy)
+    
+    classes = np.unique(y_true)
+    results = []
+    sensitivities = []
+    specificities = []
+    y_true = validate_multiclass_target( y_true )
+    if strategy == 'ovr':
+        y_true_binarized = label_binarize(y_true, classes=classes)
+        for i, label in enumerate(classes):
+            # Isolate the class against all others
+            sensitivity, specificity = _compute_sensitivity_specificity(
+                y_true_binarized[:, i], (y_pred == label).astype(int), 
+                sample_weight=sample_weight,  
+                epsilon=epsilon
+            )
+            lr = calculate_adjusted_lr (
+                sensitivity, specificity,
+                consensus = consensus, 
+                max_lr=1e1 
+            )
+            results.append(np.log(lr) if apply_log_scale else lr)
+            sensitivities.append(sensitivity)
+            specificities.append(specificity)
+
+    elif strategy == 'ovo':
+        for cls1, cls2 in itertools.combinations(classes, 2):
+            relevant_mask = (y_true == cls1) | (y_true == cls2)
+            y_true_binary = (y_true[relevant_mask] == cls1).astype(int)
+            y_pred_binary = (y_pred[relevant_mask] == cls1).astype(int)
+            sensitivity, specificity = _compute_sensitivity_specificity(
+                y_true_binary, y_pred_binary, 
+                sample_weight=sample_weight,  
+                epsilon= epsilon,
+                )
+            lr = calculate_adjusted_lr (
+                sensitivity, specificity,
+                consensus = consensus, max_lr=1e1 )
+            results.append(np.log(lr) if apply_log_scale else lr)
+            sensitivities.append(sensitivity)
+            specificities.append(specificity)
+
+    if multi_output == 'uniform_average':
+        # Return raw values for each class comparison
+        return (np.mean(results), np.asarray(sensitivities),
+                np.asarray(specificities)) if include_metrics else np.mean(results)
+    else:
+        return (np.array(results), np.asarray(sensitivities),
+                np.asarray(specificities)) if include_metrics else np.array(results)
+     
+def calculate_adjusted_lr(
+    sensitivity, 
+    specificity, 
+    consensus="positive",
+    max_lr=100,
+    buffer=1e-2
+    ):
+    """
+    Calculate the likelihood ratio with modifications to avoid extremely high 
+    values, particularly when specificity is close to 1.
+
+    Parameters
+    ----------
+    sensitivity : float or numpy.ndarray
+        The probability of correctly identifying a true positive, expressed as a 
+        scalar for single measurement or an array for multiple measurements. Each
+        value represents the sensitivity for a given test or condition.
+    
+    specificity : float or numpy.ndarray
+        The probability of correctly identifying a true negative, similarly
+        expressed as either a scalar for a single measurement or an array for
+        multiple measurements. Each value corresponds to the specificity of 
+        a test or condition and must match the dimensions of `sensitivity` if
+        provided as an array.
+
+    consensus : str, optional
+        Specifies the type of likelihood ratio to compute:
+        - 'positive': Computes the positive likelihood ratio (LR+), which
+          is sensitivity divided by (1 - specificity). This ratio indicates
+          how much the odds of the disease increase when a test is positive.
+        - 'negative': Computes the negative likelihood ratio (LR-), which
+          is (1 - sensitivity) divided by specificity. This ratio indicates
+          how much the odds of the disease decrease when a test is negative.
+          Default is 'positive'.
+    
+    max_lr : float, optional
+        The maximum allowed value for the likelihood ratio to prevent
+        extreme values that could be misleading or difficult to interpret.
+        Default is 100, which means likelihood ratios are capped at this value 
+        to avoid disproportionately high results that could result from very
+        small denominators.
+
+    buffer : float, optional
+        A small value added to the denominator in the likelihood ratio
+        calculation to prevent division by near-zero, which can lead to
+        extremely high values. This buffer ensures stability in the calculations
+        by avoiding infinite or very large ratios. Default is 1e-2.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        The adjusted likelihood ratio, either as a single value or an array of
+        values, depending on the input format. Each ratio is capped at `max_lr`
+        and adjusted for low denominators using `buffer`.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import calculate_adjusted_lr
+    >>> calculate_adjusted_lr(0.95, 0.89)
+    8.636363636363637
+
+    >>> calculate_adjusted_lr(np.array([0.95, 0.80]), np.array([0.89, 0.90]), 
+                              consensus='negative', max_lr=10)
+    array([1.04545455, 2.        ])
+  
+    >>> calculate_adjusted_lr(0.99, 0.999, consensus='positive')
+    99.0
+    >>> calculate_adjusted_lr(0.80, 0.95, consensus='negative', max_lr=100,
+    ... buffer=0.005)
+    0.21052631578947364
+
+    Notes
+    -----
+    The likelihood ratio (LR) is calculated based on the specified `consensus`:
+    
+    For a 'positive' likelihood ratio:
+        
+    .. math::
+        LR_+ = \\frac{\\text{sensitivity}}{\\max(1 - \\text{specificity}, 
+        \\text{buffer})}
+
+    For a 'negative' likelihood ratio:
+        
+    .. math::
+        LR_- = \\frac{1 - \\text{sensitivity}}{\\max(\\text{specificity}, 
+        \\text{buffer})}
+
+    This approach helps to manage situations where specificity is very close to 1,
+    which would normally result in a very high LR due to a small denominator.
+    The `max_lr` parameter caps the LR to a maximum value, preventing extremely
+    high ratios that might be misleading or difficult to interpret in practical
+    scenarios.
+    """
+    # Ensure input compatibility if sensitivity and specificity are 
+    # provided as lists or tuples
+    sensitivity = np.array(sensitivity)
+    specificity = np.array(specificity)
+
+    # Compute the likelihood ratio based on the given consensus
+    if consensus == "positive":
+        lr = sensitivity / np.maximum(1 - specificity, buffer)
+    elif consensus == "negative":
+        lr = (1 - sensitivity) / np.maximum(specificity, buffer)
+    else:
+        raise ValueError("Consensus must be either 'positive' or 'negative'")
+    
+    # Cap the likelihood ratios at the maximum allowed value
+    lr = np.minimum(lr, max_lr)
+
+    return lr
+
+def _compute_sensitivity_specificity(
+        y_true, y_pred, sample_weight=None, epsilon=1e-10):
+    """
+    Calculate sensitivity and specificity for binary classification results,
+    optionally using sample weights to adjust the importance of each sample.
+
+    Parameters
+    ----------
+    y_true : array-like
+        Binary ground truth labels (1 for positive class, 0 for negative class).
+    y_pred : array-like
+        Binary predicted labels (1 for positive class, 0 for negative class).
+    sample_weight : array-like, optional
+        Weights applied to each sample when calculating sensitivity and specificity.
+        If None, all samples are assumed to have equal weight. Sample weights are
+        typically used in datasets where some samples are more important than
+        others or in the presence of class imbalance.
+    epsilon : float, optional
+        Small value added to denominators to avoid division by zero. 
+        Default is 1e-10.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the sensitivity and specificity values.
+
+    Notes
+    -----
+    Sensitivity and specificity are calculated using the following formulas:
+    
+    .. math::
+        \text{sensitivity} = \frac{\sum (w_i \cdot [y_{true}^i = 1 \cap y_{pred}^i = 1])}
+        {\sum (w_i \cdot [y_{true}^i = 1]) + \epsilon}
+
+    .. math::
+        \text{specificity} = \frac{\sum (w_i \cdot [y_{true}^i = 0 \cap y_{pred}^i = 0])}
+        {\sum (w_i \cdot [y_{true}^i = 0]) + \epsilon}
+
+    Where \( w_i \) are the sample weights. If `sample_weight` is None,
+    all weights are considered equal to 1.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import calculate_binary_metrics
+    >>> y_true = [1, 0, 1, 1, 0, 1, 0, 0]
+    >>> y_pred = [1, 0, 0, 1, 0, 1, 1, 0]
+    >>> sensitivity, specificity = calculate_binary_metrics(y_true, y_pred)
+    >>> print(f"Sensitivity: {sensitivity:.2f}, Specificity: {specificity:.2f}")
+    Sensitivity: 0.75, Specificity: 0.75
+
+    >>> weights = [1, 1, 2, 2, 1, 2, 1, 1]
+    >>> sensitivity, specificity = calculate_binary_metrics(y_true, y_pred, sample_weight=weights)
+    >>> print(f"Sensitivity: {sensitivity:.2f}, Specificity: {specificity:.2f}")
+    Sensitivity: 0.80, Specificity: 0.83
+    """
+    y_true, y_pred = _ensure_y_is_valid( y_true, y_pred, y_numeric =True)
+    ensure_non_negative(
+        y_true, y_pred,
+        err_msg="y_true and y_pred must contain non-negative values."
+    )
+    epsilon = check_epsilon(epsilon, y_true, y_pred )
+
+    if sample_weight is not None:
+        sample_weight = validate_sample_weights(sample_weight, y_true)
+    
+    # Calculate true positives, false positives, false negatives, and true negatives
+    true_positives = np.sum(((y_true == 1) & (y_pred == 1)) * (
+        sample_weight if sample_weight is not None else 1))
+    false_positives = np.sum(((y_true == 0) & (y_pred == 1)) * (
+        sample_weight if sample_weight is not None else 1))
+    false_negatives = np.sum(((y_true == 1) & (y_pred == 0)) * (
+        sample_weight if sample_weight is not None else 1))
+    true_negatives = np.sum(((y_true == 0) & (y_pred == 0)) * (
+        sample_weight if sample_weight is not None else 1))
+
+    # Calculate sensitivity and specificity with weighted counts
+    sensitivity = true_positives / (true_positives + false_negatives + epsilon)
+    specificity = true_negatives / (true_negatives + false_positives + epsilon)
+
+    return sensitivity, specificity
+
+def compute_sensitivity_specificity(
+    y_true, y_pred, *, 
+    sample_weight=None, 
+    strategy='ovr', 
+    average='macro',
+    epsilon="auto" 
+    ):
+    """
+    Calculate sensitivity and specificity for binary or multiclass classification
+    results, with support for different strategies and averaging methods. 
+
+    Parameters
+    ----------
+    y_true : array-like of shape (n_samples,)
+        True class labels. Each element in this array should be an integer
+        representing the actual class of the corresponding sample.
+    y_pred : array-like of shape (n_samples,)
+        Predicted class labels. Each element should correspond to the predicted
+        class label for the sample.
+    sample_weight : array-like of shape (n_samples,), optional
+        Weights applied to each sample when calculating metrics. If not provided,
+        all samples are assumed to have equal weight. Useful in cases of class
+        imbalance or when some samples are more critical than others.
+    strategy : {'ovr', 'ovo'}, default 'ovr'
+        The strategy to calculate metrics:
+        - 'ovr' (One-vs-Rest): Metrics are calculated by treating each class as
+          the positive class against all other classes combined.
+        - 'ovo' (One-vs-One): Metrics are calculated for each pair of classes.
+          This can be more computationally intensive.
+    average : {'macro', 'micro', 'weighted'}, default 'macro'
+        Specifies the method to average sensitivity and specificity:
+        - 'macro': Calculate metrics for each label, and find their unweighted mean.
+        - 'micro': Calculate metrics globally across all classes.
+        - 'weighted': Calculate metrics for each label, and find their average,
+          weighted by the number of true instances for each label.
+    epsilon : float or "auto", optional
+        A small constant added to the denominator to prevent division by zero. If
+        'auto', the machine epsilon for float64 is used. Defaults to "auto".
+
+    Returns
+    -------
+    tuple
+        A tuple containing the averaged or non-averaged sensitivity and specificity.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import compute_sensitivity_specificity
+    >>> y_true = [0, 1, 1, 0]
+    >>> y_pred = [0, 1, 0, 1]
+    >>> compute_sensitivity_specificity(y_true, y_pred)
+    (0.5, 0.5)
+
+    Notes
+    -----
+    Sensitivity (also known as recall or true positive rate) and specificity
+    (true negative rate) are calculated from the confusion matrix as:
+
+    .. math::
+        \text{sensitivity} = \frac{TP}{TP + FN}
+
+    .. math::
+        \text{specificity} = \frac{TN}{TN + FP}
+
+    Here, TP, TN, FN, and FP denote the counts of true positives, true negatives,
+    false negatives, and false positives, respectively.
+
+    - Micro averaging will sum the counts of true positives, false negatives, and
+      false positives across all classes and then compute the metrics.
+    - Macro averaging will compute the metrics independently for each class but
+      then take the unweighted mean. This does not take label imbalance into
+      account.
+    - Weighted averaging will compute the metrics for each class, and find their
+      average weighted by the number of true instances for each label, which
+      helps in addressing label imbalance.
+
+    The choice of averaging method depends on the balance of classes and the
+    importance of each class in the dataset.
+    """
+
+    if is_binary_class(y_true, accept_multioutput= False) :
+        return _compute_sensitivity_specificity (
+            y_true, y_pred, sample_weight=sample_weight, 
+            epsilon=epsilon # already defined. 
+            ) 
+
+    y_true, y_pred = _ensure_y_is_valid( y_true, y_pred, y_numeric =True)
+    strategy = parameter_validator(
+        "strategy", target_strs={'ovr', 'ovo'})(strategy)
+    average = parameter_validator(
+        "average", target_strs={'macro', 'micro', 'weighted'})(average)
+ 
+    epsilon = check_epsilon(epsilon, y_true, y_pred , scale_factor =1e-10)
+    # Encode labels to integer indices
+    labels = np.unique(np.concatenate([y_true, y_pred]))
+    label_to_index = {label: index for index, label in enumerate(labels)}
+    y_true_indices = np.vectorize(label_to_index.get)(y_true)
+    y_pred_indices = np.vectorize(label_to_index.get)(y_pred)
+    
+    # Compute confusion matrix
+    cm = confusion_matrix(y_true_indices, y_pred_indices, labels=range(len(labels)))
+
+    # Sensitivity and specificity calculation
+    sensitivity = np.zeros(len(labels))
+    specificity = np.zeros(len(labels))
+
+    if strategy == 'ovr':  # One-vs-Rest
+        for i in range(len(labels)):
+            TP = cm[i, i]
+            FN = np.sum(cm[i, :]) - TP
+            FP = np.sum(cm[:, i]) - TP
+            TN = np.sum(cm) - (TP + FP + FN)
+
+            sensitivity[i] = TP / (TP + FN + epsilon)
+            specificity[i] = TN / (TN + FP + epsilon)
+
+    elif strategy == 'ovo':
+        # Retrieve unique class labels
+        labels = np.unique(y_true)
+        return _compute_ovo_sens_spec(y_true, y_pred, labels, 
+                                      return_array=True
+                 )
+    # Handle averaging of results
+    if average == 'macro':
+        return np.mean(sensitivity), np.mean(specificity)
+    elif average == 'weighted':
+        support = np.sum(cm, axis=1)
+        return (np.average(sensitivity, weights=support),
+                np.average(specificity, weights=support))
+    elif average == 'micro':
+        total_TP = np.sum(np.diag(cm))
+        total_FN = np.sum(np.sum(cm, axis=1) - np.diag(cm))
+        total_FP = np.sum(np.sum(cm, axis=0) - np.diag(cm))
+        total_TN = np.sum(cm) - (total_TP + total_FP + total_FN)
+        micro_sensitivity = total_TP / (total_TP + total_FN + epsilon)
+        micro_specificity = total_TN / (total_TN + total_FP + epsilon)
+        return micro_sensitivity, micro_specificity
+
+    return sensitivity, specificity 
+
+def _compute_ovo_sens_spec(y_true, y_pred, labels, return_array=True):
+    """
+    Compute sensitivity and specificity for each pair of classes 
+    (One-vs-One strategy).
+    Optionally returns sensitivity and specificity as arrays, averaging results 
+    over all relevant pairs for each class.
+
+    Parameters:
+    y_true : array-like
+        Ground truth binary labels.
+    y_pred : array-like
+        Predicted binary labels.
+    labels : array-like
+        Array of unique class labels.
+    return_array : bool, default True
+        If True, returns sensitivity and specificity as numpy arrays averaged 
+        over all pairs involving each class. If False, returns dictionaries
+        with pairs as keys.
+
+    Returns:
+    --------
+    tuple of (numpy.ndarray, numpy.ndarray) or (dict, dict)
+        Sensitivity and specificity either as arrays or dictionaries depending 
+        on `return_array`.
+    Examples 
+    ---------
+    >>> import numpy as np 
+    >>> from gofast.tools.mathex import _compute_ovo_sens_spec
+    >>> labels = np.array([0, 1, 2])
+    >>> y_true = np.array([0, 1, 1, 2, 2, 0, 1, 2, 0])
+    >>> y_pred = np.array([0, 1, 2, 2, 0, 0, 1, 0, 2])
+    >>> sensitivity, specificity = _compute_ovo_sens_spec(y_true, y_pred, labels, return_array=True)
+    >>> print("Sensitivity:", sensitivity)
+    >>> print("Specificity:", specificity)
+    Sensitivity: [0.66666667 0.66666667 0.66666667]
+    Specificity: [0.66666667 1.         0.66666667]
+    """
+    sensitivity = {}
+    specificity = {}
+    
+    # Iterate over all pairs of labels
+    for i, j in itertools.combinations(labels, 2):
+        # Filter data for the pair (i, j)
+        pair_indices = (y_true == i) | (y_true == j)
+        y_true_pair = y_true[pair_indices]
+        y_pred_pair = y_pred[pair_indices]
+
+        # Map labels i and j to 0 and 1 for binary classification in this pair
+        y_true_binary = np.where(y_true_pair == i, 1, 0)
+        y_pred_binary = np.where(y_pred_pair == i, 1, 0)
+
+        # Calculate confusion matrix for the binary case
+        cm = confusion_matrix(y_true_binary, y_pred_binary, labels=[1, 0])
+        TP = cm[0, 0]
+        FN = cm[0, 1]
+        FP = cm[1, 0]
+        TN = cm[1, 1]
+
+        # Store sensitivity and specificity for this pair
+        sensitivity[(i, j)] = TP / (TP + FN) if (TP + FN) > 0 else 0
+        specificity[(i, j)] = TN / (TN + FP) if (TN + FP) > 0 else 0
+
+    if return_array:
+        # Convert to arrays, averaging results for each class across all pairs involving it
+        sens_array = np.zeros(len(labels))
+        spec_array = np.zeros(len(labels))
+
+        for idx, label in enumerate(labels):
+            # Averaging sensitivity and specificity for each label
+            involved_pairs = [key for key in sensitivity if label in key]
+            sens_array[idx] = np.mean([sensitivity[pair] for pair in involved_pairs])
+            spec_array[idx] = np.mean([specificity[pair] for pair in involved_pairs])
+
+        return sens_array, spec_array
+
+    return sensitivity, specificity
+
+def calculate_histogram_bins(
+        data:ArrayLike,  bins:Union [int, str, list]='auto', range:Tuple[float, float]=None, normalize: bool=False):
+    """
+    Calculates histogram bin edges from data with optional normalization.
+
+    Parameters
+    ----------
+    data : array_like
+        The input data to calculate histogram bins for.
+    bins : int, sequence of scalars, or str, optional
+        The criteria to bin the data. If an integer, it defines the number 
+        of equal-width bins in the given range. If a sequence, it defines the 
+        bin edges directly. If a string, it defines the method used to calculate 
+        the optimal bin width, as defined by numpy.histogram_bin_edges().
+    range : (float, float), optional
+        The lower and upper range of the bins. If not provided, range is 
+        simply (data.min(), data.max()).
+        Values outside the range are ignored.
+    normalize : bool, default False
+        If True, scales the data to range [0, 1] before calculating bins.
+
+    Returns
+    -------
+    bin_edges : ndarray
+        The computed or specified bin edges.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import calculate_histogram_bins
+    >>> data = np.random.randn(1000)
+    >>> bins = calculate_histogram_bins(data, bins=30)
+    >>> print(bins)
+
+    Notes
+    -----
+    This function is particularly useful in data preprocessing for histogram plotting.
+    Normalization before binning can be useful when dealing with data with outliers
+    or very skewed distributions.
+    """
+    data = np.asarray (data)
+    if normalize:
+        data = (data - np.min(data)) / (np.max(data) - np.min(data))
+
+    bin_edges = np.histogram_bin_edges(data, bins=bins, range=range)
+    return bin_edges
+
+def rank_data(data, method='average'):
+    """
+    Assigns ranks to data, handling ties according to the specified method.
+    This function supports several strategies for tie-breaking, making it
+    versatile for ranking tasks in statistical analyses and machine learning.
+
+    Parameters
+    ----------
+    data : array-like
+        The input data to rank. This can be any sequence that can be converted
+        to a numpy array.
+    method : {'average', 'min', 'max', 'dense', 'ordinal'}, optional
+        The method used to assign ranks to tied elements. The options are:
+        - 'average': Assign the average of the ranks to the tied elements.
+        - 'min': Assign the minimum of the ranks to the tied elements.
+        - 'max': Assign the maximum of the ranks to the tied elements.
+        - 'dense': Like 'min', but the next rank is always one greater than
+          the previous rank (i.e., no gaps in rank values).
+        - 'ordinal': Assign a unique rank to each element, with ties broken
+          by their order in the data.
+
+    Returns
+    -------
+    ranks : ndarray
+        The ranks of the input data.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import rank_data
+    >>> data = [40, 20, 30, 20]
+    >>> rank_data(data, method='average')
+    array([4. , 1.5, 3. , 1.5])
+
+    >>> rank_data(data, method='min')
+    array([4, 1, 3, 1])
+
+    Notes
+    -----
+    The ranking methods provided offer flexibility for different ranking
+    scenarios. 'average', 'min', and 'max' are particularly useful in
+    statistical contexts where ties need to be accounted for explicitly,
+    while 'dense' and 'ordinal' provide strategies for more ordinal or
+    categorical data ranking tasks.
+
+    References
+    ----------
+    - Freund, J.E., & Wilson, W.J. (1993). Statistical Methods, 2nd ed.
+    - Gibbons, J.D., & Chakraborti, S. (2011). Nonparametric Statistical Inference.
+    
+    See Also
+    --------
+    scipy.stats.rankdata : Rank the data in an array.
+    numpy.argsort : Returns the indices that would sort an array.
+    """
+    if isinstance (data, pd.DataFrame): 
+        # check whether there is numerical values 
+        data = data.select_dtypes ( [np.number]) 
+        if data.empty: 
+            raise ValueError(
+            "Ranking calculus expects numeric data. Got empty"
+            " DataFrame after checking for numeric"
+            ) 
+    sorter = np.argsort(data)
+    inv = np.empty_like(sorter)
+    inv[sorter] = np.arange(len(data))
+    ranks = np.empty_like(data, dtype=float)
+    valid_methods = ['average', 'min', 'max', 'dense', 'ordinal']
+    method = normalize_string(
+        method, target_strs=valid_methods, raise_exception=True, 
+        return_target_only=True, error_msg= (
+            f"Invalid method '{method}'. Expect {smart_format(valid_methods, 'or')} ")
+        )
+    if method == 'average':
+        # Average ranks of tied groups
+        ranks[sorter] = np.mean([np.arange(len(data))], axis=0)
+    elif method == 'min':
+        # Minimum rank for all tied entries
+        ranks[sorter] = np.min([np.arange(len(data))], axis=0)
+    elif method == 'max':
+        # Maximum rank for all tied entries
+        ranks[sorter] = np.max([np.arange(len(data))], axis=0)
+    elif method == 'dense':
+        # Like 'min', but rank always increases by 1 between groups
+        dense_rank = 0
+        prev_val = np.nan
+        for i in sorter:
+            if data[i] != prev_val:
+                dense_rank += 1
+                prev_val = data[i]
+            ranks[i] = dense_rank
+    elif method == 'ordinal':
+        # Distinct rank for every entry, resolving ties arbitrarily
+        ranks[sorter] = np.arange(len(data))
+    
+    return ranks
+
+def optimized_spearmanr(
+    y_true, y_pred, *, 
+    sample_weight:Optional[ArrayLike]=None, 
+    tie_method:str='average', 
+    nan_policy:str='propagate', 
+    control_vars:Optional[ArrayLike]=None,
+    multioutput:str='uniform_average'
+    ):
+    """
+    Compute Spearman's rank correlation coefficient with support for 
+    sample weights, custom tie handling, and NaN policies. This function 
+    extends the standard Spearman's rank correlation to offer more 
+    flexibility and utility in statistical and machine learning applications.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True values for calculating the correlation. Must be 1D.
+    y_pred : array-like
+        Predicted values, corresponding to y_true.
+    sample_weight : array-like, optional
+        Weights for each pair of values. Default is None, which gives
+        equal weight to all values.
+    tie_method : {'average', 'min', 'max', 'dense', 'ordinal'}, optional
+        Method to handle ranking ties. Default is 'average'.
+    nan_policy : {'propagate', 'raise', 'omit'}, optional
+        Defines how to handle when input contains NaN. 'propagate' returns NaN,
+        'raise' throws an error, 'omit' ignores pairs with NaN.
+    control_vars : array-like, optional
+        Control variables for partial correlation. Default is None.
+    multioutput : {'raw_values', 'uniform_average'}, optional
+        Strategy for aggregating errors across multiple output dimensions:
+        - 'raw_values' : Returns an array of RMSLE values for each output.
+        - 'uniform_average' : Averages errors across all outputs.
+    Returns
+    -------
+    float
+        Spearman's rank correlation coefficient.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import optimized_spearmanr
+    >>> y_true = [1, 2, 3, 4, 5]
+    >>> y_pred = [5, 6, 7, 8, 7]
+    >>> optimized_spearmanr(y_true, y_pred)
+    0.8208
+
+    Notes
+    -----
+    Spearman's rank correlation assesses monotonic relationships by using the 
+    ranked values for each variable. It is a non-parametric measure of 
+    statistical dependence between two variables [1]_.
+
+    .. math::
+        \\rho = 1 - \\frac{6 \\sum d_i^2}{n(n^2 - 1)}
+
+    where \\(d_i\\) is the difference between the two ranks of each observation, 
+    and \\(n\\) is the number of observations [2]_.
+
+    This extended implementation allows for weighted correlation calculation, 
+    handling of NaN values according to a specified policy, and consideration 
+    of control variables for partial correlation analysis.
+
+    References
+    ----------
+    .. [1] Spearman, C. (1904). "The proof and measurement of association 
+           between two things".
+    .. [2] Myer, K., & Waller, N. (2009). Applied Spearman's rank correlation. 
+           Statistics in Medicine.
+
+    See Also
+    --------
+    scipy.stats.spearmanr : Spearman correlation calculation in SciPy.
+    """
+    # Handle the multioutput scenario
+    if y_true.ndim == 1:
+        y_true = y_true[:, np.newaxis]
+    if y_pred.ndim == 1:
+        y_pred = y_pred[:, np.newaxis]
+    check_consistent_length(y_true, y_pred) 
+    results = []
+    for i in range(y_true.shape[1]):
+        corr = _compute_spearmanr(y_true[:, i], y_pred[:, i], sample_weight,
+                                  tie_method, nan_policy, control_vars)
+        results.append(corr)
+
+    multioutput = validate_multioutput(multioutput )
+
+    return np.array(results) if multioutput == 'raw_values' else np.mean(results)
+
+def _compute_spearmanr(
+        y_true, y_pred, sample_weight, tie_method, nan_policy, control_vars):
+    # The key addition is the handling of multioutput by reshaping inputs if 
+    # necessary and iterating over columns (or outputs) to compute Spearman's
+    # correlation for each, aggregating the results according to the 
+    # multioutput strategy.
+    def _weighted_spearman_corr(ranks_true, ranks_pred, weights):
+        """
+        Computes Spearman's rank correlation with support for sample weights.
+        """
+        # Weighted mean rank
+        mean_rank_true = np.average(ranks_true, weights=weights)
+        mean_rank_pred = np.average(ranks_pred, weights=weights)
+
+        # Weighted covariance and variances
+        cov = np.average((ranks_true - mean_rank_true) * (
+            ranks_pred - mean_rank_pred), weights=weights)
+        var_true = np.average((ranks_true - mean_rank_true)**2, weights=weights)
+        var_pred = np.average((ranks_pred - mean_rank_pred)**2, weights=weights)
+
+        # Weighted Spearman's rank correlation
+        spearman_corr = cov / np.sqrt(var_true * var_pred)
+        return spearman_corr
+    
+    # Validate and clean data based on `nan_policy`
+    valid_policies = ['propagate', 'raise', 'omit']
+    nan_policy= normalize_string(
+        nan_policy, target_strs= valid_policies, 
+        raise_exception=True, deep=True, 
+        return_target_only=True, 
+        error_msg=(f"Invalid nan_policy: {nan_policy}")
+    )
+    if nan_policy == 'omit':
+        valid_mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
+        y_true, y_pred = y_true[valid_mask], y_pred[valid_mask]
+        if sample_weight is not None:
+            sample_weight = sample_weight[valid_mask]
+    elif nan_policy == 'raise':
+        if np.isnan(y_true).any() or np.isnan(y_pred).any():
+            raise ValueError("Input values contain NaNs.")
+    
+    # Implement tie handling
+    valid_methods = ['average', 'min', 'max', 'dense', 'ordinal']
+    tie_method = normalize_string(
+        tie_method, target_strs=valid_methods, raise_exception=True, 
+        return_target_only=True, error_msg= (
+            f"Invalid method '{tie_method}'. Expect {smart_format(valid_methods, 'or')} ")
+        )
+    # Rank data with specified tie handling method
+    ranks_true = rankdata(y_true, method=tie_method)
+    ranks_pred = rankdata(y_pred, method=tie_method)
+
+    if control_vars is not None:
+        ranks_true, ranks_pred = adjust_for_control_vars (
+            ranks_true, ranks_pred, control_vars )
+    
+    # Compute weighted Spearman's rank correlation 
+    # if sample_weight is provided
+    if sample_weight is not None:
+        corr = _weighted_spearman_corr(ranks_true, ranks_pred, sample_weight)
+    else:
+        corr = np.corrcoef(ranks_true, ranks_pred)[0, 1]
+    return corr
+
+def adjust_for_control_vars(y_true:ArrayLike, y_pred:ArrayLike, control_vars:Optional[Union[ArrayLike, List[ArrayLike]]]=None):
+    """
+    Adjusts y_true and y_pred for either regression or classification tasks by 
+    removing the influence of control variables. 
+    
+    The function serves as a wrapper that decides the adjustment strategy 
+    based on the type of task (regression or classification) inferred from y_true.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True target values. The nature of these values (continuous for regression or 
+        categorical for classification) determines the adjustment strategy.
+    y_pred : array-like
+        Predicted target values. Must have the same shape as `y_true`.
+    control_vars : array-like or list of array-likes, optional
+        Control variables to adjust for. Can be a single array or a list of arrays. 
+        If None, no adjustment is performed.
+
+    Returns
+    -------
+    adjusted_y_true : ndarray
+        Adjusted true target values, with the influence of control variables 
+        removed.
+    adjusted_y_pred : ndarray
+        Adjusted predicted target values, with the influence of control 
+        variables removed.
+
+    Notes
+    -----
+    The function dynamically determines whether the targets suggest a 
+    regression or classification task and applies the appropriate adjustment
+    method. For regression, the adjustment involves residualizing the targets 
+    against the control variables. 
+    For classification, the approach might involve stratification or other 
+    methods to control for the variables' influence.
+
+    In practice, this adjustment is crucial when control variables might 
+    confound or otherwise influence the relationship between the predictors 
+    and the target variable, potentially biasing the correlation measure.
+
+    Examples
+    --------
+    >>> y_true = np.array([1, 2, 3, 4])
+    >>> y_pred = np.array([1.1, 1.9, 3.2, 3.8])
+    >>> control_vars = np.array([1, 1, 2, 2])
+    >>> adjusted_y_true, adjusted_y_pred = adjust_for_control_vars(
+    ... y_true, y_pred, control_vars)
+    # Adjusted values depend on the specific implementation for regression
+    or classification.
+
+    See Also
+    --------
+    adjust_for_control_vars_regression : 
+        Function to adjust targets in a regression task.
+    adjust_for_control_vars_classification : 
+        Function to adjust targets in a classification task.
+
+    References
+    ----------
+    .. [1] K. Pearson, "On the theory of contingency and its relation to 
+           association and normal correlation," Drapers' Company Research 
+           Memoirs (Biometric Series I), London, 1904.
+    .. [2] D. C. Montgomery, E. A. Peck, and G. G. Vining, "Introduction to
+           Linear Regression Analysis," 5th ed., Wiley, 2012.
+    """
+    if control_vars is None:
+        return y_true, y_pred 
+    # Convert control_vars to numpy array if not already
+    control_vars = np.asarray(control_vars)
+    
+    # statistical method suitable for the specific use case.
+    if type_of_target(y_true) =='continuous': 
+        adjusted_y_true, adjusted_y_true = adjust_for_control_vars_regression(
+            y_true, y_pred, control_vars)
+    else: 
+        # is classification 
+        adjusted_y_true, adjusted_y_true = adjust_for_control_vars_classification(
+            y_true, y_pred, control_vars)
+   
+    return adjusted_y_true, adjusted_y_true
+
+def adjust_for_control_vars_regression(y_true:ArrayLike, y_pred: ArrayLike, control_vars: Union[ArrayLike, List[ArrayLike]]):
+    """
+    Adjust y_true and y_pred for regression tasks by accounting for the influence
+    of specified control variables through residualization.
+
+    This approach fits a linear model to predict y_true and y_pred solely based on
+    control variables, and then computes the residuals. These residuals represent
+    the portion of y_true and y_pred that cannot be explained by the control
+    variables, effectively isolating the effect of the predictors of interest.
+
+    Parameters
+    ----------
+    y_true : array-like of shape (n_samples,)
+        True target values for regression.
+    y_pred : array-like of shape (n_samples,)
+        Predicted target values for regression.
+    control_vars : array-like or list of array-likes
+        Control variables to adjust for. Can be a single array or a list of arrays.
+
+    Returns
+    -------
+    adjusted_y_true : ndarray of shape (n_samples,)
+        Adjusted true target values, with the influence of control variables removed.
+    adjusted_y_pred : ndarray of shape (n_samples,)
+        Adjusted predicted target values, with the influence of control variables removed.
+
+    Raises
+    ------
+    ValueError
+        If y_true or y_pred are not 1-dimensional arrays.
+
+    Notes
+    -----
+    This function uses LinearRegression from sklearn.linear_model to fit models
+    predicting y_true and y_pred from the control variables. The residuals from
+    these models (the differences between the observed and predicted values) are
+    the adjusted targets.
+
+    The mathematical concept behind this adjustment is as follows:
+    
+    .. math::
+        \text{adjusted\_y} = y - \hat{y}_{\text{control}}
+        
+    where :math:`\hat{y}_{\text{control}}` is the prediction from a linear model
+    trained only on the control variables.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import adjust_for_control_vars_regression
+    >>> y_true = np.array([3, 5, 7, 9])
+    >>> y_pred = np.array([4, 6, 8, 10])
+    >>> control_vars = np.array([1, 2, 3, 4])
+    >>> adjusted_y_true, adjusted_y_pred = adjust_for_control_vars_regression(
+    ... y_true, y_pred, control_vars)
+    >>> print(adjusted_y_true)
+    >>> print(adjusted_y_pred)
+
+    References
+    ----------
+    .. [1] Freedman, D. A. (2009). Statistical Models: Theory and Practice. 
+          Cambridge University Press.
+    
+    See Also
+    --------
+    sklearn.linear_model.LinearRegression
+    """
+    from sklearn.linear_model import LinearRegression
+    # Convert inputs to numpy arrays for consistency
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    control_vars = np.asarray(control_vars)
+
+    # Ensure the task is appropriate for the data
+    if y_true.ndim > 1 or y_pred.ndim > 1:
+        raise ValueError(
+            "y_true and y_pred should be 1-dimensional arrays for regression tasks.")
+
+    if control_vars is None or len(control_vars) == 0:
+        # No adjustment needed if there are no control variables
+        return y_true, y_pred
+
+    # Check if control_vars is a single array; if so,
+    # reshape for sklearn compatibility
+    if control_vars.ndim == 1:
+        control_vars = control_vars.reshape(-1, 1)
+
+    # Adjust y_true based on control variables
+    model_true = LinearRegression().fit(control_vars, y_true)
+    residuals_true = y_true - model_true.predict(control_vars)
+
+    # Adjust y_pred based on control variables
+    model_pred = LinearRegression().fit(control_vars, y_pred)
+    residuals_pred = y_pred - model_pred.predict(control_vars)
+
+    return residuals_true, residuals_pred
+
+def adjust_for_control_vars_classification(y_true:ArrayLike, y_pred:ArrayLike, control_vars:DataFrame):
+    """
+    Adjusts `y_true` and `y_pred` in a classification task by stratifying the
+    data based on control variables. It optionally applies logistic regression
+    within each stratum  for adjustment, aiming to refine predictions based 
+    on the influence of control variables.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True class labels. Must be a 1D array of classification targets.
+    y_pred : array-like
+        Predicted class labels, corresponding to `y_true`. Must be of the 
+        same shape as `y_true`.
+    control_vars : pandas.DataFrame
+        DataFrame containing one or more columns that represent control 
+        variables. These variables are used to stratify the data before 
+        applying any adjustment logic.
+
+    Returns
+    -------
+    adjusted_y_true : numpy.ndarray
+        Adjusted array of true class labels, same as input `y_true` 
+        (adjustment process does not alter true labels).
+    adjusted_y_pred : numpy.ndarray
+        Adjusted array of predicted class labels after considering the 
+        stratification by control variables.
+
+    Notes
+    -----
+    This function aims to account for potential confounders or additional
+    information represented by control variables.
+    Logistic regression is utilized within each stratum defined by unique 
+    combinations of control variables to adjust predictions.
+    The essence is to mitigate the influence of control variables on the 
+    prediction outcomes, thereby potentially enhancing the prediction accuracy
+    or fairness across different groups.
+
+    The adjustment is particularly useful in scenarios where control variables
+    significantly influence the target variable, and their effects need to be
+    isolated from the primary predictive modeling process.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import adjust_for_control_vars_classification
+    >>> y_true = [0, 1, 0, 1]
+    >>> y_pred = [0, 0, 1, 1]
+    >>> control_vars = pd.DataFrame({'age': [25, 30, 35, 40], 'gender': [0, 1, 0, 1]})
+    >>> adjusted_y_true, adjusted_y_pred = adjust_for_control_vars_classification(
+    ... y_true, y_pred, control_vars)
+    >>> print(adjusted_y_pred)
+    [0 0 1 1]
+
+    The function does not modify `y_true` but adjusts `y_pred` based on 
+    logistic regression adjustments within each stratum defined by 
+    `control_vars`.
+
+    See Also
+    --------
+    sklearn.metrics.classification_report : Compute precision, recall,
+        F-measure and support for each class.
+    sklearn.preprocessing.LabelEncoder : 
+        Encode target labels with value between 0 and n_classes-1.
+    sklearn.linear_model.LogisticRegression : 
+        Logistic Regression (aka logit, MaxEnt) classifier.
+
+    References
+    ----------
+    .. [2] J. D. Hunter. "Matplotlib: A 2D graphics environment", 
+           Computing in Science & Engineering, vol. 9, no. 3, pp. 90-95, 2007.
+    .. [1] F. Pedregosa et al., "Scikit-learn: Machine Learning in Python",
+           Journal of Machine Learning Research, vol. 12, pp. 2825-2830, 2011.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import LabelEncoder 
+     
+    # first check whether y_true and y_pred are classification data 
+    y_true, y_pred = check_classification_targets(
+        y_true, y_pred, strategy='custom logic')
+    
+    # Ensure input is a DataFrame for easier manipulation
+    data = pd.DataFrame({
+        'y_true': y_true,
+        'y_pred': y_pred
+    })
+    for col in control_vars.columns:
+        data[col] = control_vars[col]
+    
+    # Encode y_true and y_pred if they are not numerical
+    le_true = LabelEncoder().fit(y_true)
+    data['y_true'] = le_true.transform(data['y_true'])
+    
+    if not np.issubdtype(data['y_pred'].dtype, np.number):
+        le_pred = LabelEncoder().fit(y_pred)
+        data['y_pred'] = le_pred.transform(data['y_pred'])
+    
+    # Iterate over each unique combination of control variables (each stratum)
+    adjusted_preds = []
+    for _, group in data.groupby(list(control_vars.columns)):
+        if len(group) > 1:  # Enough data for logistic regression
+            # Apply logistic regression within each stratum
+            lr = LogisticRegression().fit(group[control_vars.columns], group['y_true'])
+            adjusted_pred = lr.predict(group[control_vars.columns])
+            adjusted_preds.extend(adjusted_pred)
+        else:
+            # Not enough data for logistic regression, use original predictions
+            adjusted_preds.extend(group['y_pred'])
+
+    # Convert adjusted predictions back to original class labels
+    adjusted_y_pred = le_true.inverse_transform(adjusted_preds)
+    return np.array(y_true), adjusted_y_pred
+
+def weighted_spearman_rank(
+    y_true, y_pred, sample_weight,
+    return_weighted_rank=False, 
+    epsilon=1e-10 
+    ):
+    """
+    Compute Spearman's rank correlation coefficient with sample weights,
+    offering an extension to the standard Spearman's correlation by incorporating
+    sample weights into the rank calculation. This method is particularly useful
+    for datasets where some observations are more important than others.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True target values.
+    y_pred : array-like
+        Predicted target values. Both `y_true` and `y_pred` must have the same length.
+    sample_weight : array-like
+        Weights for each sample, indicating the importance of each observation
+        in `y_true` and `y_pred`. Must be the same length as `y_true` and `y_pred`.
+    return_weighted_rank : bool, optional
+        If True, returns the weighted ranks of `y_true` and `y_pred` instead of
+        Spearman's rho. Default is False.
+    epsilon : float, optional
+        A small value added to the denominator to avoid division by zero in the
+        computation of Spearman's rho. Default is 1e-10.
+
+    Returns
+    -------
+    float or tuple of ndarray
+        If `return_weighted_rank` is False (default), returns Spearman's rho,
+        considering sample weights. If `return_weighted_rank` is True, returns
+        a tuple containing the weighted ranks of `y_true` and `y_pred`.
+
+    Notes
+    -----
+    The weighted Spearman's rank correlation coefficient is computed as:
+
+    .. math::
+        \\rho = 1 - \\frac{6 \\sum d_i^2 w_i}{\\sum w_i(n^3 - n)}
+
+    where :math:`d_i` is the difference between the weighted ranks of each observation,
+    :math:`w_i` is the weight of each observation, and :math:`n` is the number of observations.
+
+    This function calculates weighted ranks based on the sample weights, adjusting
+    the influence of each data point in the final correlation measure. It is useful
+    in scenarios where certain observations are deemed more critical than others.
+
+    Examples
+    --------
+    >>> from gofast.tools.mathex import weighted_spearman_corr
+    >>> y_true = [1, 2, 3, 4, 5]
+    >>> y_pred = [5, 6, 7, 8, 7]
+    >>> sample_weight = [1, 1, 1, 1, 2]
+    >>> weighted_spearman_corr(y_true, y_pred, sample_weight)
+    0.8208
+
+    References
+    ----------
+    .. [1] Myatt, G.J. (2007). Making Sense of Data, A Practical Guide to 
+           Exploratory Data Analysis and Data Mining. John Wiley & Sons.
+
+    See Also
+    --------
+    scipy.stats.spearmanr : Spearman rank-order correlation coefficient.
+    numpy.cov : Covariance matrix.
+    numpy.var : Variance.
+
+    """
+    # Check and convert inputs to numpy arrays
+    y_true, y_pred, sample_weight = map(np.asarray, [y_true, y_pred, sample_weight])
+
+    if str(epsilon).lower() =='auto': 
+        epsilon = determine_epsilon(y_pred, scale_factor= 1e-10)
+        
+    # Compute weighted ranks
+    def weighted_rank(data, weights):
+        order = np.argsort(data)
+        ranks = np.empty_like(order, dtype=float)
+        cum_weights = np.cumsum(weights[order])
+        total_weight = cum_weights[-1]
+        ranks[order] = cum_weights / total_weight * len(data)
+        return ranks
+    
+    ranks_true = weighted_rank(y_true, sample_weight)
+    ranks_pred = weighted_rank(y_pred, sample_weight)
+    
+    if return_weighted_rank: 
+        return ranks_true, ranks_pred
+    # Compute covariance between the weighted ranks
+    cov = np.cov(ranks_true, ranks_pred, aweights=sample_weight)[0, 1]
+    
+    # Compute standard deviations of the weighted ranks
+    std_true = np.sqrt(np.var(ranks_true, ddof=1, aweights=sample_weight))
+    std_pred = np.sqrt(np.var(ranks_pred, ddof=1, aweights=sample_weight))
+    
+    # Compute Spearman's rho
+    rho = cov / ( (std_true * std_pred) + epsilon) 
+    return rho
+
+def calculate_optimal_bins(y_pred, method='freedman_diaconis', data_range=None):
+    """
+    Calculate the optimal number of bins for histogramming a given set of 
+    predictions, utilizing various heuristics. This function supports the 
+    Freedman-Diaconis rule, Sturges' formula, and the Square-root choice, 
+    allowing users to select the most appropriate method based on their data 
+    distribution and size.
+
+    Parameters
+    ----------
+    y_pred : array-like
+        Predicted probabilities for the positive class. This array should be 
+        one-dimensional.
+    method : str, optional
+        The binning method to use. Options include:
+        - 'freedman_diaconis': Uses the Freedman-Diaconis rule, which is 
+          particularly useful for data with skewed distributions.
+          .. math:: \text{bin width} = 2 \cdot \frac{IQR}{\sqrt[3]{n}}
+        - 'sturges': Uses Sturges' formula, ideal for normal distributions 
+          but may be suboptimal for large datasets or non-normal distributions.
+          .. math:: \text{bins} = \lceil \log_2(n) + 1 \rceil
+        - 'sqrt': Employs the Square-root choice, a simple rule that works well 
+          for small datasets.
+          .. math:: \text{bins} = \lceil \sqrt{n} \rceil
+        Default is 'freedman_diaconis'.
+    data_range : tuple, optional
+        A tuple specifying the range of the data as (min, max). If None, the 
+        minimum and maximum values in `y_pred` are used. Default is None.
+
+    Returns
+    -------
+    int
+        The calculated optimal number of bins.
+
+    Raises
+    ------
+    ValueError
+        If an invalid `method` is specified.
+
+    Examples
+    --------
+    Calculate the optimal number of bins for a dataset of random predictions 
+    using different methods:
+    
+    >>> from gofast.tools.mathex import calculate_optimal_bins
+    >>> y_pred = np.random.rand(100)
+    >>> print(calculate_optimal_bins(y_pred, method='freedman_diaconis'))
+    9
+    >>> print(calculate_optimal_bins(y_pred, method='sturges'))
+    7
+    >>> print(calculate_optimal_bins(y_pred, method='sqrt'))
+    10
+
+    References
+    ----------
+    - Freedman, D. and Diaconis, P. (1981). On the histogram as a density estimator:
+      L2 theory. Zeitschrift für Wahrscheinlichkeitstheorie und verwandte Gebiete, 
+      57(4), 453-476.
+    - Sturges, H. A. (1926). The choice of a class interval. Journal of the American 
+      Statistical Association, 21(153), 65-66.
+    """
+    y_pred = np.asarray(y_pred)
+    
+    if data_range is not None:
+        if not isinstance(data_range, tuple) or len(data_range) != 2:
+            raise ValueError(
+                "data_range must be a tuple of two numeric values (min, max).")
+        if any(not np.isscalar(v) or not np.isreal(v) for v in data_range):
+            raise ValueError("data_range must contain numeric values.")
+        data_min, data_max = data_range
+    else:
+        data_min, data_max = np.min(y_pred), np.max(y_pred)
+    # Handle case where data is uniform
+    if data_min == data_max:
+        return 1
+
+    n = len(y_pred)
+    
+    method = normalize_string(
+        method, target_strs=["freedman_diaconis","sturges","sqrt"], 
+        return_target_only= True, match_method="contains", raise_exception=True,
+        error_msg=("Invalid method specified. Choose among"
+                   " 'freedman_diaconis', 'sturges', 'sqrt'.")
+        )
+    if method == 'freedman_diaconis':
+        iqr = np.subtract(*np.percentile(y_pred, [75, 25]))  # Interquartile range
+        if iqr == 0:  # Handle case where IQR is 0
+            return max(1, n // 2)  # Fallback to avoid division by zero
+        
+        bin_width = 2 * iqr * (n ** (-1/3))
+        optimal_bins = int(np.ceil((data_max - data_min) / bin_width))
+    elif method == 'sturges':
+        optimal_bins = int(np.ceil(np.log2(n) + 1))
+    elif method == 'sqrt':
+        optimal_bins = int(np.ceil(np.sqrt(n)))
+ 
+    return max(1, optimal_bins)  # Ensure at least one bin
+
+def calculate_binary_iv(
+    y_true, 
+    y_pred, 
+    epsilon=1e-15, 
+    method='base', 
+    bins='auto',
+    bins_method='freedman_diaconis', 
+    data_range=None):
+    """
+    Calculate the Information Value (IV) for binary classification problems
+    using a base or binning approach. This function provides flexibility in
+    IV calculation by allowing for simple percentage-based calculations or
+    detailed binning techniques to understand the predictive power across
+    the distribution of predicted probabilities.
+
+    Parameters
+    ----------
+    y_true : array-like
+        True binary labels.
+    y_pred : array-like
+        Predicted probabilities for the positive class.
+    epsilon : float or 'auto', optional
+        A small epsilon value added to probabilities to prevent division
+        by zero in logarithmic calculations. If 'auto', dynamically determines
+        an appropriate epsilon based on `y_pred`. Default is 1e-15.
+    method : str, optional
+        The method for calculating IV. Options are 'base' for a direct approach
+        using the overall percentage of events, and 'binning' for a detailed
+        analysis using bins of predicted probabilities. Default is 'base'.
+    bins : int or 'auto', optional
+        The number of bins to use for the 'binning' method. If 'auto', the
+        optimal number of bins is calculated based on `bins_method`.
+        Default is 'auto'.
+    bins_method : str, optional
+        Method to use for calculating the optimal number of bins when
+        `bins` is 'auto'. Options include 'freedman_diaconis', 'sturges', 
+        and 'sqrt'. Default is 'freedman_diaconis'.
+    data_range : tuple, optional
+        A tuple specifying the range of the data as (min, max) for bin
+        calculation. If None, the range is derived from `y_pred`. Default is None.
+
+    Returns
+    -------
+    float
+        The calculated Information Value (IV).
+
+    Raises
+    ------
+    ValueError
+        If an invalid method is specified.
+
+    Examples
+    --------
+    >>> import numpy as np 
+    >>> from gofast.tools.mathex import calculate_binary_iv
+    >>> y_true = np.array([0, 1, 0, 1, 1])
+    >>> y_pred = np.array([0.1, 0.8, 0.2, 0.7, 0.9])
+    >>> print(calculate_binary_iv(y_true, y_pred, method='base'))
+    1.6094379124341003
+
+    >>> print(calculate_binary_iv(y_true, y_pred, method='binning', bins=3,
+    ...                           bins_method='sturges'))
+    0.6931471805599453
+
+    Notes
+    -----
+    The Information Value (IV) quantifies the predictive power of a feature or
+    model in binary classification, illustrating its ability to distinguish
+    between classes.
+
+    - The 'base' method calculates IV using the overall percentage of events
+      and non-events:
+
+      .. math::
+        IV = \sum ((\% \text{{ of non-events}} - \% \text{{ of events}}) \times
+        \ln\left(\frac{\% \text{{ of non-events}} + \epsilon}
+        {\% \text{{ of events}} + \epsilon}\right))
+
+    - The 'binning' method divides `y_pred` into bins and calculates IV for
+      each bin, summing up the contributions from all bins.
+
+    References
+    ----------
+    - Freedman, D. and Diaconis, P. (1981). "On the histogram as a density estimator:
+      L2 theory." Zeitschrift für Wahrscheinlichkeitstheorie und verwandte Gebiete.
+    - Sturges, H. A. (1926). "The choice of a class interval." Journal of the American
+      Statistical Association.
+      
+    """
+    # Ensure y_true and y_pred are numpy arrays for efficient computation
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    
+    # Validate and process epsilon
+    if isinstance(epsilon, str):
+        if epsilon == 'auto':
+            epsilon = determine_epsilon(y_pred)
+        else:
+            raise ValueError(
+                "Epsilon value 'auto' is acceptable or should be a numeric value.")
+            
+    elif not isinstance(epsilon, (int, float)):
+        raise ValueError("Epsilon must be a numeric value or 'auto'.")
+    else:
+        epsilon = float(epsilon)
+
+    # Validate method parameter
+    msg_meth=copy.deepcopy(method)
+    method = normalize_string(
+        method, target_strs= ['base', 'binning'], match_method='contains', 
+        return_target_only=True, raise_exception=True , error_msg= (
+            f"Invalid method '{msg_meth}'. Use 'base' or 'binning'.")
+        )
+    # Base method for IV calculation
+    if method == 'base':
+        percent_events = y_true.mean()
+        percent_non_events = 1 - percent_events
+        return np.sum((percent_non_events - percent_events) * np.log(
+            (percent_non_events + epsilon) / (percent_events + epsilon)))
+    
+    # Binning method for IV calculation
+    elif method == 'binning':
+        if isinstance (bins, str):
+            if bins=='auto' and bins_method is None: 
+                warnings.warn(
+                    "The 'bins' parameter is set to 'auto', but no 'bins_method'"
+                    " has been specified. Defaulting to the 'freedman_diaconis'"
+                    " method for determining the optimal number of bins.")
+                bins_method="freedman_diaconis" 
+            bins = calculate_optimal_bins(
+                y_pred, method=bins_method, data_range=data_range)
+            
+        elif not isinstance(bins, (int, float)) or bins < 1:
+            raise ValueError("Bins must be 'auto' or a positive integer.")
+            
+        if isinstance ( bins, float): 
+            bins =int (bins )
+    
+        bins_array = np.linspace(0, 1, bins + 1)
+        digitized = np.digitize(y_pred, bins_array) - 1
+        iv = 0
+        
+        for bin_index in range(len(bins_array) - 1):
+            in_bin = digitized == bin_index
+            if not in_bin.any(): # if np.sum(indices) == 0:
+                continue # # Skip empty bins
+            
+            bin_true = y_true[in_bin]
+            percent_events_bin = bin_true.mean()
+            percent_non_events_bin = 1 - percent_events_bin
+            bin_contribution = (percent_non_events_bin - percent_events_bin) * np.log(
+                (percent_non_events_bin + epsilon) / (percent_events_bin + epsilon))
+            iv += bin_contribution if not np.isnan(bin_contribution) else 0
+        
+        return iv
+
+def determine_epsilon(y_pred, base_epsilon=1e-15, scale_factor=1e-5):
+    """
+    Determine an appropriate epsilon value based on the predictions.
+
+    If any predicted value is greater than 0, epsilon is set as a fraction 
+    of the smallest non-zero prediction to avoid division by zero in 
+    logarithmic calculations. Otherwise, a default small epsilon value is used.
+
+    Parameters
+    ----------
+    y_pred : array-like
+        Predicted probabilities or values.
+    base_epsilon : float, optional
+        The minimum allowed epsilon value to ensure it's not too small, 
+        by default 1e-15.
+    scale_factor : float, optional
+        The factor to scale the minimum non-zero prediction by to determine 
+        epsilon, by default 1e-5.
+
+    Returns
+    -------
+    float
+        The determined epsilon value.
+    """
+    if not isinstance (y_pred, np.ndarray): 
+        y_pred = np.asarray(y_pred )
+    # if np.any(y_pred > 0):
+    #     # Find the minimum non-zero predicted probability/value
+    #     min_non_zero_pred = np.min(y_pred[y_pred > 0])
+    #     # Use a fraction of the smallest non-zero prediction
+    #     epsilon = min_non_zero_pred * scale_factor  
+    #     # Ensure epsilon is not too small, applying a lower bound
+    #     epsilon = max(epsilon, base_epsilon)
+    # else:
+    #     # Use the base epsilon if no predictions are greater than 0
+    #     epsilon = base_epsilon
+
+    # return epsilon
+    positive_preds = y_pred[y_pred > 0]
+    if positive_preds.size > 0:
+        min_non_zero_pred = np.min(positive_preds)
+        epsilon = max(min_non_zero_pred * scale_factor, base_epsilon)
+    else:
+        epsilon = base_epsilon
+        
+    return epsilon
 
 def calculate_residuals(
     actual: ArrayLike, 
@@ -151,7 +2277,7 @@ def calculate_residuals(
 
     return residuals
 
-def infer_sankey_columns(data: DataFrame, /, 
+def infer_sankey_columns(data: DataFrame,
   ) -> Tuple[List[str], List[str], List[int]]:
     """
     Infers source, target, and value columns for a Sankey diagram 
@@ -193,7 +2319,7 @@ def infer_sankey_columns(data: DataFrame, /,
 
     # Heuristic: The source is often the first column, the target is the second,
     # and the value is the third or the one with numeric data
-    numeric_cols = data.select_dtypes(include=[float, int]).columns
+    numeric_cols = data.select_dtypes([float, int]).columns
 
     if len(numeric_cols) == 0:
         raise ValueError(
@@ -227,9 +2353,8 @@ def infer_sankey_columns(data: DataFrame, /,
 
     return sources, targets, values
 
-
 def compute_sunburst_data(
-    data: DataFrame, /, 
+    data: DataFrame, 
     hierarchy: Optional[List[str]] = None, 
     value_column: Optional[str] = None
   ) -> List[Dict[str, str]]:
@@ -285,6 +2410,8 @@ def compute_sunburst_data(
         {'name': 'B2', 'value': 1, 'parent': 'B'}
     ]
     """
+    
+    is_frame ( data, df_only =True , raise_exception=True )
     # If hierarchy is not provided, infer it from all columns except the last
     if hierarchy is None:
         hierarchy = data.columns[:-1].tolist()
@@ -319,7 +2446,7 @@ def compute_sunburst_data(
         tuple(x.items()) in seen or seen.add(tuple(x.items())))]
 
 def compute_effort_yield(
-        d: ArrayLike, /, reverse: bool = True
+        d: ArrayLike,  reverse: bool = True
         ) -> Tuple[ArrayLike, np.ndarray]:
     """
     Compute effort and yield values from importance data for use in 
@@ -914,6 +3041,7 @@ def normalize(X, y=None):
     >>> X = np.array([[1, 2], [3, 4], [5, 6]])
     >>> X_normalized = normalize(X)
     """
+    X = ensure_2d(X)
     X_norm = np.linalg.norm(X, axis=1, keepdims=True)
     X_normalized = X / X_norm
 
@@ -923,11 +3051,192 @@ def normalize(X, y=None):
         return X_normalized, y_normalized
 
     return X_normalized
+def moving_average (
+    y:ArrayLike,
+    *, 
+    window_size:int  = 3 , 
+    method:str  ='sma',
+    mode:str  ='same', 
+    alpha: Union [int, float]  =.5 
+)-> ArrayLike: 
+    """ A moving average is  used with time series data to smooth out
+    short-term fluctuations and highlight longer-term trends or cycles.
+    
+    Funtion analyzes data points by creating a series of averages of different
+    subsets of the full data set. 
+    
+    Parameters 
+    ----------
+    y : array_like, shape (N,)
+        the values of the time history of the signal.
+        
+    window_size : int
+        the length of the window. Must be greater than 1 and preferably
+        an odd integer number.Default is ``3``
+        
+    method: str 
+        variant of moving-average. Can be ``sma``, ``cma``, ``wma`` and ``ema`` 
+        for simple, cummulative, weight and exponential moving average. Default 
+        is ``sma``. 
+        
+    mode: str
+        returns the convolution at each point of overlap, with an output shape
+        of (N+M-1,). At the end-points of the convolution, the signals do not 
+        overlap completely, and boundary effects may be seen. Can be ``full``,
+        ``same`` and ``valid``. See :doc:`~np.convole` for more details. Default 
+        is ``same``. 
+        
+    alpha: float, 
+        smoothing factor. Only uses in exponential moving-average. Default is 
+        ``.5``.
+    
+    Returns 
+    --------
+    ya: array like, shape (N,) 
+        Averaged time history of the signal
+    
+    Notes 
+    -------
+    The first element of the moving average is obtained by taking the average 
+    of the initial fixed subset of the number series. Then the subset is
+    modified by "shifting forward"; that is, excluding the first number of the
+    series and including the next value in the subset.
+    
+    Examples
+    --------- 
+    >>> import numpy as np ; import matplotlib.pyplot as plt 
+    >>> from gofast.tools.tools   import moving_average 
+    >>> data = np.random.randn (37) 
+    >>> # add gaussion noise to the data 
+    >>> data = 2 * np.sin( data)  + np.random.normal (0, 1 , len(data))
+    >>> window = 5  # fixed size to 5 
+    >>> sma = moving_average(data, window) 
+    >>> cma = moving_average(data, window, method ='cma' )
+    >>> wma = moving_average(data, window, method ='wma' )
+    >>> ema = moving_average(data, window, method ='ema' , alpha =0.6)
+    >>> x = np.arange(len(data))
+    >>> plt.plot (x, data, 'o', x, sma , 'ok--', x, cma, 'g-.', x, wma, 'b:')
+    >>> plt.legend (['data', 'sma', 'cma', 'wma'])
+    
+    References 
+    ----------
+    .. * [1] https://en.wikipedia.org/wiki/Moving_average
+    .. * [2] https://www.sciencedirect.com/topics/engineering/hanning-window
+    .. * [3] https://stackoverflow.com/questions/12816011/weighted-moving-average-with-numpy-convolve
+    
+    """
+    y = np.array(y)
+    try:
+        window_size = np.abs(_assert_all_types(int(window_size), int))
+    except ValueError:
+        raise ValueError("window_size has to be of type int")
+    if window_size < 1:
+        raise TypeError("window_size size must be a positive odd number")
+    if  window_size > len(y):
+        raise TypeError("window_size is too large for averaging. Window"
+                        f" must be greater than 0 and less than {len(y)}")
+    
+    method =str(method).lower().strip().replace ('-', ' ') 
+    
+    if method in ('simple moving average',
+                  'simple', 'sma'): 
+        method = 'sma' 
+    elif method  in ('cumulative average', 
+                     'cumulative', 'cma'): 
+        method ='cma' 
+    elif method  in ('weighted moving average',
+                     'weight', 'wma'): 
+        method = 'wma'
+    elif method in('exponential moving average',
+                   'exponential', 'ema'):
+        method = 'ema'
+    else : 
+        raise ValueError ("Variant average methods only includes "
+                          f" {smart_format(['sma', 'cma', 'wma', 'ema'], 'or')}")
+    if  1. <= alpha <= 0 : 
+        raise ValueError ('alpha should be less than 1. and greater than 0. ')
+ 
+    if method =='cma': 
+        y = np.cumsum (y) 
+        ya = np.array([ y[ii]/ len(y[:ii +1]) for ii in range(len(y))]) 
+        
+    elif method =='wma': 
+        w = np.cumsum(np.ones(window_size, dtype = float))
+        w /= np.sum(w)
+        ya = np.convolve(y, w[::-1], mode ) #/window_size
+        
+    elif method =='ema': 
+        ya = np.array ([y[0]]) 
+        for ii in range(1, len(y)): 
+            v = y[ii] * alpha + ( 1- alpha ) * ya[-1]
+            ya = np.append(ya, v)
+    else:
+        ya = np.convolve(y , np.ones (window_size), mode ) / window_size 
+            
+    return ya 
 
 
+def count_local_minima(arr,  method='robust', order=1):
+    """
+    Count the number of local minima in a 1D array.
+    
+    Parameters
+    ----------
+    arr : array_like
+        Input array.
+    method : {'base', 'robust'}, optional
+        Method to use for finding local minima. 
+        'base' uses a simple comparison, while 'robust' 
+        uses scipy's argrelextrema function. Default is 'robust'.
+    order : int, optional
+        How many points on each side to use for the comparison 
+        to consider a point as a local minimum (only used with 
+        'robust' method). Default is 1.
+    
+    Returns
+    -------
+    int
+        Number of local minima in the array.
+    
+    Examples
+    --------
+    >>> from gofast.tools.mathex import count_local_minima
+    >>> arr = [1, 3, 2, 4, 1, 0, 2, 1]
+    >>> count_local_minima(arr, method='base')
+    2
+    >>> count_local_minima(arr, method='robust')
+    3
+    
+    Notes
+    -----
+    - The 'base' method compares each element with its immediate 
+      neighbors, which might be less accurate for noisy data.
+    - The 'robust' method uses scipy's argrelextrema function, which 
+      allows for more flexible and accurate detection of local minima 
+      by considering a specified number of neighboring points.
+    """
+    arr= check_y (arr , y_numeric =True, estimator="Array" )
+    method= parameter_validator(
+        "method", target_strs= {"base", "robust"})(method)
+    if method == 'base':
+        local_minima_count = 0
+        # Iterate through the array from the second element 
+        # to the second-to-last element
+        for i in range(1, len(arr) - 1):
+            if arr[i] < arr[i - 1] and arr[i] < arr[i + 1]:
+                local_minima_count += 1
+        return local_minima_count
+    elif method == 'robust':
+        # Find indices of local minima
+        local_minima_indices = argrelextrema(np.array(arr), 
+                                             np.less, 
+                                             order=order)[0]
+        # The number of local minima is the length of the indices array
+        return len(local_minima_indices)
+    
 def get_azimuth (
-    xlon: str | ArrayLike, 
-    ylat: str| ArrayLike, 
+    xlon: Union [str, ArrayLike], 
+    ylat:Union[ str, ArrayLike], 
     *, 
     data: DataFrame =None, 
     utm_zone:str=None, 
@@ -1100,7 +3409,7 @@ def linkage_matrix(
     as_frame =False,
     optimal_ordering=False, 
  )->NDArray: 
-    r""" Compute the distance matrix from the hierachical clustering algorithm
+    r""" Compute the distance matrix from the hierachical clustering algorithm.
     
     Parameters 
     ------------ 
@@ -1292,95 +3601,14 @@ def linkage_matrix(
                                      )
     return row_clusters 
 
-def interpolate2d (
-        arr2d: NDArray[float] , 
-        method:str  = 'slinear', 
-        **kws): 
-    """ Interpolate the data in 2D dimensional array. 
-    
-    If the data contains some missing values. It should be replaced by the 
-    interpolated values. 
-    
-    Parameters 
-    -----------
-    arr2d : np.ndarray, shape  (N, M)
-        2D dimensional data 
-        
-    method: str, default ``linear``
-        Interpolation technique to use. Can be ``nearest``or ``pad``. 
-    
-    kws: dict 
-        Additional keywords. Refer to :func:`~.interpolate1d`. 
-        
-    Returns 
-    -------
-    arr2d:  np.ndarray, shape  (N, M)
-        2D dimensional data interpolated 
-    
-    Examples 
-    ---------
-    >>> from gofast.methods.em import EM 
-    >>> from gofast.tools.mathex  import interpolate2d 
-    >>> # make 2d matrix of frequency
-    >>> emObj = EM().fit(r'data/edis')
-    >>> freq2d = emObj.make2d (out = 'freq')
-    >>> freq2d_i = interpolate2d(freq2d ) 
-    >>> freq2d.shape 
-    ...(55, 3)
-    >>> freq2d 
-    ... array([[7.00000e+04, 7.00000e+04, 7.00000e+04],
-           [5.88000e+04, 5.88000e+04, 5.88000e+04],
-           ...
-            [6.87500e+00, 6.87500e+00, 6.87500e+00],
-            [        nan,         nan, 5.62500e+00]])
-    >>> freq2d_i
-    ... array([[7.000000e+04, 7.000000e+04, 7.000000e+04],
-           [5.880000e+04, 5.880000e+04, 5.880000e+04],
-           ...
-           [6.875000e+00, 6.875000e+00, 6.875000e+00],
-           [5.625000e+00, 5.625000e+00, 5.625000e+00]])
-    
-    References 
-    ----------
-    
-    https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.interpolate.html
-    https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.interpolate.interp2d.html        
-        
-    """ 
-    arr2d = np.array(arr2d)
-    
-    if len(arr2d.shape) ==1: 
-        arr2d = arr2d[:, None] # put on 
-    if arr2d.shape[0] ==1: 
-        arr2d = reshape (arr2d, axis=0)
-    
-    if not hasattr (arr2d , '__complex__'): 
-        arr2d = check_array(
-            arr2d, 
-            to_frame = False, 
-            input_name ="arr2d",
-            force_all_finite="allow-nan" ,
-            dtype =arr2d.dtype, 
-            )
-    arr2d  = np.hstack ([ 
-        reshape (interpolate1d(arr2d[:, ii], 
-                kind=method, 
-                method ='pd', 
-                 **kws), 
-                 axis=0)
-             for ii in  range (arr2d.shape[1])]
-        )
-    return arr2d 
-
-
 @AppendDocReferences(refglossary.__doc__)
 def scalePosition(
-        ydata: ArrayLike | _SP | Series | DataFrame ,
-        xdata: ArrayLike| Series = None, 
-        func : Optional [_F] = None ,
-        c_order: Optional[int|str] = 0,
-        show: bool =False, 
-        **kws): 
+        ydata: Union[ArrayLike, _SP, Series, DataFrame],
+        xdata: Union[ArrayLike, Series] = None, 
+        func: Optional[_F] = None,
+        c_order: Optional[Union[int, str]] = 0,
+        show: bool = False, 
+        **kws):
     """ Correct data location or position and return new corrected location 
     
     Parameters 
@@ -1613,185 +3841,6 @@ def _manage_colors (c, default = ['ok', 'ob-', 'r-']):
     return c [:3] # return 3colors 
      
 
-@AppendDocReferences(refglossary.__doc__)
-def plot_ (
-    *args : List [Union [str, ArrayLike, ...]],
-    fig_size: Tuple[int] = None,
-    raw : bool = False, 
-    style : str = 'seaborn',   
-    dtype: str  ='erp',
-    kind: Optional[str] = None , 
-    fig_title_kws: dict=None, 
-    fbtw:bool=False, 
-    fig=None, 
-    ax=None, 
-    **kws
-    ) -> None : 
-    """ Quick visualization for fitting model, |ERP| and |VES| curves.
-    
-    :param x: array-like - array of data for x-axis representation 
-    :param y: array-like - array of data for plot y-axis  representation
-    :param fig_size: tuple - Matplotlib (MPL) figure size; should be a tuple 
-         value of integers e.g. `figsize =(10, 5)`.
-    :param raw: bool- Originally the `plot_` function is intended for the 
-        fitting |ERP| model i.e. the correct value of |ERP| data. However, 
-        when the `raw` is set to ``True``, it plots the both curves: The 
-        fitting model as well as the uncorrected model. So both curves are 
-        overlaining or supperposed.
-    :param style: str - Pyplot style. Default is ``seaborn``
-    :param dtype: str - Kind of data provided. Can be |ERP| data or |VES| data. 
-        When the |ERP| data are provided, the common plot is sufficient to 
-        visualize all the data insight i.e. the default value of `kind` is kept 
-        to ``None``. However, when the data collected is |VES| data, the 
-        convenient plot for visualization is the ``loglog`` for parameter
-        `kind``  while the `dtype` can be set to `VES` to specify the labels 
-        into the x-axis. The default value of `dtype` is ``erp`` for common 
-        visualization. 
-    :param kind:  str - Use to specify the kind of data provided. See the 
-        explanation of `dtype` parameters. By default `kind` is set to ``None``
-        i.e. its keep the normal plots. It can be ``loglog``, ``semilogx`` and 
-        ``semilogy``.
-        
-    :param fbtw: bool, default=False, 
-        Mostly used for |VES| data. If ``True``, filled the computed 
-        fractured zone using the parameters computed from 
-        :func:`~.gofast.tools.mathex .ohmicArea`. 
-    :param fig_title_kws: dict, 
-        Additional keywords argument passed in dictionnary to customize 
-        the figure title. 
-    :param fig: Matplotlib.pyplot.figure
-        add plot on the same figure. 
-        
-    :param kws: dict - Additional `Matplotlib plot`_ keyword arguments. To cus-
-        tomize the plot, one can provide a dictionnary of MPL keyword 
-        additional arguments like the example below.
-    
-    :Example: 
-        >>> import numpy as np 
-        >>> from gofast.tools.mathex  import plot_ 
-        >>> x, y = np.arange(0 , 60, 10) ,np.abs( np.random.randn (6)) 
-        >>> KWS = dict (xlabel ='Stations positions', ylabel= 'resistivity(ohm.m)', 
-                    rlabel = 'raw cuve', rotate = 45 ) 
-        >>> plot_(x, y, '-ok', raw = True , style = 'seaborn-whitegrid', 
-                  figsize = (7, 7) ,**KWS )
-    
-    """
-
-    plt.style.use(style)
-    # retrieve all the aggregated data from keywords arguments
-    if (rlabel := kws.get('rlabel')) is not None : 
-        del kws['rlabel']
-    if (xlabel := kws.get('xlabel')) is not None : 
-        del kws['xlabel']
-    if (ylabel := kws.get('ylabel')) is not None : 
-        del kws['ylabel']
-    if (rotate:= kws.get ('rotate')) is not None: 
-        del kws ['rotate']
-    if (leg:= kws.get ('leg')) is not None: 
-        del kws ['leg']
-    if (show_grid:= kws.get ('show_grid')) is not None: 
-        del kws ['show_grid']
-    if (title:= kws.get ('title')) is not None: 
-        del kws ['title']
-    x , y, *args = args 
-    
-    if ( fig is None 
-        or ax is None
-        ): 
-        fig, ax = plt.subplots(1,1, figsize =fig_size)
-        # fig = plt.figure(1, figsize =fig_size)
-    
-    ax.plot (x, y,*args, 
-              **kws)
-    if raw: 
-        kind = kind.lower(
-            ) if isinstance(kind, str) else kind 
-        if kind =='semilogx': 
-            ax.semilogx (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-        elif kind =='semilogy': 
-            ax.semilogy (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-        elif kind =='loglog': 
-            ax.loglog (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-        else: 
-            ax.plot (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-            
-        if fbtw and dtype=='ves': 
-            # remove colors 
-            args = [ag for ag in args if not isinstance (ag, str)] 
-            if len(args ) <4 : 
-                raise TypeError ("'Fill_between' expects four arguments:"
-                                " (x0, y0) for fitting plot and (x1, y1)"
-                                " for ohmic area. Got {len(args)}")
-            xf, yf , xo, yo,*_ = args  
-            # find the index position in xf 
-            ixp = list ( find_close_position (xf, xo ) ) 
-            ax.fill_between(xo, yf[ixp], y2=yo  )
-            
-    dtype = dtype.lower() if isinstance(dtype, str) else dtype
-    
-    if dtype is None:
-        dtype ='erp'  
-    if dtype not in ('erp', 'ves'): kind ='erp' 
-    
-    if dtype =='erp':
-        ax.set_xticks (x,
-                    labels = ['S{:02}'.format(int(i)) for i in x ],
-                    rotation = 0. if rotate is None else rotate 
-                    )
-    elif dtype =='ves': 
-        ax.set_xticks (x,
-                    rotation = 0. if rotate is None else rotate 
-                    )
-        
-    ax.set_xlabel ('AB/2 (m)' if dtype=='ves' else "Stations"
-                ) if xlabel is  None  else plt.xlabel (xlabel)
-    ax.set_ylabel ('Resistivity (Ω.m)'
-                ) if ylabel is None else plt.ylabel (ylabel)
-    
-    
-    t0= {'erp': 'Plot Electrical Resistivity Profiling', 
-         'sfi': 'Pseudo-fracturing index', 
-         'ves': 'Vertical Electrical Sounding'
-         }
-
-    fig_title_kws = fig_title_kws or dict (
-            t = t0.get( dtype) or  title, 
-            style ='italic', 
-            bbox =dict(boxstyle='round',facecolor ='lightgrey'))
-        
-    if len(x) >= 20: 
-        for kk, label in enumerate ( ax.xaxis.get_ticklabels()) :
-            if kk% 10 ==0: 
-               label.set_visible(True) 
-            else: label.set_visible(False) 
-            
- 
-    if show_grid is not None: 
-        # plt.minorticks_on()
-        ax.grid (visible =True, which='both')
-    plt.tight_layout()
-    fig.suptitle(**fig_title_kws)
-    plt.legend (leg, loc ='best') if leg  else plt.legend ()
-    plt.show ()
-   
-def quickplot (arr: ArrayLike | List[float], dl:float  =10)-> None: 
-    """Quick plot to see the anomaly"""
-    
-    plt.plot(np.arange(0, len(arr) * dl, dl), arr , ls ='-', c='k')
-    plt.show() 
- 
 
 def convert_distance_to_m(
         value:_T ,
@@ -1844,641 +3893,6 @@ def get_station_number (
 #FR1: #9EB3DD # (158, 179, 221)
 #FR2: #3B70F2 # (59, 112, 242) #repl rgb(52, 54, 99)
 #FR3: #0A4CEE # (10, 76, 238)
-
-def scale_y(
-        y: ArrayLike , 
-        x: ArrayLike =None, 
-        deg: int = None,  
-        func:_F =None
-        )-> Tuple[ArrayLike, ArrayLike, _F]: 
-    """ Scaling value using a fitting curve. 
-    
-    Create polyfit function from a specifc data points `x` to correct `y` 
-    values.  
-    
-    :param y: array-like of y-axis. Is the array of value to be scaled. 
-    
-    :param x: array-like of x-axis. If `x` is given, it should be the same 
-        length as `y`, otherwise and error will occurs. Default is ``None``. 
-    
-    :param func: callable - The model function, ``f(x, ...)``. It must take 
-        the independent variable as the first argument and the parameters
-        to fit as separate remaining arguments.  `func` can be a ``linear``
-        function i.e  for ``f(x)= ax +b`` where `a` is slope and `b` is the 
-        intercept value. It is recommended according to the `y` value 
-        distribution to set up  a custom function for better fitting. If `func`
-        is given, the `deg` is not needed.   
-        
-    :param deg: polynomial degree. If  value is ``None``, it should  be 
-        computed using the length of extrema (local and/or global) values.
- 
-    :returns: 
-        - y: array scaled - projected sample values got from `f`.
-        - x: new x-axis - new axis  `x_new` generated from the samples.
-        - linear of polynomial function `f` 
-        
-    :references: 
-        Wikipedia, Curve fitting, https://en.wikipedia.org/wiki/Curve_fitting
-        Wikipedia, Polynomial interpolation, https://en.wikipedia.org/wiki/Polynomial_interpolation
-    :Example: 
-        >>> import numpy as np 
-        >>> import matplotlib.pyplot as plt 
-        >>> from gofast.exmath import scale_values 
-        >>> rdn = np.random.RandomState(42) 
-        >>> x0 =10 * rdn.rand(50)
-        >>> y = 2 * x0  +  rnd.randn(50) -1
-        >>> plt.scatter(x0, y)
-        >>> yc, x , f = scale_values(y) 
-        >>> plt.plot(x, y, x, yc) 
-        
-    """   
-    y = check_y( y )
-    
-    if str(func).lower() != 'none': 
-        if not hasattr(func, '__call__') or not inspect.isfunction (func): 
-            raise TypeError(
-                f'`func` argument is a callable not {type(func).__name__!r}')
-
-    # get the number of local minimum to approximate degree. 
-    minl, = argrelextrema(y, np.less) 
-    # get the number of degrees
-    degree = len(minl) + 1
-    if x is None: 
-        x = np.arange(len(y)) # np.linspace(0, 4, len(y))
-        
-    x= check_y (x , input_name="x") 
-    
-    if len(x) != len(y): 
-        raise ValueError(" `x` and `y` arrays must have the same length."
-                        f"'{len(x)}' and '{len(y)}' are given.")
-        
-    coeff = np.polyfit(x, y, int(deg) if deg is not None else degree)
-    f = np.poly1d(coeff) if func is  None else func 
-    yc = f (x ) # corrected value of y 
-
-    return  yc, x ,  f  
-
-def smooth1d(
-    ar, /, 
-    drop_outliers:bool=True, 
-    ma:bool=True, 
-    absolute:bool=False,
-    interpolate:bool=False, 
-    view:bool=False , 
-    x: ArrayLike=None, 
-    xlabel:str =None, 
-    ylabel:str =None, 
-    fig_size:tuple = ( 10, 5) 
-    )-> ArrayLike[float]: 
-    """ Smooth one-dimensional array. 
-    
-    Parameters 
-    -----------
-    ar: ArrayLike 1d 
-       Array of one-dimensional 
-       
-    drop_outliers: bool, default=True 
-       Remove the outliers in the data before smoothing 
-       
-    ma: bool, default=True, 
-       Use the moving average for smoothing array value. This seems more 
-       realistic.
-       
-    interpolate: bool, default=False 
-       Interpolate value to fit the original data size after NaN filling. 
-       
-       .. versionadded:: 0.2.8 
-       
-    absolute: bool, default=False, 
-       keep postive the extrapolated scaled values. Indeed, when scaling data, 
-       negative value can be appear due to the polyfit function. to absolute 
-       this value, set ``absolute=True``. Note that converting to values to 
-       positive must be considered as the last option when values in the 
-       array must be positive.
-       
-    view: bool, default =False 
-       Display curves 
-    x: ArrayLike, optional 
-       Abscissa array for visualization. If given, it must be consistent 
-       with the given array `ar`. Raises error otherwise. 
-    xlabel: str, optional 
-       Label of x 
-    ylabel:str, optional 
-       label of y  
-    fig_size: tuple , default=(10, 5)
-       Matplotlib figure size
-       
-    Returns 
-    --------
-    yc: ArrayLike 
-       Smoothed array value. 
-       
-    Examples 
-    ---------
-    >>> import numpy as np 
-    >>> from gofast.tools.mathex  import smooth1d 
-    >>> # add Guassian Noise 
-    >>> np.random.seed (42)
-    >>> ar = np.random.randn (20 ) * 20 + np.random.normal ( 20 )
-    >>> ar [:7 ]
-    array([6.42891445e+00, 3.75072493e-02, 1.82905357e+01, 2.92957265e+01,
-           6.20589038e+01, 2.26399535e+01, 1.12596434e+01])
-    >>> arc = smooth1d (ar, view =True , ma =False )
-    >>> arc [:7 ]
-    array([12.08603102, 15.29819907, 18.017749  , 20.27968322, 22.11900412,
-           23.5707141 , 24.66981557])
-    >>> arc = smooth1d (ar, view =True )# ma=True by default 
-    array([ 5.0071604 ,  5.90839339,  9.6264018 , 13.94679804, 17.67369252,
-           20.34922943, 22.00836725])
-    """
-    # convert data into an iterable object 
-    ar = np.array(
-        is_iterable(ar, exclude_string = True , transform =True )) 
-    
-    if not _is_arraylike_1d(ar): 
-        raise TypeError("Expect one-dimensional array. Use `gofast.smoothing`"
-                        " for handling two-dimensional array.")
-    if not _is_numeric_dtype(ar): 
-        raise ValueError (f"{ar.dtype.name!r} is not allowed. Expect a numeric"
-                          " array")
-        
-    arr = ar.copy() 
-    if drop_outliers: 
-        arr = remove_outliers( 
-            arr, fill_value = np.nan , interpolate = interpolate )
-    # Nan is not allow so fill NaN if exists in array 
-    # is arraylike 1d 
-    if not interpolate:
-        # fill NaN 
-        arr = reshape ( fillNaN( arr , method ='both') ) 
-    if ma: 
-        arr = moving_average(arr, method ='sma')
-    # if extrapolation give negative  values
-    # whether to keep as it was or convert to positive values. 
-    # note that converting to positive values is 
-    arr, *_  = scale_y ( arr ) 
-    # if extrapolation gives negative values
-    # convert to positive values or keep it intact. 
-    # note that converting to positive values is 
-    # can be used as the last option when array 
-    # data must be positive.
-    if absolute: 
-        arr = np.abs (arr )
-    if view: 
-        x = np.arange ( len(ar )) if x is None else np.array (x )
-
-        check_consistency_size( x, ar )
-            
-        fig,  ax = plt.subplots (1, 1, figsize = fig_size)
-        ax.plot (x, 
-                 ar , 
-                 'ok-', 
-                 label ='raw curve'
-                 )
-        ax.plot (x, 
-                 arr, 
-                 c='#0A4CEE',
-                 marker = 'o', 
-                 label ='smooth curve'
-                 ) 
-        
-        ax.legend ( ) 
-        ax.set_xlabel (xlabel or '')
-        ax.set_ylabel ( ylabel or '') 
-        
-    return arr 
-
-def smoothing (
-    ar, /, 
-    drop_outliers = True ,
-    ma=True,
-    absolute =False,
-    interpolate=False, 
-    axis = 0, 
-    view = False, 
-    fig_size =(7, 7), 
-    xlabel =None, 
-    ylabel =None , 
-    cmap ='binary'
-    ): 
-    """ Smooth data along axis. 
-    
-    Parameters 
-    -----------
-    ar: ArrayLike 1d or 2d 
-       One dimensional or two dimensional array. 
-       
-    drop_outliers: bool, default=True 
-       Remove the outliers in the data before smoothing along the given axis 
-       
-    ma: bool, default=True, 
-       Use the moving average for smoothing array value along axis. This seems 
-       more realistic rather than using only the scaling method. 
-       
-    absolute: bool, default=False, 
-       keep positive the extrapolated scaled values. Indeed, when scaling data, 
-       negative value can be appear due to the polyfit function. to absolute 
-       this value, set ``absolute=True``. Note that converting to values to 
-       positive must be considered as the last option when values in the 
-       array must be positive.
-       
-    axis: int, default=0 
-       Axis along with the data must be smoothed. The default is the along  
-       the row. 
-       
-    view: bool, default =False 
-       Visualize the two dimensional raw and smoothing grid. 
-       
-    xlabel: str, optional 
-       Label of x 
-       
-    ylabel:str, optional 
-    
-       label of y  
-    fig_size: tuple , default=(7, 5)
-       Matplotlib figure size 
-       
-    cmap: str, default='binary'
-       Matplotlib.colormap to manage the `view` color 
-      
-    Return 
-    --------
-    arr0: ArrayLike 
-       Smoothed array value. 
-    
-    Examples 
-    ---------
-    >>> import numpy as np 
-    >>> from gofast.tools.mathex  import smoothing
-    >>> # add Guassian Noises 
-    >>> np.random.seed (42)
-    >>> ar = np.random.randn (20, 7 ) * 20 + np.random.normal ( 20, 7 )
-    >>> ar [:3, :3 ]
-    array([[ 31.5265026 ,  18.82693352,  34.5459903 ],
-           [ 36.94091413,  12.20273182,  32.44342041],
-           [-12.90613711,  10.34646896,   1.33559714]])
-    >>> arc = smoothing (ar, view =True , ma =False )
-    >>> arc [:3, :3 ]
-    array([[32.20356863, 17.18624398, 41.22258603],
-           [33.46353806, 15.56839464, 19.20963317],
-           [23.22466498, 13.8985316 ,  5.04748584]])
-    >>> arcma = smoothing (ar, view =True )# ma=True by default
-    >>> arcma [:3, :3 ]
-    array([[23.96547827,  8.48064226, 31.81490918],
-           [26.21374675, 13.33233065, 12.29345026],
-           [22.60143346, 16.77242118,  2.07931194]])
-    >>> arcma_1 = smoothing (ar, view =True, axis =1 )
-    >>> arcma_1 [:3, :3 ]
-    array([[18.74017857, 26.91532187, 32.02914421],
-           [18.4056216 , 21.81293014, 21.98535213],
-           [-1.44359989,  3.49228057,  7.51734762]])
-    """
-    ar = np.array ( 
-        is_iterable(ar, exclude_string = True , transform =True )
-        ) 
-    if ( 
-            str (axis).lower().find('1')>=0 
-            or str(axis).lower().find('column')>=0
-            ): 
-        axis = 1 
-    else : axis =0 
-    
-    if _is_arraylike_1d(ar): 
-        ar = reshape ( ar, axis = 0 ) 
-    # make a copy
-    arr = ar.copy() 
-    along_axis = arr.shape [1] if axis == 0 else len(ar) 
-    arr0 = np.zeros_like (arr)
-    for ix in range (along_axis): 
-        value = arr [:, ix ] if axis ==0 else arr[ix , :]
-        yc = smooth1d(value, drop_outliers = drop_outliers , 
-                      ma= ma, view =False , absolute =absolute , 
-                      interpolate= interpolate, 
-                      ) 
-        if axis ==0: 
-            arr0[:, ix ] = yc 
-        else : arr0[ix, :] = yc 
-        
-    if view: 
-        fig, ax  = plt.subplots (nrows = 1, ncols = 2 , sharey= True,
-                                 figsize = fig_size )
-        ax[0].imshow(arr ,interpolation='nearest', label ='Raw Grid', 
-                     cmap = cmap )
-        ax[1].imshow (arr0, interpolation ='nearest', label = 'Smooth Grid', 
-                      cmap =cmap  )
-        
-        ax[0].set_title ('Raw Grid') 
-        ax[0].set_xlabel (xlabel or '')
-        ax[0].set_ylabel ( ylabel or '')
-        ax[1].set_title ('Smooth Grid') 
-        ax[1].set_xlabel (xlabel or '')
-        ax[1].set_ylabel ( ylabel or '')
-        plt.legend
-        plt.show () 
-        
-    if 1 in ar.shape: 
-        arr0 = reshape (arr0 )
-        
-    return arr0 
-    
-  
-def interpolate1d (
-        arr:ArrayLike[DType[_T]], 
-        kind:str = 'slinear', 
-        method:str=None, 
-        order:Optional[int] = None, 
-        fill_value:str ='extrapolate',
-        limit:Tuple[float] =None, 
-        **kws
-    )-> ArrayLike[DType[_T]]:
-    """ Interpolate array containing invalid values `NaN`
-    
-    Usefull function to interpolate the missing frequency values in the 
-    tensor components. 
-    
-    Parameters 
-    ----------
-    arr: array_like 
-        Array to interpolate containg invalid values. The invalid value here 
-        is `NaN`. 
-        
-    kind: str or int, optional
-        Specifies the kind of interpolation as a string or as an integer 
-        specifying the order of the spline interpolator to use. The string 
-        has to be one of ``linear``, ``nearest``, ``nearest-up``, ``zero``, 
-        ``slinear``,``quadratic``, ``cubic``, ``previous``, or ``next``. 
-        ``zero``, ``slinear``, ``quadratic``and ``cubic`` refer to a spline 
-        interpolation of zeroth, first, second or third order; ``previous`` 
-        and ``next`` simply return the previous or next value of the point; 
-        ``nearest-up`` and ``nearest`` differ when interpolating half-integers 
-        (e.g. 0.5, 1.5) in that ``nearest-up`` rounds up and ``nearest`` rounds 
-        down. If `method` param is set to ``pd`` which refers to pd.interpolate 
-        method , `kind` can be set to ``polynomial`` or ``pad`` interpolation. 
-        Note that the polynomial requires you to specify an `order` while 
-        ``pad`` requires to specify the `limit`. Default is ``slinear``.
-        
-    method: str, optional, default='mean' 
-        Method of interpolation. Can be ``base`` for `scipy.interpolate.interp1d`
-        ``mean`` or ``bff`` for scaling methods and ``pd``for pandas interpolation 
-        methods. Note that the first method is fast and efficient when the number 
-        of NaN in the array if relatively few. It is less accurate to use the 
-        `base` interpolation when the data is composed of many missing values.
-        Alternatively, the scaled method(the  second one) is proposed to be the 
-        alternative way more efficient. Indeed, when ``mean`` argument is set, 
-        function replaces the NaN values by the nonzeros in the raw array and 
-        then uses the mean to fit the data. The result of fitting creates a smooth 
-        curve where the index of each NaN in the raw array is replaced by its 
-        corresponding values in the fit results. The same approach is used for
-        ``bff`` method. Conversely, rather than averaging the nonzeros values, 
-        it uses the backward and forward strategy  to fill the NaN before scaling.
-        ``mean`` and ``bff`` are more efficient when the data are composed of 
-        lot of missing values. When the interpolation `method` is set to `pd`, 
-        function uses the pandas interpolation but ended the interpolation with 
-        forward/backward NaN filling since the interpolation with pandas does
-        not deal with all NaN at the begining or at the end of the array. Default 
-        is ``base``.
-        
-    fill_value: array-like or (array-like, array_like) or ``extrapolate``, optional
-        If a ndarray (or float), this value will be used to fill in for requested
-        points outside of the data range. If not provided, then the default is
-        NaN. The array-like must broadcast properly to the dimensions of the 
-        non-interpolation axes.
-        If a two-element tuple, then the first element is used as a fill value
-        for x_new < x[0] and the second element is used for x_new > x[-1]. 
-        Anything that is not a 2-element tuple (e.g., list or ndarray,
-        regardless of shape) is taken to be a single array-like argument meant 
-        to be used for both bounds as below, above = fill_value, fill_value.
-        Using a two-element tuple or ndarray requires bounds_error=False.
-        Default is ``extrapolate``. 
-        
-    kws: dict 
-        Additional keyword arguments from :class:`spi.interp1d`. 
-    
-    Returns 
-    -------
-    array like - New interpoolated array. `NaN` values are interpolated. 
-    
-    Notes 
-    ----- 
-    When interpolated thoughout the complete frequencies  i.e all the frequency 
-    values using the ``base`` method, the missing data in `arr`  can be out of 
-    the `arr` range. So, for consistency and keep all values into the range of 
-    frequency, the better idea is to set the param `fill_value` in kws argument
-    of ``spi.interp1d`` to `extrapolate`. This will avoid an error to raise when 
-    the value to  interpolated is extra-bound of `arr`. 
-    
-    
-    References 
-    ----------
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.interp1d.html
-    https://www.askpython.com/python/examples/interpolation-to-fill-missing-entries
-    
-    Examples 
-    --------
-    >>> import numpy as np 
-    >>> import matplotlib.pyplot as plt 
-    >>> from gofast.tools.mathex   import interpolate1d,
-    >>> z = np.random.randn(17) *10 # assume 17 freq for 17 values of tensor Z 
-    >>> z [[7, 10, 16]] =np.nan # replace some indexes by NaN values 
-    >>> zit = interpolate1d (z, kind ='linear')
-    >>> z 
-    ... array([ -1.97732415, -16.5883156 ,   8.44484348,   0.24032979,
-              8.30863276,   4.76437029, -15.45780568,          nan,
-             -4.11301794, -10.94003412,          nan,   9.22228383,
-            -15.40298253,  -7.24575491,  -7.15149205, -20.9592011 ,
-                     nan]),
-    >>> zn 
-    ...array([ -1.97732415, -16.5883156 ,   8.44484348,   0.24032979,
-             8.30863276,   4.76437029, -15.45780568,  -4.11301794,
-           -10.94003412,   9.22228383, -15.40298253,  -7.24575491,
-            -7.15149205, -20.9592011 , -34.76691014, -48.57461918,
-           -62.38232823])
-    >>> zmean = interpolate1d (z,  method ='mean')
-    >>> zbff = interpolate1d (z, method ='bff')
-    >>> zpd = interpolate1d (z,  method ='pd')
-    >>> plt.plot( np.arange (len(z)),  zit, 'v--', 
-              np.arange (len(z)), zmean, 'ok-',
-              np.arange (len(z)), zbff, '^g:',
-              np.arange (len(z)), zpd,'<b:', 
-              np.arange (len(z)), z,'o', 
-              )
-    >>> plt.legend(['interp1d', 'mean strategy', 'bff strategy',
-                    'pandas strategy', 'data'], loc='best')
-    
-    """
-    method = method or 'mean'; method =str(method).strip().lower() 
-    if method in ('pandas', 'pd', 'series', 'dataframe','df'): 
-        method = 'pd' 
-    elif method in ('interp1d', 'scipy', 'base', 'simpler', 'i1d'): 
-        method ='base' 
-    
-    if not hasattr (arr, '__complex__'): 
-        
-        arr = check_y(arr, allow_nan= True, to_frame= True ) 
-    # check whether there is nan and masked invalid 
-    # and take only the valid values 
-    t_arr = arr.copy() 
-    
-    if method =='base':
-        mask = ~np.ma.masked_invalid(arr).mask  
-        arr = arr[mask] # keep the valid values
-        f = spi.interp1d( x= np.arange(len(arr)), y= arr, kind =kind, 
-                         fill_value =fill_value, **kws) 
-        arr_new = f(np.arange(len(t_arr)))
-        
-    if method in ('mean', 'bff'): 
-        arr_new = arr.copy()
-        
-        if method =='mean': 
-            # use the mean of the valid value
-            # and fill the nan value
-            mean = t_arr[~np.isnan(t_arr)].mean()  
-            t_arr[np.isnan(t_arr)]= mean  
-            
-        if method =='bff':
-            # fill NaN values back and forward.
-            t_arr = fillNaN(t_arr, method = method)
-            t_arr= reshape(t_arr)
-            
-        yc, *_= scale_y (t_arr)
-        # replace the at NaN positions value in  t_arr 
-        # with their corresponding scaled values 
-        arr_new [np.isnan(arr_new)]= yc[np.isnan(arr_new)]
-        
-    if method =='pd': 
-        t_arr= pd.Series (t_arr, dtype = t_arr.dtype )
-        t_arr = np.array(t_arr.interpolate(
-            method =kind, order=order, limit = limit ))
-        arr_new = reshape(fillNaN(t_arr, method= 'bff')) # for consistency 
-        
-    return arr_new 
-   
-
-def moving_average (
-    y:ArrayLike[DType[_T]],
-    *, 
-    window_size:int  = 3 , 
-    method:str  ='sma',
-    mode:str  ='same', 
-    alpha: int  =.5 
-)-> ArrayLike[DType[_T]]: 
-    """ A moving average is  used with time series data to smooth out
-    short-term fluctuations and highlight longer-term trends or cycles.
-    
-    Funtion analyzes data points by creating a series of averages of different
-    subsets of the full data set. 
-    
-    Parameters 
-    ----------
-    y : array_like, shape (N,)
-        the values of the time history of the signal.
-        
-    window_size : int
-        the length of the window. Must be greater than 1 and preferably
-        an odd integer number.Default is ``3``
-        
-    method: str 
-        variant of moving-average. Can be ``sma``, ``cma``, ``wma`` and ``ema`` 
-        for simple, cummulative, weight and exponential moving average. Default 
-        is ``sma``. 
-        
-    mode: str
-        returns the convolution at each point of overlap, with an output shape
-        of (N+M-1,). At the end-points of the convolution, the signals do not 
-        overlap completely, and boundary effects may be seen. Can be ``full``,
-        ``same`` and ``valid``. See :doc:`~np.convole` for more details. Default 
-        is ``same``. 
-        
-    alpha: float, 
-        smoothing factor. Only uses in exponential moving-average. Default is 
-        ``.5``.
-    
-    Returns 
-    --------
-    ya: array like, shape (N,) 
-        Averaged time history of the signal
-    
-    Notes 
-    -------
-    The first element of the moving average is obtained by taking the average 
-    of the initial fixed subset of the number series. Then the subset is
-    modified by "shifting forward"; that is, excluding the first number of the
-    series and including the next value in the subset.
-    
-    Examples
-    --------- 
-    >>> import numpy as np ; import matplotlib.pyplot as plt 
-    >>> from gofast.tools.mathex   import moving_average 
-    >>> data = np.random.randn (37) 
-    >>> # add gaussion noise to the data 
-    >>> data = 2 * np.sin( data)  + np.random.normal (0, 1 , len(data))
-    >>> window = 5  # fixed size to 5 
-    >>> sma = moving_average(data, window) 
-    >>> cma = moving_average(data, window, method ='cma' )
-    >>> wma = moving_average(data, window, method ='wma' )
-    >>> ema = moving_average(data, window, method ='ema' , alpha =0.6)
-    >>> x = np.arange(len(data))
-    >>> plt.plot (x, data, 'o', x, sma , 'ok--', x, cma, 'g-.', x, wma, 'b:')
-    >>> plt.legend (['data', 'sma', 'cma', 'wma'])
-    
-    References 
-    ----------
-    .. * [1] https://en.wikipedia.org/wiki/Moving_average
-    .. * [2] https://www.sciencedirect.com/topics/engineering/hanning-window
-    .. * [3] https://stackoverflow.com/questions/12816011/weighted-moving-average-with-numpy-convolve
-    
-    """
-    y = np.array(y)
-    try:
-        window_size = np.abs(_assert_all_types(int(window_size), int))
-    except ValueError:
-        raise ValueError("window_size has to be of type int")
-    if window_size < 1:
-        raise TypeError("window_size size must be a positive odd number")
-    if  window_size > len(y):
-        raise TypeError("window_size is too large for averaging. Window"
-                        f" must be greater than 0 and less than {len(y)}")
-    
-    method =str(method).lower().strip().replace ('-', ' ') 
-    
-    if method in ('simple moving average',
-                  'simple', 'sma'): 
-        method = 'sma' 
-    elif method  in ('cumulative average', 
-                     'cumulative', 'cma'): 
-        method ='cma' 
-    elif method  in ('weighted moving average',
-                     'weight', 'wma'): 
-        method = 'wma'
-    elif method in('exponential moving average',
-                   'exponential', 'ema'):
-        method = 'ema'
-    else : 
-        raise ValueError ("Variant average methods only includes "
-                          f" {smart_format(['sma', 'cma', 'wma', 'ema'], 'or')}")
-    if  1. <= alpha <= 0 : 
-        raise ValueError ('alpha should be less than 1. and greater than 0. ')
-        
-    if method =='sma': 
-        ya = np.convolve(y , np.ones (window_size), mode ) / window_size 
-        
-    if method =='cma': 
-        y = np.cumsum (y) 
-        ya = np.array([ y[ii]/ len(y[:ii +1]) for ii in range(len(y))]) 
-        
-    if method =='wma': 
-        w = np.cumsum(np.ones(window_size, dtype = float))
-        w /= np.sum(w)
-        ya = np.convolve(y, w[::-1], mode ) #/window_size
-        
-    if method =='ema': 
-        ya = np.array ([y[0]]) 
-        for ii in range(1, len(y)): 
-            v = y[ii] * alpha + ( 1- alpha ) * ya[-1]
-            ya = np.append(ya, v)
-            
-    return ya 
-
 
 def get_profile_angle (
         easting: float =None, northing: float =None, msg:str ="ignore" ): 
@@ -2879,7 +4293,7 @@ def savgol_filter(x, window_length, polyorder, deriv=0, delta=1.0,
     return y        
 
 def compute_errors (
-    arr, /, 
+    arr,  
     error ='std', 
     axis = 0, 
     return_confidence=False 
@@ -2946,8 +4360,8 @@ def compute_errors (
     ---------
     >>> from gofast.tools.mathex  import compute_errors
     >>> from gofast.datasets import make_mining_ops 
-    >>> mdata = make_mining_ops ( samples =20, as_frame=True, noises="20%")
-    >>> compute_scores (mdata)
+    >>> mdata = make_mining_ops ( samples =20, as_frame=True, noises="20%", return_X_y=False)
+    >>> compute_errors (mdata)
     Easting_m                    301.216454
     Northing_m                   301.284073
     Depth_m                      145.343063
@@ -3002,7 +4416,6 @@ def compute_errors (
 
 def quality_control2(
     ar, 
-     /, 
     tol: float= .5 , 
     return_data=False,
     to_log10: bool =False, 
@@ -3101,7 +4514,7 @@ def quality_control2(
     data = tuple (data )
     # make QCO object 
     if return_qco: 
-        data = Boxspace( **dict (
+        data = KeyBox( **dict (
             tol=tol, 
             rate_= float(np.around (ck, 2)), 
             data_=  np.delete ( ar, index , axis =0 )
@@ -3109,182 +4522,6 @@ def quality_control2(
         )
     return data
  
-
-def quality_control(
-    data, /, 
-    missing_threshold=0.05, 
-    outlier_method='IQR', 
-    value_ranges=None,
-    unique_value_columns=None, 
-    string_patterns=None, 
-    verbose:bool= ..., 
-    polish_and_return:bool=..., 
-    columns=None, 
-    **kwd 
-    ):
-    """
-    Perform comprehensive data quality checks on a pandas DataFrame.
-
-    In addition to checking, this function now cleans and sanitizes the 
-    DataFrame based on identified issues if ``return_cleaned_data=True``. 
-    
-    This function includes steps to:
-
-    Drop columns with a high percentage of missing data.
-    Remove outliers using either the IQR or Z-score methods.
-    For other checks like value ranges, unique value columns, and 
-    string patterns, appropriate cleaning steps would depend heavily on the 
-    context and requirements of the specific dataset. 
-    
-
-    
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        The DataFrame on which to perform data quality checks.
-    missing_threshold : float, optional
-        The threshold for missing data percentage to flag a column
-        (default is 0.05, i.e., 5%).
-    outlier_method : str, optional
-        Method to detect outliers. Options are 'IQR' for Interquartile Range 
-        (default) and 'Z-score'.
-    value_ranges : dict, optional
-        A dictionary where keys are column names and values are tuples 
-        specifying the acceptable (min, max) range for values in that column.
-    unique_value_columns : list, optional
-        A list of column names that are expected to have unique values.
-    string_patterns : dict, optional
-        A dictionary where keys are column names and values are regex patterns 
-        that values in the column should match.
-        
-    polish_and_return : bool, optional
-        If True, the function will clean and sanitize the data based on the checks
-        and return the polished DataFrame. Default is False.
-        
-    Returns
-    -------
-    dict
-        A dictionary with keys 'missing_data', 'outliers', 'data_types',
-        'value_range_violations', 'unique_value_violations', and 
-        'string_pattern_violations', containing information about various data 
-        quality issues.
-
-    pandas.DataFrame or dict
-        If polish_and_return is True, returns the cleaned and sanitized DataFrame.
-        Otherwise, returns a dictionary with data quality check results.
-        
-    Note 
-    ------
-    Remember that data cleaning and sanitization can significantly alter 
-    your dataset. It's essential to understand the implications of each 
-    step and adjust the thresholds and methods according to your data 
-    analysis goals.
-        
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> from gofast.tools.mathex  import quality_control 
-    >>> data = {'A': [1, 2, 3, None, 5], 'B': [1, 2, 100, 3, 4], 
-                'C': ['abc', 'def', '123', 'xyz', 'ab']}
-    >>> data = pd.DataFrame(data)
-    >>> quality_control(data, value_ranges={'A': (0, 10)}, unique_value_columns=['B'], 
-    ...                    string_patterns={'C': r'^[a-zA-Z]+$'})
-    {
-        'missing_data': {'A': 20.0},
-        'outliers': {'B': [100]},
-        'data_types': {'A': dtype('float64'), 'B': dtype('int64'), 'C': dtype('O')},
-        'value_range_violations': {'A': [None]},
-        'unique_value_violations': {'B': [1, 2, 3, 4]},
-        'string_pattern_violations': {'C': ['123']}
-    }
-
-    """
-    result = {
-        'missing_data': {}, 
-        'outliers': {}, 
-        'data_types': {},
-        'value_range_violations': {},
-        'unique_value_violations': {},
-        'string_pattern_violations': {}
-    }
-    polish_and_return, verbose = ellipsis2false(polish_and_return, verbose)
-    data = build_data_if (data, columns = columns , to_frame=True,  **kwd )
-    # for safety and not
-    # make a copy for a new data 
-    data_ = copy.deepcopy(data ) 
-    
-    # Handling missing data by dropping columns with 
-    # too many missing values if polish_and_return is true. 
-    
-    for col in data.columns:
-        missing_percentage = data[col].isna().mean()
-        if missing_percentage > missing_threshold:
-            if polish_and_return: 
-                data_.drop(col, axis=1, inplace=True)  
-            # data.drop(col, axis=1, inplace=True)  # Drop column
-            result['missing_data'][col] = missing_percentage * 100
-      
-    # Detect  and Handling outliers
-    for col in data.select_dtypes(include=[np.number]).columns:
-        if outlier_method == 'IQR':
-            Q1 = data[col].quantile(0.25)
-            Q3 = data[col].quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            
-            outliers = data[col][(
-                data[col] < lower_bound) | (data[col] > upper_bound)]
-            
-            if polish_and_return: # Remove outliers
-                data_ = data_[
-                    (data_[col] >= lower_bound) & (data_[col] <= upper_bound)]  
-            
-        elif outlier_method == 'Z-score':
-            z_score = np.abs((data[col] - data[col].mean()) / data[col].std())
-            
-            outliers = data[col][z_score > 3]
-            
-            if polish_and_return: 
-                data_ = data_[z_score <= 3]  # Remove outliers
-
-        if not outliers.empty:
-            result['outliers'][col] = outliers.tolist()
-            
-    # Value range validation
-    if value_ranges:
-        for col, (min_val, max_val) in value_ranges.items():
-            if col in data.columns:
-                invalid_values = data[col][(data[col] < min_val) | (data[col] > max_val)]
-                if not invalid_values.empty:
-                    result['value_range_violations'][col] = invalid_values.tolist()
-
-    # Unique value check
-    if unique_value_columns:
-        for col in unique_value_columns:
-            if col in data.columns and data[col].duplicated().any():
-                ( result['unique_value_violations'][col]
-                 ) = data[col][data[col].duplicated()].tolist()
-
-    # String pattern validation
-    if string_patterns:
-        for col, pattern in string_patterns.items():
-            if col in data.columns and data[col].dtype == 'object':
-                invalid_strings = data[col][~data[col].astype(
-                    str).str.match(pattern)]
-                if not invalid_strings.empty:
-                    ( result['string_pattern_violations'][col]
-                     )  = invalid_strings.tolist()
-                    
-    # Data type information
-    for col in data.columns:
-        result['data_types'][col] = data[col].dtype
-
-    # [Fancy print function as before...]
-    if verbose: 
-        fancy_printer(result)
-    
-    return data_ if polish_and_return else result
 
 def get_distance(
     x: ArrayLike, 
@@ -3294,7 +4531,7 @@ def get_distance(
     **kws
     ): 
     """
-    Compute distance between points
+    Compute distance between points.
     
     Parameters
     ------------
@@ -3539,7 +4776,7 @@ def get_bearing (latlon1, latlon2,  to_deg = True ):
         
     return b 
 
-def find_closest( arr, /, values ): 
+def find_closest( arr, values ): 
     """Get the closest value in array  from given values.
     
     Parameters 
@@ -3715,7 +4952,7 @@ def _kind_of_model(degree, x, y) :
     w= init_weights(x=x, y=y)
     return x, w  # Return the matrix x and the weights vector w 
     
-def adaptive_moving_average(data, /, window_size_factor=0.1):
+def adaptive_moving_average(data,  window_size_factor=0.1):
     """ Adaptative moving average as  smoothing technique. 
  
     Parameters 
@@ -3766,11 +5003,11 @@ def adaptive_moving_average(data, /, window_size_factor=0.1):
     return result
 
 def torres_verdin_filter(
-    arr, /,  
-    weight_factor: float=.1, 
-    beta:bool=1., 
-    logify:bool=False, 
-    axis:int = ..., 
+    arr,  
+    weight_factor: float = 0.1, 
+    beta: float = 1.0, 
+    logify: bool = False, 
+    axis: int = None, 
     ):
     """
     Calculates the adaptive moving average of a given data array from 
@@ -3828,8 +5065,9 @@ def torres_verdin_filter(
     >>> plt.show () 
     
     """
-    arr = is_iterable( arr, exclude_string =True, transform =True ) 
-    axis, logify= ellipsis2false(axis, logify, default_value =( None , False))
+    arr = is_iterable(arr, exclude_string=True, transform=True)
+    axis = 0 if axis is None else axis  # Set default axis to 0 if not specified
+    logify = bool(logify)
     
     def _filtering_1d_array( ar, wf, b ): 
         if len(ar) < 2:
@@ -3867,175 +5105,6 @@ def torres_verdin_filter(
     if logify: arr = np.power (10, arr )
     
     return arr 
-
-def binning_statistic(
-    data, categorical_column, 
-    value_column, 
-    statistic='mean'
-    ):
-    """
-    Compute a statistic for each category in a categorical column of a dataset.
-
-    This function categorizes the data into bins based on a categorical variable and then
-    applies a statistical function to the values of another column for each category.
-
-    Parameters
-    ----------
-    data : DataFrame
-        Pandas DataFrame containing the dataset.
-    categorical_column : str
-        Name of the column in `data` which contains the categorical variable.
-    value_column : str
-        Name of the column in `data` from which the statistic will be calculated.
-    statistic : str, optional
-        The statistic to compute (default is 'mean'). Other options include 
-        'sum', 'count','median', 'min', 'max', etc.
-
-    Returns
-    -------
-    result : DataFrame
-        A DataFrame with each category and the corresponding computed statistic.
-
-    Examples
-    --------
-    >>> df = pd.DataFrame({
-    ...     'Category': ['A', 'B', 'A', 'C', 'B', 'A', 'C'],
-    ...     'Value': [1, 2, 3, 4, 5, 6, 7]
-    ... })
-    >>> binning_statistic(df, 'Category', 'Value', statistic='mean')
-       Category  Mean_Value
-    0        A         3.33
-    1        B         3.50
-    2        C         5.50
-    """
-    if statistic not in ('mean', 'sum', 'count', 'median', 'min',
-                         'max', 'proportion'):
-        raise ValueError(
-            "Unsupported statistic. Please choose from 'mean',"
-            " 'sum', 'count', 'median', 'min', 'max', 'proportion'.")
-
-    grouped_data = data.groupby(categorical_column)[value_column]
-
-    if statistic == 'mean':
-        result = grouped_data.mean().reset_index(name=f'Mean_{value_column}')
-    elif statistic == 'sum':
-        result = grouped_data.sum().reset_index(name=f'Sum_{value_column}')
-    elif statistic == 'count':
-        result = grouped_data.count().reset_index(name=f'Count_{value_column}')
-    elif statistic == 'median':
-        result = grouped_data.median().reset_index(name=f'Median_{value_column}')
-    elif statistic == 'min':
-        result = grouped_data.min().reset_index(name=f'Min_{value_column}')
-    elif statistic == 'max':
-        result = grouped_data.max().reset_index(name=f'Max_{value_column}')
-    elif statistic == 'proportion':
-        total_count = data[value_column].count()
-        proportion = grouped_data.sum() / total_count
-        result = proportion.reset_index(name=f'Proportion_{value_column}')
-        
-    return result
-
-def category_count(data, /, categorical_column= None):
-    """
-    Count occurrences of each category in a given categorical 
-    column of a dataset.
-
-    This function computes the frequency of each unique category 
-    in the specified
-    categorical column of a pandas DataFrame.
-
-    Parameters
-    ----------
-    data : DataFrame
-        Pandas DataFrame containing the dataset.
-    categorical_column : str
-        Name of the column in `data` which contains the categorical variable.
-
-    Returns
-    -------
-    counts : DataFrame
-        A DataFrame with each category and the corresponding count.
-
-    Examples
-    --------
-    >>> df = pd.DataFrame({
-    ...     'Category': ['A', 'B', 'A', 'C', 'B', 'A', 'C']
-    ... })
-    >>> category_count(df, 'Category')
-       Category  Count
-    0        A      3
-    1        B      2
-    2        C      2
-    """
-    if categorical_column not in data.columns:
-        raise ValueError(f"Column '{categorical_column}' not found in the dataframe.")
-
-    counts = data[categorical_column].value_counts().reset_index()
-    counts.columns = [categorical_column, 'Count']
-    return counts
-
-def soft_bin_stat(
-    data, /, categorical_column, 
-    target_column, 
-    statistic='mean', 
-    update=False, 
-    ):
-    """
-    Compute a statistic for each category in a categorical 
-    column based on a binary target.
-
-    This function calculates statistics like mean, sum, or proportion 
-    for a binary target variable, grouped by categories in a 
-    specified column.
-
-    Parameters
-    ----------
-    data : DataFrame
-        Pandas DataFrame containing the dataset.
-    categorical_column : str
-        Name of the column in `data` which contains the categorical variable.
-    target_column : str
-        Name of the column in `data` which contains the binary target variable.
-    statistic : str, optional
-        The statistic to compute for the binary target (default is 'mean').
-        Other options include 'sum' and 'proportion'.
-
-    Returns
-    -------
-    result : DataFrame
-        A DataFrame with each category and the corresponding 
-        computed statistic.
-
-    Examples
-    --------
-    >>> from gofast.tools.mathex import soft_bin_stat
-    >>> df = pd.DataFrame({
-    ...     'Category': ['A', 'B', 'A', 'C', 'B', 'A', 'C'],
-    ...     'Target': [1, 0, 1, 0, 1, 0, 1]
-    ... })
-    >>> soft_bin_stat(df, 'Category', 'Target', statistic='mean')
-       Category  Mean_Target
-    0        A     0.666667
-    1        B     0.500000
-    2        C     0.500000
-    """
-    if statistic not in ['mean', 'sum', 'proportion']:
-        raise ValueError("Unsupported statistic. Please choose from "
-                         "'mean', 'sum', 'proportion'.")
-
-    grouped_data = data.groupby(categorical_column)[target_column]
-
-    if statistic == 'mean':
-        result = grouped_data.mean().reset_index(name=f'Mean_{target_column}')
-    elif statistic == 'sum':
-        result = grouped_data.sum().reset_index(name=f'Sum_{target_column}')
-    elif statistic == 'proportion':
-        total_count = data[target_column].count()
-        proportion = grouped_data.sum() / total_count
-        result = proportion.reset_index(name=f'Proportion_{target_column}')
-
-
-    return result
 
 def gradient_boosting_regressor(
         X, y, n_estimators=100, learning_rate=0.1, max_depth=1):

@@ -13,7 +13,320 @@ from sklearn.model_selection._search import BaseSearchCV
 from sklearn.base import  clone
 
 from ..tools.validator import _is_numeric_dtype 
-# from gofast.models.utils import params_combinations
+from .utils import apply_param_types 
+
+class BaseSwarmSearch(BaseSearchCV):
+    """
+    Particle Swarm Optimization based search for hyperparameters.
+
+    This class implements a Particle Swarm Optimization (PSO) based 
+    search strategy for hyperparameters. PSO is a population-based 
+    stochastic optimization technique inspired by the social behavior 
+    of birds flocking or fish schooling. The algorithm maintains a 
+    population of particles, where each particle represents a 
+    potential solution. These particles move through the hyperparameter 
+    space influenced by their own best known position and the best known 
+    positions of other particles.
+
+    Parameters
+    ----------
+    estimator : estimator object
+        This is a scikit-learn estimator object implementing `fit` and 
+        `predict` methods. The estimator will be cloned for each search 
+        to ensure independence between evaluations.
+
+    param_space : dict
+        Dictionary with parameters names (`str`) as keys and lists or 
+        tuples of parameter settings to try as values. If a value is a 
+        list, a discrete set of possible values is considered. If a value 
+        is a tuple, it must be of length 2, indicating the range from 
+        which a value will be sampled uniformly.
+
+    cv : int, cross-validation generator or an iterable, optional
+        Determines the cross-validation splitting strategy. Possible inputs 
+        for `cv` are:
+          - None, to use the default 5-fold cross validation,
+          - integer, to specify the number of folds in a (Stratified)KFold,
+          - CV splitter,
+          - An iterable yielding (train, test) splits as arrays of indices.
+
+    scoring : string, callable, list/tuple, dict or None, optional
+        A single string or a callable to evaluate the predictions on the 
+        test set. If `None`, the estimator’s score method is used.
+
+    n_particles : int, optional, default=30
+        The number of particles in the swarm.
+
+    inertia_weight : float, optional, default=0.9
+        The inertia weight used to control the influence of the previous 
+        velocity of the particle on its new velocity. Typically in the 
+        range [0,1].
+
+    cognitive_coeff : float, optional, default=2.0
+        The cognitive coefficient used to control the influence of the 
+        particle's own best known position on its new velocity.
+
+    social_coeff : float, optional, default=2.0
+        The social coefficient used to control the influence of the best 
+        known positions of other particles on the new velocity of the 
+        particle.
+
+    n_jobs : int, optional, default=1
+        The number of jobs to run in parallel. `-1` means using all 
+        processors.
+
+    verbose : int, optional, default=0
+        Controls the verbosity of the output.
+
+    pre_dispatch : int or string, optional, default='2*n_jobs'
+        Controls the number of jobs that get dispatched during parallel 
+        execution. Reducing this number can be useful to avoid an 
+        explosion of memory consumption when more jobs get dispatched 
+        than CPUs can process. This parameter can be:
+          - None, in which case all the jobs are immediately created and 
+            spawned. Use this for lightweight and fast-running jobs, to 
+            avoid delays due to on-demand spawning of the jobs.
+          - An int, giving the exact number of total jobs that are 
+            spawned.
+          - A string, giving an expression as a function of `n_jobs`, 
+            as in '2*n_jobs'.
+
+    refit : bool, optional, default=True
+        Refit an estimator using the best found parameters on the whole 
+        dataset.
+
+    error_score : 'raise' or numeric, optional, default=np.nan
+        Value to assign to the score if an error occurs in estimator 
+        fitting. If set to 'raise', the error is raised. If a numeric 
+        value is given, `FitFailedWarning` is raised. This parameter 
+        does not affect the refit step, which will always raise the 
+        error.
+
+    return_train_score : bool, optional, default=True
+        If `False`, the `cv_results_` attribute will not include training 
+        scores.
+
+    Methods
+    -------
+    fit(X, y=None, groups=None, **fit_params):
+        Run fit with all sets of parameters.
+
+    _run_search(evaluate_candidates):
+        Run the optimization algorithm to find the best parameters. 
+        This method needs to be implemented in subclasses.
+
+    _initialize_particles():
+        Initialize the particles with random positions and velocities.
+
+    _random_hyperparameters():
+        Generate a random set of hyperparameters within the defined 
+        parameter space.
+
+    _random_velocity():
+        Generate a random velocity for a particle.
+
+    _evaluate_particle(particle, X, y):
+        Evaluate the performance of a particle's position by fitting 
+        the estimator and calculating the cross-validation score.
+
+    _move_particles(particles, global_best):
+        Update the position and velocity of each particle based on its 
+        own best known position and the global best known position.
+
+    _update_particle(particle, global_best):
+        Update a single particle's position and velocity.
+
+    _clip_position(param, position):
+        Ensure the particle's position stays within the bounds defined 
+        in the parameter space.
+
+    Notes
+    -----
+    Particle Swarm Optimization (PSO) is a computational method that 
+    optimizes a problem by iteratively trying to improve a candidate 
+    solution with regard to a given measure of quality. PSO optimizes 
+    a problem by having a population of candidate solutions, here dubbed 
+    particles, and moving these particles around in the search-space 
+    according to simple mathematical formulae over the particle's 
+    position and velocity. Each particle's movement is influenced by its 
+    local best known position and is also guided toward the best known 
+    positions in the search-space, which are updated as better positions 
+    are found by other particles.
+
+    The PSO algorithm is particularly useful for optimization problems 
+    with a large search space and complex, multimodal objective 
+    functions.
+
+    The velocity and position update equations for a particle are given 
+    by:
+
+    .. math::
+        v_{i}(t+1) = \omega v_{i}(t) + c_1 r_1 (p_{i} - x_{i}(t)) 
+                     + c_2 r_2 (g - x_{i}(t))
+
+        x_{i}(t+1) = x_{i}(t) + v_{i}(t+1)
+
+    where:
+    - :math:`v_{i}(t)` is the velocity of particle `i` at time `t`.
+    - :math:`x_{i}(t)` is the position of particle `i` at time `t`.
+    - :math:`\omega` is the inertia weight.
+    - :math:`c_1` and :math:`c_2` are the cognitive and social coefficients.
+    - :math:`r_1` and :math:`r_2` are random values in [0, 1].
+    - :math:`p_{i}` is the best known position of particle `i`.
+    - :math:`g` is the global best known position.
+
+    Examples
+    --------
+    >>> from gofast.models._selection import BaseSwarmSearch
+    >>> from sklearn.datasets import load_iris
+    >>> from sklearn.svm import SVC
+    >>> param_space = {'C': (0.1, 10), 'kernel': ['linear', 'rbf']}
+    >>> swarm_search = BaseSwarmSearch(estimator=SVC(), param_space=param_space, cv=5)
+    >>> X, y = load_iris(return_X_y=True)
+    >>> swarm_search.fit(X, y)
+
+    See Also
+    --------
+    sklearn.model_selection.GridSearchCV : Exhaustive search over specified parameter values.
+    sklearn.model_selection.RandomizedSearchCV : Randomized search on hyperparameters.
+
+    References
+    ----------
+    .. [1] Eberhart, R., and Kennedy, J. (1995). "A new optimizer using particle swarm theory". 
+           In Proceedings of the Sixth International Symposium on Micro Machine and Human Science, 
+           39-43.
+    .. [2] Kennedy, J., and Eberhart, R. (1995). "Particle Swarm Optimization". 
+           In Proceedings of IEEE International Conference on Neural Networks, 
+           IV:1942-1948.
+    """
+    @abstractmethod
+    def __init__(
+        self,
+        estimator,
+        param_space,
+        cv=None,
+        scoring=None,
+        n_particles=30,
+        inertia_weight=0.9,
+        cognitive_coeff=2.0,
+        social_coeff=2.0,
+        n_jobs=1,
+        verbose=0,
+        pre_dispatch="2*n_jobs",
+        refit=True,
+        error_score=np.nan,
+        return_train_score=True
+        ):
+        super().__init__(
+            estimator=estimator,
+            scoring=scoring,
+            n_jobs=n_jobs,
+            refit=refit,
+            pre_dispatch=pre_dispatch,
+            error_score=error_score,
+            cv=cv,
+            verbose=verbose,
+            return_train_score=return_train_score,
+        )
+        self.param_space = param_space
+        self.n_particles = n_particles
+        self.inertia_weight = inertia_weight
+        self.cognitive_coeff = cognitive_coeff
+        self.social_coeff = social_coeff
+
+    def fit(self, X, y=None, groups=None, **fit_params):
+        self.X = X.copy()
+        self.y = y.copy()
+        super().fit(X, y, groups=groups, **fit_params)
+        return self
+
+    def _run_search(self, evaluate_candidates):
+        raise NotImplementedError("_run_search not implemented.")
+
+    def _initialize_particles(self):
+        particles = []
+        for _ in range(self.n_particles):
+            particle = {'position': self._random_hyperparameters(),
+                        'velocity': self._random_velocity(),
+                        'best_position': None,
+                        'best_score': -np.inf}
+            particles.append(particle)
+        return particles
+
+    def _random_hyperparameters(self):
+        hyperparameters = {}
+        for param, values in self.param_space.items():
+            if isinstance(values, list):
+                hyperparameters[param] = random.choice(values)
+            elif isinstance(values, tuple) and len(values) == 2:
+                hyperparameters[param] = random.uniform(values[0], values[1])
+            else:
+                raise ValueError(f"Invalid parameter space for {param}.")
+        return hyperparameters
+
+    def _random_velocity(self):
+        velocity = {}
+        for param in self.param_space.keys():
+            velocity[param] = random.uniform(-0.1, 0.1)
+        return velocity
+
+    def _evaluate_particle(self, particle, X, y):
+        estimator = clone(self.estimator)
+        particle['position'] = apply_param_types(estimator, particle['position'])
+        estimator.set_params(**particle['position'])
+        score = np.mean(cross_val_score(
+            estimator, X, y, cv=self.cv,
+            scoring=self.scoring, n_jobs=self.n_jobs)
+        )
+        return score
+
+    def _move_particles(self, particles, global_best):
+        for particle in particles:
+            self._update_particle(particle, global_best)
+
+    def _update_particle(self, particle, global_best):
+        for param, value in particle['position'].items():
+            if value is None:
+                continue  # Skip updates for parameters with None value
+
+            # Skip update for categorical hyperparameters
+            if isinstance(value, str):
+                continue
+            # Generate random coefficients
+            r1, r2 = random.random(), random.random()
+
+            # Calculate the new velocity
+            if particle['best_position'][param] is not None and global_best[param] is not None:
+                cognitive_velocity = self.cognitive_coeff * r1 * (
+                    particle['best_position'][param] - value)
+                social_velocity = self.social_coeff * r2 * (global_best[param] - value)
+                particle['velocity'][param] = (
+                    self.inertia_weight * particle['velocity'][param] +
+                    cognitive_velocity + social_velocity
+                )
+
+            # Update the position
+            new_position = value + particle['velocity'][param]
+            particle['position'][param] = self._clip_position(param, new_position)
+
+    def _clip_position(self, param, position):
+        if isinstance(self.param_space[param], list):
+            valid_values = [v for v in self.param_space[param] if v is not None]
+            if not valid_values:
+                return position  # Return original if no valid values
+            return min(valid_values, key=lambda x: abs(x - position))
+        elif isinstance(self.param_space[param], tuple):
+            lower_bound = ( self.param_space[param][0] if self.param_space[param][0]
+                           is not None else -float('inf')
+                           )
+            upper_bound = ( 
+                self.param_space[param][1] if self.param_space[param][1]
+                is not None else float('inf')
+                )
+            return np.clip(position, lower_bound, upper_bound)
+        else:
+            raise ValueError(f"Invalid parameter space for {param}.")
+            
 
 class PSOBaseSearch(BaseSearchCV):
     """
@@ -240,7 +553,6 @@ class PSOBaseSearch(BaseSearchCV):
                 hyperparameters[param] = _choose_single_numeric(values)
             else:
                 raise ValueError(f"Invalid parameter space for {param}.")
-    
         return hyperparameters
 
     def _random_velocity(self):
@@ -283,13 +595,19 @@ class PSOBaseSearch(BaseSearchCV):
         score : float
             The fitness score of the particle's position.
         """
-        estimator = clone(self.estimator).set_params(**particle['position'])
+        #estimator_name = self.estimator.__class__.__name__
+        estimator = clone(self.estimator)
+        
+        # Apply parameter types to particle['position']
+        particle['position'] = apply_param_types(estimator, particle['position'])
+        
+        estimator.set_params(**particle['position'])
         score = np.mean(cross_val_score(
             estimator, X, y, cv=self.cv,
             scoring=self.scoring, n_jobs=self.n_jobs)
-            )
+        )
         return score
-
+    
     def _move_particles(self, particles, global_best):
         """
         Update the positions and velocities of particles in the swarm.
@@ -333,6 +651,10 @@ class PSOBaseSearch(BaseSearchCV):
             # Skip update for categorical hyperparameters
             if isinstance(value, str):
                 continue
+            ### XXX TODO: check how to compute the param and value when 
+            # max_depth is None, or value is None 
+            # if particle['best_position'][param] is None: 
+            #     continue 
             # Generate random coefficients
             r1, r2 = random.random(), random.random()
     
@@ -378,7 +700,10 @@ class PSOBaseSearch(BaseSearchCV):
                            )
         else:
             raise ValueError(f"Invalid parameter space for {param}.")
-    
+
+
+            
+            
 class GradientBaseSearch(BaseSearchCV):
     """
     GradientBaseSearch object, an abstract base class for gradient-based 
@@ -574,6 +899,7 @@ class GradientBaseSearch(BaseSearchCV):
             Dictionary containing the mean and standard deviation of the 
             cross-validation scores.
         """
+        params = apply_param_types (self.estimator, params)
         estimator = clone(self.estimator).set_params(**params)
         scores = cross_val_score(estimator, X, y, cv=self.cv, 
                                  scoring=self.scoring, n_jobs=self.n_jobs
@@ -861,6 +1187,7 @@ class AnnealingBaseSearch(BaseSearchCV):
             The mean cross-validation score of the estimator with the given 
             hyperparameters.
         """
+        hyperparameters = apply_param_types(self.estimator, hyperparameters)
         estimator = clone(self.estimator).set_params(**hyperparameters)
         score = np.mean(cross_val_score(
             estimator, self.X, self.y, cv=self.cv, scoring=self.scoring, 

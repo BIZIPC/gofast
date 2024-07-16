@@ -4,7 +4,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-from .__init__ import is_package_installed
+from gofast.tests.__init__ import is_package_installed
 from gofast.base import FeatureProcessor
 
 # Sample data for testing
