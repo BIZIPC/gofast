@@ -200,7 +200,7 @@ def nPCA(
     return X_transformed if return_X else obj
  
 nPCA.__doc__="""\
-Normal Principal Components analysis (PCA)
+Normal Principal Components analysis (PCA).
 
 Performs Principal Components Analysis (PCA), a popular linear dimensionality 
 reduction technique. PCA identifies the hyperplane that lies closest to the 
@@ -364,7 +364,7 @@ def iPCA(
      )
 
 iPCA.__doc__="""\
-Incremental PCA 
+Incremental Principal Component Analysis (iPCA). 
 
 Incremental PCA allows for processing the dataset in mini-batches, which is 
 beneficial for large datasets that do not fit into memory. It is also 
@@ -481,7 +481,7 @@ def kPCA(
     return obj.X if return_X else obj
   
 kPCA.__doc__="""\
-Kernel PCA 
+Kernel Principal Component Analysis (kPCA). 
 
 `kPCA` performs complex nonlinear projections for dimentionality
 reduction.
@@ -583,12 +583,10 @@ def LLE(
 
  
 LLE.__doc__="""\
-Locally Linear Embedding(LLE) 
+Locally Linear Embedding(LLE). 
 
-`LLE` is nonlinear dimensinality reduction based on closest neighbors 
-(c.n).
-
-LLE is another powerfull non linear dimensionality reduction(NLDR)
+`LLE` is nonlinear dimensinality reduction based on closest neighbors.
+It is another powerfull non linear dimensionality reduction(NLDR)
 technique. It is Manifold Learning technique that does not rely
 on projections like `PCA`. In a nutshell, works by first measurement
 how each training instance library lineraly relates to its closest 

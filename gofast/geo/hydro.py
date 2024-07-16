@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sat Feb  3 21:42:44 2024
 
-@author: Daniel
 """
+The `hydro` module offers specialized tools for hydrogeology analysis.
+"""
+
 import math
 import pandas as pd
 import numpy as np

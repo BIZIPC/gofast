@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `testing` module provides a collection of assertion functions
+and utilities designed to validate and verify the correctness of data formats,
+model summaries, and report contents. 
+"""
 
 import pandas as pd
 
@@ -9,6 +14,46 @@ from .formatter import DataFrameFormatter, MultiFrameFormatter
 from .formatter import MetricFormatter, BoxFormatter, DescriptionFormatter
 from .formatter import to_snake_case 
 from .summary import Summary, ReportFactory, format_text, ModelSummary 
+
+__all__=[
+    'assert_box_formatter',
+    'assert_dataframe_formatter',
+    'assert_dataframe_presence',
+    'assert_description_formatter',
+    'assert_frame_attribute_access',
+    'assert_frame_column_width_adjustment',
+    'assert_frame_numeric_formatting',
+    'assert_frame_title_formatting',
+    'assert_metric_attributes_present',
+    'assert_metric_formatter',
+    'assert_metric_formatter_includes_keywords',
+    'assert_model_summary_add_multi_contents',
+    'assert_model_summary_add_performance',
+    'assert_model_summary_attributes_in',
+    'assert_model_summary_content_exists',
+    'assert_model_summary_has_title',
+    'assert_model_summary_method_functionality',
+    'assert_model_summary_performance',
+    'assert_model_summary_results',
+    'assert_multiframe_column_accessibility',
+    'assert_multiframe_correct_formatting_strategy',
+    'assert_multiframe_formatter',
+    'assert_multiframe_title_display',
+    'assert_report_data_summary',
+    'assert_report_mixed_types',
+    'assert_report_recommendations',
+    'assert_summary_basic_statistics',
+    'assert_summary_completeness',
+    'assert_summary_content_integrity',
+    'assert_summary_correlation_matrix',
+    'assert_summary_data_sample',
+    'assert_summary_empty_dataframe',
+    'assert_summary_model',
+    'assert_summary_report_contains',
+    'assert_summary_unique_counts',
+    'check_output',
+    'validate_formatter_instance'
+ ]
 
 def assert_model_summary_has_title(summary_instance, expected_title, msg=None):
     """

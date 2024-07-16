@@ -2,13 +2,16 @@
 #   Licence:BSD 3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides a suite of transformers for time series analysis, including feature 
+extraction, encoding, and decomposition to enhance time series modeling."""
+
 from __future__ import division, annotations  
 import numpy as np 
 import pandas as pd 
 from sklearn.base import BaseEstimator,TransformerMixin 
 
 from ..tools._dependency import import_optional_dependency 
-from ..tools.validator import build_data_if
+from ..tools.validator import build_data_if, is_frame
 
 __all__=[ 
    "TimeSeriesFeatureExtractor",
@@ -19,7 +22,8 @@ __all__=[
    "CumulativeSumTransformer",
    "SeasonalDecomposeTransformer",
    "FourierFeaturesTransformer",
-   "TrendFeatureExtractor",   
+   "TrendFeatureExtractor",
+    "DateFeatureExtractor"   
     ]
 
 class FourierFeaturesTransformer(BaseEstimator, TransformerMixin):
@@ -982,6 +986,179 @@ class DateTimeCyclicalEncoder(BaseEstimator, TransformerMixin):
                 2 * np.pi * dt_col.dt.hour / 24)
         return X_transformed
    
+class DateFeatureExtractor(BaseEstimator, TransformerMixin):
+    """
+    Extracts detailed time-based features from date columns in a DataFrame.
+
+    This transformer parses dates in specified formats and extracts multiple
+    temporal attributes such as year, month, day, optionally weekday, week of
+    the year, and quarter from each date column.
+
+    Parameters
+    ----------
+    date_format : str, default="%Y-%m-%d"
+        Format string to parse the date columns in the DataFrame.
+        The format follows the Python datetime standard.
+
+    extract_weekday : bool, default=False
+        If set to ``True``, extracts the day of the week from the date,
+        where Monday is 0 and Sunday is 6.
+
+    extract_week_of_year : bool, default=False
+        If ``True``, extracts the ISO week number of the year from the date.
+
+    extract_quarter : bool, default=False
+        If ``True``, extracts the quarter of the year from the date, where
+        January, February, and March are quarter 1.
+
+    Notes
+    -----
+    The transformation is performed by first converting the input column(s)
+    into datetime objects using the specified `date_format`, and then
+    extracting the desired features.
+
+    Examples
+    --------
+    >>> from gofast.transformers.ts import DateFeatureExtractor
+    >>> data = pd.DataFrame({'date': ['2021-01-01', '2021-02-01']})
+    >>> extractor = DateFeatureExtractor(extract_weekday=True)
+    >>> features = extractor.transform(data)
+
+    See Also
+    --------
+    pd.to_datetime : Convert argument to datetime.
+
+    References
+    ----------
+    .. [1] Hyndman, R.J., & Athanasopoulos, G. (2018). Forecasting: principles
+       and practice, 2nd edition. OTexts: Melbourne, Australia.
+       OTexts.com/fpp2. Accessed on April 19th 2024.
+
+    """
+    def __init__(
+            self, 
+            date_format="%Y-%m-%d", 
+            extract_weekday=False, 
+            extract_week_of_year=False, 
+            extract_quarter=False
+            ):
+        self.date_format = date_format
+        self.extract_weekday = extract_weekday
+        self.extract_week_of_year = extract_week_of_year
+        self.extract_quarter = extract_quarter
+        
+    def fit(self, X, y=None):
+        """
+        Fit the DateFeatureExtractor to the date data.
+    
+        This method doesn't perform any fitting to data. It simply returns
+        the transformer instance unchanged, as no learning from the data
+        is required for extracting date-based features.
+    
+        Parameters
+        ----------
+        X : DataFrame
+            Date data to be transformed. This data frame must contain
+            one or more columns with date-formatted strings, which will be
+            parsed according to the `date_format` specified in the constructor.
+    
+        y : None, optional
+            Ignored. This parameter exists only for compatibility with
+            sklearn's transformer API.
+    
+        Returns
+        -------
+        self : object
+            The DateFeatureExtractor instance itself.
+    
+        Notes
+        -----
+        The fit method is required to make the transformer compatible with
+        the sklearn transformer pipeline, which checks for a fit method.
+    
+        Examples
+        --------
+        >>> from gofast.transformers.ts import DateFeatureExtractor
+        >>> data = pd.DataFrame({'date': ['2021-01-01', '2021-02-01']})
+        >>> extractor = DateFeatureExtractor()
+        >>> extractor.fit(data)
+    
+        See Also
+        --------
+        transform : Method to perform the transformation of the date data.
+    
+        References
+        ----------
+        .. [1] Scikit-learn: Machine Learning in Python, Pedregosa et al., JMLR 12,
+           pp. 2825-2830, 2011.
+        """
+        return self
+    
+    def transform(self, X, y=None):
+        """
+        Transform the input date data into detailed date features.
+    
+        The transformation involves converting date-formatted strings in
+        DataFrame columns into datetime objects, from which various date-related
+        attributes are extracted based on initialization settings of the
+        DateFeatureExtractor.
+    
+        Parameters
+        ----------
+        X : DataFrame
+            The input DataFrame containing date columns specified during
+            initialization. These columns are converted and expanded into
+            multiple feature columns.
+    
+        y : None, optional
+            Ignored. This parameter exists only for compatibility with
+            sklearn's transformer API.
+    
+        Returns
+        -------
+        DataFrame
+            A new DataFrame where each original date column is expanded
+            into several columns representing the extracted date features
+            (e.g., year, month, day, weekday, week of the year, quarter).
+    
+        Notes
+        -----
+        Depending on the initialization parameters (`extract_weekday`,
+        `extract_week_of_year`, `extract_quarter`), additional columns may
+        be appended to the output DataFrame.
+    
+        Examples
+        --------
+        >>> from gofast.transformers.ts import DateFeatureExtractor
+        >>> data = pd.DataFrame({'date': ['2021-01-01', '2021-02-01']})
+        >>> extractor = DateFeatureExtractor()
+        >>> features = extractor.transform(data)
+        >>> print(features)
+    
+        See Also
+        --------
+        fit : Method to "fit" the transformer to the data (no actual fitting).
+    
+        References
+        ----------
+        .. [1] Pandas documentation on to_datetime function for converting
+           strings to datetime objects, which is utilized extensively in this
+           method for feature extraction.
+        """
+        is_frame (X, df_only =True,raise_exception= True, objname="X") 
+        new_X = X.copy()
+        for col in X.columns:
+            date_col = pd.to_datetime(X[col], format=self.date_format)
+            new_X[col + '_year'] = date_col.dt.year
+            new_X[col + '_month'] = date_col.dt.month
+            new_X[col + '_day'] = date_col.dt.day
+            if self.extract_weekday:
+                new_X[col + '_weekday'] = date_col.dt.weekday
+            if self.extract_week_of_year:
+                new_X[col + '_week_of_year'] = date_col.dt.isocalendar().week
+            if self.extract_quarter:
+                new_X[col + '_quarter'] = date_col.dt.quarter
+        return new_X
 
    
    

@@ -3,10 +3,9 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-:mod:`gofast.estimtors.ensemble` implements various ensemble methods for  
-classification and regression tasks within the gofast library. Ensemble methods 
-combine the predictions of multiple base estimators to improve generalizability 
-and  robustness over a single estimator.
+`ensemble` implements various ensemble methods for classification
+and regression tasks for combining the predictions of multiple base estimators
+to improve generalizability and  robustness over a single estimator.
 """
 
 from __future__ import annotations 
@@ -1835,7 +1834,7 @@ class EnsembleClassifier(ClassifierMixin, BaseEnsemble):
         classification models.
     """
     is_classifier = True
-    default_base_estimator = DecisionTreeClassifier 
+    default_estimator = DecisionTreeClassifier 
 
     def __init__(
         self, 
@@ -2180,7 +2179,7 @@ class EnsembleRegressor(RegressorMixin, BaseEnsemble):
         regression models.
     """
     is_classifier = False
-    default_base_estimator = DecisionTreeRegressor 
+    default_estimator = DecisionTreeRegressor 
     
     def __init__(
         self,

@@ -2,6 +2,10 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides advanced search algorithms for hyperparameter tuning, including 
+evolutionary methods and gradient-based approaches to optimize machine 
+learning model configurations."""
+
 import warnings 
 import random
 import itertools 
@@ -11,7 +15,7 @@ from sklearn.base import  clone
 from sklearn.model_selection import cross_val_score 
 from sklearn.model_selection._search import BaseSearchCV, ParameterSampler
 
-from ._selection import PSOBaseSearch, GeneticBaseSearch  
+from ._selection import GeneticBaseSearch, BaseSwarmSearch  
 from ._selection import GradientBaseSearch, AnnealingBaseSearch
 from .utils import apply_param_types 
 
@@ -19,38 +23,21 @@ __all__=["SwarmSearchCV", "GradientSearchCV", "AnnealingSearchCV",
          "GeneticSearchCV", "EvolutionarySearchCV", "SequentialSearchCV", 
          ]
 
-class SwarmSearchCV(PSOBaseSearch):
+class SwarmSearchCV(BaseSwarmSearch):
     """
     Particle Swarm Optimization  for hyperparameter tuning of estimators.
 
     SwarmSearchCV implements a Particle Swarm Optimization (PSO) algorithm to 
-    find the optimal hyperparameters for a given estimator. PSO is a computational 
-    method that iteratively improves a set of candidate solutions concerning 
-    a measure of quality, inspired by social behaviors such as bird flocking 
-    or fish schooling.
+    find the optimal hyperparameters for a given estimator. It maintains a 
+    population of particles, where each particle represents a potential solution.
+    These particles  move through the hyperparameter space influenced by their 
+    own best known position and the best known positions of other particles.
+    PSO is a computational method that iteratively improves a set of candidate 
+    solutions concerning  a measure of quality, inspired by social behaviors 
+    such as bird flocking or fish schooling [1]_.
     
-    Each particle in the swarm represents a candidate solution 
-    (a set of hyperparameters). The position and velocity of each particle are 
-    updated as follows:
-
-    .. math::
-        v_{id}^{(t+1)} = w \cdot v_{id}^{(t)} + c_1 \cdot r_1 \cdot (p_{id} - x_{id}^{(t)}) 
-                        + c_2 \cdot r_2 \cdot (g_d - x_{id}^{(t)})
-
-        x_{id}^{(t+1)} = x_{id}^{(t)} + v_{id}^{(t+1)}
-
-    where:
-    - \(v_{id}^{(t)}\) is the velocity of particle i in dimension d at iteration t.
-    - \(x_{id}^{(t)}\) is the position of particle i in dimension d at iteration t.
-    - \(w\) is the inertia weight.
-    - \(c_1, c_2\) are cognitive and social coefficients, respectively.
-    - \(r_1, r_2\) are random numbers uniformly distributed in [0, 1].
-    - \(p_{id}\) is the best known position of particle i in dimension d.
-    - \(g_d\) is the best known position among all particles in dimension d.
-
-    The algorithm iterates this process, guiding the swarm towards the 
-    optimal solution.
-
+    See more in :ref:`User Guide`. 
+    
     Parameters
     ----------
     estimator : estimator object
@@ -315,6 +302,13 @@ class SwarmSearchCV(PSOBaseSearch):
         parameter for more details) and that `best_estimator_` exposes
         `feature_names_in_` when fit.
 
+    Methods
+    -------
+    fit(X, y=None, groups=None, **fit_params):
+        Run fit with all sets of parameters.
+
+    _run_search(evaluate_candidates):
+        Run the optimization algorithm to find the best parameters. 
         
     Examples
     --------
@@ -326,17 +320,62 @@ class SwarmSearchCV(PSOBaseSearch):
     >>> search = SwarmSearchCV(estimator=SVC(), param_space=param_space)
     >>> search.fit(X, y)
     >>> print(search.best_params_)
+    
+    >>> param_space = {'C': (0.1, 10), 'kernel': ['linear', 'rbf']}
+    >>> swarm_search = SwarmSearchCV(estimator=SVC(), param_space=param_space, cv=5)
+    >>> X, y = load_iris(return_X_y=True)
+    >>> swarm_search.fit(X, y)
 
     Notes
     -----
-    PSO simulates the behaviors of bird flocking, where each particle (candidate solution)
-    moves in the search space with a velocity that is dynamically adjusted according to 
-    its own and its neighbors' experiences.
+    Particle Swarm Optimization (PSO) is a computational method that 
+    optimizes a problem by iteratively trying to improve a candidate 
+    solution with regard to a given measure of quality [2]_. PSO optimizes 
+    a problem by having a population of candidate solutions, here dubbed 
+    particles, and moving these particles around in the search-space 
+    according to simple mathematical formulae over the particle's 
+    position and velocity. Each particle's movement is influenced by its 
+    local best known position and is also guided toward the best known 
+    positions in the search-space, which are updated as better positions 
+    are found by other particles.
+
+    The PSO algorithm is particularly useful for optimization problems 
+    with a large search space and complex, multimodal objective 
+    functions.
+
+    The velocity and position update equations for a particle are given 
+    by:
+
+    .. math::
+        v_{i}(t+1) = \omega v_{i}(t) + c_1 r_1 (p_{i} - x_{i}(t)) 
+                     + c_2 r_2 (g - x_{i}(t))
+
+        x_{i}(t+1) = x_{i}(t) + v_{i}(t+1)
+
+    where:
+    - :math:`v_{i}(t)` is the velocity of particle `i` at time `t`.
+    - :math:`x_{i}(t)` is the position of particle `i` at time `t`.
+    - :math:`\omega` is the inertia weight.
+    - :math:`c_1` and :math:`c_2` are the cognitive and social coefficients.
+    - :math:`r_1` and :math:`r_2` are random values in [0, 1].
+    - :math:`p_{i}` is the best known position of particle `i`.
+    - :math:`g` is the global best known position.
+    
+    See Also
+    --------
+    sklearn.model_selection.GridSearchCV : 
+        Exhaustive search over specified parameter values.
+    sklearn.model_selection.RandomizedSearchCV :
+        Randomized search on hyperparameters.
 
     References
     ----------
-    - Kennedy, J., & Eberhart, R. (1995). Particle Swarm Optimization. 
-      Proceedings of ICNN'95 - International Conference on Neural Networks.
+    .. [1] Eberhart, R., and Kennedy, J. (1995). "A new optimizer using particle 
+           swarm theory". In Proceedings of the Sixth International Symposium 
+           on Micro Machine and Human Science, 39-43.
+    .. [2] Kennedy, J., and Eberhart, R. (1995). "Particle Swarm Optimization". 
+           In Proceedings of IEEE International Conference on Neural Networks, 
+           IV:1942-1948.
     """
     def __init__(
         self, 
@@ -375,7 +414,7 @@ class SwarmSearchCV(PSOBaseSearch):
         )
         self.max_iter = max_iter
         self.random_state = random_state
-
+        
     def _run_search(self, evaluate_candidates):
         """
         Execute the search for the best hyperparameters using Particle 
@@ -406,47 +445,46 @@ class SwarmSearchCV(PSOBaseSearch):
         global_best_score = -np.inf
         global_best_candidates = []
 
-        for iteration in range(self.max_iter): 
+        for iteration in range(self.max_iter):
             for particle in particles:
                 # Evaluate the current position using a separate method
                 current_score = self._evaluate_particle(particle, self.X, self.y)
-    
+
                 # Update particle's personal best
                 if particle['best_score'] < current_score:
                     particle['best_position'] = particle['position'].copy()
                     particle['best_score'] = current_score
-    
+
                 # Update global best
                 if current_score > global_best_score:
                     global_best_position = particle['position'].copy()
                     global_best_score = current_score
-    
+
                 # Verbose logging for detailed analysis
-                if self.verbose > 3: 
+                if self.verbose > 3:
                     print(f"Particle position: {particle['position']}")
                     print(f"Particle velocity: {particle['velocity']}")
                     print(f"Particle current score: {current_score}")
-    
-      
+
             # Add the best candidate of this iteration
             global_best_candidates.append(global_best_position)
-    
+
             # Move particles based on updated positions
             self._move_particles(particles, global_best_position)
-    
+
             # Optional: Print progress if verbose
             if self.verbose:
                 print(f"Iteration {iteration + 1}/{self.max_iter},"
                       f" Best position: {global_best_position},"
                       f" Best Score: {global_best_score}")
-   
+
         # Re-evaluate candidates to prevent IndexError and update test scores
         if global_best_candidates:
             evaluate_candidates(global_best_candidates)
-    
+
         # Store and process the results
         self._store_search_results(particles)
-    
+
         # Log completion and results if verbose
         if self.verbose:
             print("Optimization completed.")
@@ -468,13 +506,16 @@ class SwarmSearchCV(PSOBaseSearch):
             The list of particles representing the hyperparameter search space.
     
         """
-        self.cv_results_ = [{'params': p['position'], 
-                             'mean_test_score': p['best_score'], 
+            
+        self.cv_results_ = [{'params': p['position'],
+                             'mean_test_score': p['best_score'],
                              'std_test_score': 0}
                             for p in particles]
         self.cv_results_.sort(key=lambda x: x['mean_test_score'], reverse=True)
         for rank, result in enumerate(self.cv_results_, start=1):
-            result['rank_test_score'] = rank 
+            result['rank_test_score'] = rank
+            
+            
     
 class GradientSearchCV(GradientBaseSearch):
     r"""

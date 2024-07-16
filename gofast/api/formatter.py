@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+`formatter` module provides classes and functions for 
+formatting data and reports.
+"""
 
 # import textwrap
 import re
@@ -16,7 +20,25 @@ from .util import flex_df_formatter, is_dataframe_long, get_display_dimensions
 from .util import insert_ellipsis_to_df , extract_truncate_df
 from .util import get_column_widths_in, distribute_column_widths  
 from .util import GOFAST_ESCAPE, select_df_styles, series_to_dataframe
-from .util import to_camel_case, format_iterable
+from .util import to_camel_case, format_iterable, get_table_size
+from .util import propose_layouts, validate_precision, apply_precision
+
+__all__=[
+     'BoxFormatter',
+     'DataFrameFormatter',
+     'DescriptionFormatter',
+     'MetricFormatter',
+     'MultiFrameFormatter',
+     'construct_long_dataframes_with_same_columns',
+     'construct_table_for_different_columns',
+     'construct_tables_for_same_columns',
+     'format_value',
+     'formatter_validator',
+     'get_formatter_classes',
+     'have_same_columns',
+     'is_any_long_dataframe',
+     'max_widths_across_dfs',
+ ]
 
 class MultiFrameFormatter (metaclass=MetaLen):
     """
@@ -49,6 +71,11 @@ class MultiFrameFormatter (metaclass=MetaLen):
     style : str, optional
         The styling preferences applied to the output of the DataFrames. 
         Defaults to 'base'.
+        
+    precision : int, optional
+        The number of decimal places to round numerical values to. 
+        Default is 4.
+        
     descriptor : str, optional
         A dynamic label or descriptor that defines the identity of the output
         when the object is represented as a string. This label is used in the 
@@ -117,6 +144,7 @@ class MultiFrameFormatter (metaclass=MetaLen):
         max_rows=None, 
         max_cols=None, 
         style=None, 
+        precision=4, 
         descriptor=None, 
         ):
         self.titles = titles if titles is not None else []
@@ -124,6 +152,8 @@ class MultiFrameFormatter (metaclass=MetaLen):
         self.dfs = []
         self.style= style or "base"
         self.max_rows = max_rows or 11 
+        self.precision=precision 
+        
         self.max_cols =max_cols or "auto"
         self.descriptor = descriptor
         
@@ -157,8 +187,9 @@ class MultiFrameFormatter (metaclass=MetaLen):
             # Handling the scenario where checked_dfs is empty after processing
             raise ValueError("No valid pandas DataFrame or convertible Series"
                              " were provided to FrameFactory.")
-
-        self.dfs = checked_dfs
+            
+        self.precision = validate_precision( self.precision)
+        self.dfs = [df.round(self.precision) for df in checked_dfs]
 
     def add_dfs(self, *dfs):
         """
@@ -180,6 +211,11 @@ class MultiFrameFormatter (metaclass=MetaLen):
         self._process_keyword_attribute()
         self._populate_df_column_attributes()
         
+        self._MAXROWS, self._MAXCOLS = get_display_limits(
+            *self.dfs, max_rows = self.max_rows, 
+            minimize_cols= True, precision= self.precision
+            )
+        
         return self
     
     def _dataframe_with_same_columns(self):
@@ -192,13 +228,17 @@ class MultiFrameFormatter (metaclass=MetaLen):
         str
             A string representation of the constructed table.
         """
-        if is_any_long_dataframe(*self.dfs): 
+ 
+        if is_any_long_dataframe(*self.dfs, max_rows=self.max_rows,
+                                 max_cols=self.max_cols, 
+                                 minimize_cols= True): 
             return construct_long_dataframes_with_same_columns(
-                self.dfs, titles = self.titles,
-                max_cols =self.max_cols, max_rows= self.max_rows,
+                self.dfs, 
+                titles = self.titles,
+                max_cols =self._MAXCOLS, 
+                max_rows= self._MAXROWS,
                 style = self.style, 
                 )
-        
         return construct_tables_for_same_columns(self.dfs, self.titles)
     
     def _dataframe_with_different_columns(self):
@@ -212,14 +252,15 @@ class MultiFrameFormatter (metaclass=MetaLen):
             A string representation of the constructed tables.
         """
         dfs = self.dfs 
-        if is_any_long_dataframe(*self.dfs, max_cols= self.max_cols ): 
+        if is_any_long_dataframe(*self.dfs, max_rows= self.max_rows,
+                max_cols= self.max_cols
+                ): 
             # construct fake dfs for better aligment. 
             dfs = make_fake_dfs(
-                self.dfs, max_rows= self.max_rows, max_cols= self.max_cols)
-            # return construct_long_dataframes_with_different_columns(
-            #     self.dfs, titles = self.titles,
-            #     max_cols = 7, max_rows= 11, style = self.style, 
-            #     )
+                self.dfs, 
+                max_rows= self._MAXROWS, 
+                max_cols= self._MAXCOLS
+                )
         return construct_table_for_different_columns(dfs, self.titles)
 
     def __str__(self):
@@ -236,6 +277,7 @@ class MultiFrameFormatter (metaclass=MetaLen):
         """
         if not self.dfs:
             return "<Empty Frame>"
+        
         if len(self.dfs) == 1:
             return DataFrameFormatter(self.titles[0], self.keywords[0]).add_df(
                 self.dfs[0]).__str__()
@@ -354,6 +396,19 @@ class DataFrameFormatter(metaclass=MetaLen):
        Is the name the series when series is passed rather than dataframe. 
        If given, the `series_name` whould replace the dataframe default integer 
        columns. 
+       
+    max_rows : int, optional
+        The maximum number of rows for each DataFrame to display when printed.
+        Defaults to 'auto'.
+    max_cols : int or str, optional
+        The maximum number of columns for each DataFrame to display when printed.
+        Can be an integer or 'auto' for automatic adjustment based on the 
+        DataFrame size.
+        Defaults to 'auto'.
+        
+    precision : int, optional
+        The number of decimal places to round numerical values to. 
+        Default is 4
         
     Attributes
     ----------
@@ -435,13 +490,25 @@ class DataFrameFormatter(metaclass=MetaLen):
     snake_case conversion of column names.
     """
 
-    def __init__(self, title=None, keyword=None, style=None, descriptor=None, 
-                 series_name=None):
+    def __init__(
+        self, 
+        title=None, 
+        keyword=None, 
+        style=None, 
+        descriptor=None, 
+        series_name=None, 
+        max_cols=None, 
+        max_rows =None,
+        precision=4, 
+        ):
         self.title = title
         self.keyword = keyword
         self.style=style
         self.descriptor=descriptor
         self.series_name=series_name 
+        self.max_cols =max_cols 
+        self.max_rows =max_rows 
+        self.precision=precision 
         self.df = None
         self._column_name_mapping = {}
         
@@ -477,6 +544,14 @@ class DataFrameFormatter(metaclass=MetaLen):
         self._populate_df_column_attributes()
     
         self._process_keyword_attribute()
+        
+        self.precision = validate_precision( self.precision)
+        
+        self.df = df.round(self.precision)
+        self.max_rows, self.max_cols = get_display_limits(
+            self.df, max_rows = self.max_rows, max_cols= self.max_cols,
+                minimize_cols= True, precision=self.precision )
+            
         return self
 
     def _process_keyword_attribute(self):
@@ -525,12 +600,17 @@ class DataFrameFormatter(metaclass=MetaLen):
         truncated if exceeding column width.
         """
         col_width = col_widths[col_name]
-    
+        
         if isinstance(val, (np.integer, np.floating)):
-            formatted_val = f"{float(val):.4f}" if isinstance(
+            formatted_val = apply_precision(val, self.precision) if isinstance(
                 val, np.floating) else f"{int(val)}"
+            # formatted_val = f"{float(val):.{self.precision}f}" if isinstance(
+            #     val, np.floating) else f"{int(val)}"
         elif isinstance(val, (float, int)):
-            formatted_val = f"{val:.4f}" if isinstance(val, float) else f"{val}"
+            formatted_val = apply_precision(val, self.precision) if isinstance (
+                val, float) else f"{val}"
+            # formatted_val = f"{val:.{self.precision}f}" if isinstance(
+            #     val, float) else f"{val}"
    
         elif isinstance(val, str):
             formatted_val = ( 
@@ -700,12 +780,16 @@ class DataFrameFormatter(metaclass=MetaLen):
         str
             The formatted dataframe as a string.
         """
+        #XXXX TODO
         # Handle a single dataframe
-        rows, cols = self.df.shape 
-        if is_dataframe_long(self.df, max_rows= "auto", max_cols = "auto" ) : 
+        if is_dataframe_long(self.df, max_rows= "auto", max_cols = "auto" , 
+                minimize_cols= True ):
             return flex_df_formatter(
-                self.df, title = self.title, max_rows= 11 , max_cols ="auto" , 
-                table_width= "auto", style=self.style
+                self.df, title = self.title, 
+                max_rows= self.max_rows, 
+                max_cols =self.max_cols, 
+                table_width= "auto", 
+                style=self.style
             )
         return self._formatted_dataframe()
 
@@ -969,7 +1053,8 @@ class BoxFormatter:
     >>> formatter.add_dict(dict_content, 50)
     >>> print(formatter)
     """
-
+    TW= get_table_size()
+    
     def __init__(self, title='', descriptor =None):
         self.title = title
         self.content = ''
@@ -1006,6 +1091,8 @@ class BoxFormatter:
         box_width : int, optional
             The width of the box within which the text is to be wrapped.
         """
+        box_width = self.TW if (
+            box_width is None or box_width == 'auto') else box_width
         self.has_content = True
         self.content = self.format_box(text, box_width, is_dict=False)
 
@@ -1026,7 +1113,7 @@ class BoxFormatter:
         self.has_content = True
         self.format_dict(dict_table, descr_width)
 
-        
+    
     def format_box(self, text, width, is_dict):
         """
         Formats text or a dictionary to be displayed within a bordered box, 
@@ -1070,7 +1157,6 @@ class BoxFormatter:
         >>> print(formatter)
         # This will print the dictionary content formatted as a table within a box.
         """
-
         if self.title:
             title_str = f"{self.title.center(width - 4)}"
             top_border = f"|{'=' * (width - 2)}|"
@@ -1134,7 +1220,7 @@ class BoxFormatter:
         wrapped_lines.append(current_line)
 
         return wrapped_lines
-    
+
     def format_dict(self, dict_table, descr_width=45):
         """
         Formats and displays a dictionary as a neatly organized table within a
@@ -1162,8 +1248,8 @@ class BoxFormatter:
         to the content attribute of the instance, ready to be displayed when
         the instance is printed.
     
-        Example Usage:
-        --------------
+        Example
+        -------
         >>> from gofast.api.formatter import BoxFormatter
         >>> formatter = BoxFormatter("Feature Descriptions")
         >>> feature_dict = {
@@ -1177,15 +1263,24 @@ class BoxFormatter:
         descriptions, neatly organized and wrapped according to the specified
         `descr_width`, and centered if a title is provided.
         """
-        longest_key = max(map(len, dict_table.keys())) + 2
-        header_width = longest_key + descr_width + 3
-
+        longest_key = max(map(len, dict_table.keys())) + 2 
+        
+        descr_width = descr_width or "auto"
+        if descr_width =='auto': 
+            # Set descr_width to terminal width minus padding
+            descr_width = self.TW - ( longest_key + 4 ) 
+            header_width = self.TW
+        else: 
+            header_width = longest_key + descr_width + 4
+        
         content_lines = [
             self._format_title(header_width),
             self._format_header(longest_key, descr_width, header_width),
         ]
 
-        item_template = "{key:<{key_width}}| {desc:<{desc_width}}"
+        item_template = "|{key:<{key_width}}| {desc:<{desc_width}}|"
+        next_marker ='.'
+        baseline = ". {next_marker:>{key_width}}  {next_marker:>{desc_width}}"
         for key, desc in dict_table.items():
             wrapped_desc = self.wrap_text(desc, descr_width)
             for i, line in enumerate(wrapped_desc):
@@ -1197,8 +1292,13 @@ class BoxFormatter:
                     content_lines.append(item_template.format(
                         key="", key_width=longest_key, desc=line, 
                         desc_width=descr_width))
-            content_lines.append('-' * header_width)
-
+            content_lines.append (
+                baseline.format(
+                            next_marker=next_marker, 
+                            key_width=longest_key, 
+                            desc_width=descr_width)
+                )
+            #content_lines.append('-' * header_width)
         # Replace the last separator with equal sign to signify the end
         content_lines[-1] = '=' * header_width
 
@@ -1206,13 +1306,13 @@ class BoxFormatter:
 
     def _format_title(self, width):
         if self.title:
-            title_line = f"{self.title.center(width - 4)}"
+            title_line = f"|{self.title.center(width-2)}|"
             return f"{'=' * width}\n{title_line}\n{'~' * width}"
         else:
             return f"{'=' * width}"
 
     def _format_header(self, key_width, desc_width, total_width):
-        header_line = f"{'Name':<{key_width}}| {'Description':<{desc_width}} "
+        header_line = f"|{'Name':<{key_width}}| {'Description':<{desc_width}}|"
         return f"{header_line}\n{'~' * total_width}"
         
 class DescriptionFormatter(metaclass=MetaLen):
@@ -1285,7 +1385,6 @@ class DescriptionFormatter(metaclass=MetaLen):
     # | as age, loan status, and annual income, which... |
     # |==================================================|
     """
-
     def __init__(self, content, title='', descriptor=None):
         self.content = content
         self.title = title
@@ -1307,18 +1406,32 @@ class DescriptionFormatter(metaclass=MetaLen):
         """
         return "<DescriptionFormatter: Use print() to view detailed content>"
 
-    def description(self):
+    def description(self, descr_width= 'auto', box_width ='auto' ):
         """
         Utilizes the BoxFormatter class to format the content (either plain text
         or a dictionary of descriptions) for display. Depending on the type of
         content, it appropriately calls either add_text or add_dict method of
         BoxFormatter.
 
+        Parameters
+        ----------
+        descr_width : int or str, default='auto'
+            The desired width of the description column in the table. If set
+            to 'auto', the width is calculated based on the terminal width.
+            This determines how text in the description column is wrapped and
+            affects the overall width of the table.
+            
+        box_width : int or str, default='auto'
+            The width of the box within which the text is to be wrapped. If
+            set to 'auto', the width is calculated based on the terminal
+            width.
+    
         Returns
         -------
         BoxFormatter
-            An instance of BoxFormatter containing the formatted description, ready
-            for display.
+            An instance of BoxFormatter containing the formatted description,
+            ready for display.
+            
         """
         formatter = BoxFormatter(
             title=self.title if self.title else "Feature Descriptions", 
@@ -1327,10 +1440,10 @@ class DescriptionFormatter(metaclass=MetaLen):
         if isinstance(self.content, dict):
             # If the content is a dictionary, format it as a table of feature
             # descriptions.
-            formatter.add_dict(self.content, descr_width=50)
+            formatter.add_dict(self.content, descr_width=descr_width)
         else:
             # If the content is a simple text, format it directly.
-            formatter.add_text(self.content)
+            formatter.add_text(self.content, box_width = box_width )
 
         return formatter
     
@@ -1433,7 +1546,7 @@ def check_indexes(dataframes):
     # include index if 
     return any(df.index.dtype.kind in 'O' for df in dataframes)
 
-def max_widths_across_dfs(dataframes, include_index):
+def max_widths_across_dfs(dataframes, include_index, buffer_space =2 ):
     """
     Calculates the maximum widths for columns across all provided dataframes,
     optionally including the index width if specified.
@@ -1444,7 +1557,8 @@ def max_widths_across_dfs(dataframes, include_index):
         The DataFrames for which to calculate maximum column widths.
     include_index : bool
         Determines whether to include the index width in the calculations.
-
+    buffer_space: int, default=2 
+       Space between the index and the first column of the dataframe. 
     Returns
     -------
     dict
@@ -1470,13 +1584,7 @@ def max_widths_across_dfs(dataframes, include_index):
     index_width = 0
     if include_index:
         index_width = max(max(len(str(index)) for index in df.index)
-                          for df in dataframes) + 2 
-    # for df in dataframes:
-    #     for col in df.columns:
-    #         formatted_values = [len(format_value(val)) 
-    #                             for val in df[col].append(pd.Series(col))]
-    #         max_width = max(formatted_values)
-    #         column_widths[col] = max(column_widths.get(col, 0), max_width)
+                          for df in dataframes) + buffer_space 
     for df in dataframes:
         for col in df.columns:
             # Combine the column data and the column name into a single Series
@@ -1627,7 +1735,8 @@ def construct_tables_for_same_columns(dataframes, titles=None):
     # Trim trailing spaces or lines and return the final table string
     return tables_str.rstrip()
 
-def is_any_long_dataframe(*dfs, max_rows=50, max_cols=11):
+def is_any_long_dataframe(
+        *dfs, max_rows="auto", max_cols="auto", minimize_cols=False):
     """
     Determines whether any of the provided DataFrames is considered 'long' based
     on specified criteria for maximum rows and columns.
@@ -1645,7 +1754,10 @@ def is_any_long_dataframe(*dfs, max_rows=50, max_cols=11):
         considered 'long'.
         If set to 'auto', the maximum columns will be dynamically determined 
         based on context or configuration. Default is 'auto'.
-
+    minimize_cols : bool, default=False
+        If True, reduce the number of columns by one to minimize the chance 
+        of column overlap, ensuring better fitting within the terminal width.
+        
     Returns
     -------
     bool
@@ -1671,16 +1783,20 @@ def is_any_long_dataframe(*dfs, max_rows=50, max_cols=11):
     This function is useful for batch checking multiple DataFrames in scenarios where
     processing or visualization methods may vary depending on the size of the data.
     """
-
     if any(is_dataframe_long(
-            df, max_rows=max_rows, max_cols=max_cols, return_rows_cols_size=False)
+            df, max_rows=max_rows, 
+            max_cols=max_cols, 
+            return_rows_cols_size=False, 
+            minimize_cols= minimize_cols 
+            )
             for df in dfs
             ):
         return True
     return False
 
+
 def construct_long_dataframes_with_same_columns(
-    dataframes, titles=None, max_cols=7, max_rows=100, 
+    dataframes, titles=None, max_cols=5, max_rows=50, 
     style="base", **kwargs):
     """
     Constructs a string representation of multiple dataframes that are ensured to
@@ -1769,11 +1885,14 @@ def construct_long_dataframes_with_same_columns(
          # Set the title for the current table if provided
         title = titles[i].title() if titles and i < len(titles) else ""
         formatted_df = flex_df_formatter(
-            df, title=title, max_rows=max_rows, max_cols=max_cols, 
-             index= include_index, style= style, 
-             column_widths= column_widths, 
-             max_index_length= max_index_length, 
-             **kwargs
+            df, title=title, 
+            max_rows=max_rows, 
+            max_cols=max_cols, 
+            index= include_index,
+            style= style, 
+            column_widths= column_widths, 
+            max_index_length= max_index_length, 
+            **kwargs
         )
         if i > 0: 
           formatted_df = remove_header_lines( 
@@ -1875,7 +1994,8 @@ def make_fake_dfs(dataframes, max_rows=11, max_cols=7):
         extracted_dfs, dataframes)]
     return dfs
 
-def construct_table_for_different_columns(dataframes, titles):
+def construct_table_for_different_columns(
+        dataframes, titles, buffer_space =2 ):
     """
     Constructs and returns a formatted string representation of tables
     for a list of pandas DataFrames with differing column names. Each
@@ -1897,7 +2017,9 @@ def construct_table_for_different_columns(dataframes, titles):
         above their respective tables. The number of titles should match the
         number of DataFrames; if there are fewer titles than DataFrames, the
         remaining tables will be displayed without titles.
-
+        
+    buffer_space: 
+        
     Returns
     -------
     str
@@ -1938,27 +2060,16 @@ def construct_table_for_different_columns(dataframes, titles):
     global_max_width = 0  # Track the maximum table width for alignment
     # Calculate individual table widths and adjust global_max_width
     # column widths and accounting for spacing between columns.
-    # for df in dataframes:
-    #     # Calculate the total width of the table by summing the individual
-    #     # column widths and accounting for spacing between columns.
-    #     column_widths, _ = max_widths_across_dfs([df], include_index)
-    #     # *3 = Space between columns
-    #     table_width = sum(column_widths.values()) + (len(column_widths) - 1)  * 2 
-    #     if include_index:
-    #         table_width += global_index_width  + 2  # Space for index column and padding
-    #     global_max_width = max(global_max_width, table_width) 
 
     index_width, column_widths =distribute_column_widths(*dataframes)
     # global_max_width = 0  # Track the maximum table width for alignment
     for df in dataframes:
         # Calculate the total width of the table by summing the individual
         # column widths and accounting for spacing between columns.
-        # column_widths, _ = max_widths_across_dfs([df], include_index)
-        # *3 = Space between columns
         table_width = sum ( column_widths[col] for col in df.columns) + (
-            len(df.columns) - 1)  * 2 
+            len(df.columns) - 1)  * buffer_space 
         if include_index:
-            table_width += index_width  + 2  # Space for index column and padding
+            table_width += index_width  + buffer_space  # Space for index column and padding
         global_max_width = max(global_max_width, table_width) 
         
     for i, df in enumerate(dataframes):
@@ -2008,10 +2119,63 @@ def construct_table_for_different_columns(dataframes, titles):
         tables_str += "\n".join(table_content) + "\n"
     
     ## Return the final output string, trimming any trailing newline characters.
-    
+
     return tables_str.rstrip()
 
 
+def get_display_limits(
+        *dfs, max_rows='auto', max_cols='auto', **layout_kws):
+    """
+    Determines the optimal number of rows and columns for displaying DataFrames
+    based on the specified or auto-calculated layout.
+
+    Parameters
+    ----------
+    *dfs : pandas.DataFrame
+        One or more DataFrames for which to determine display limits.
+        
+    max_rows : int or str, default='auto'
+        The maximum number of rows to display. If 'auto', 
+        calculates the optimal number.
+        
+    max_cols : int or str, default='auto'
+        The maximum number of columns to display. If 'auto', 
+        calculates the optimal number.
+        
+    **layout_kws : dict, optional
+        Additional keyword arguments to pass to the layout calculation function.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - int: The maximum number of rows.
+        - int: The maximum number of columns.
+    
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from gofast.api.util import get_display_limits
+    >>> df1 = pd.DataFrame({'A': [1, 2, 3], 'B': ['x', 'y', 'z']})
+    >>> df2 = pd.DataFrame({'C': [4, 5, 6], 'D': ['a', 'b', 'c']})
+    >>> max_rows, max_cols = get_display_limits(df1, df2)
+    >>> print(f"Max rows: {max_rows}, Max cols: {max_cols}")
+    """
+    # Calculate the optimal number of rows and columns for display
+    optimal_rows, optimal_cols = propose_layouts(*dfs, **layout_kws)
+
+    # Determine the maximum number of rows
+    if str(max_rows).lower() in ['none',  'auto']:
+        max_rows = optimal_rows
+
+    # Determine the maximum number of columns
+    if str(max_cols).lower() in ['none',  'auto']:
+        max_cols = optimal_cols
+
+    return max_rows, max_cols
+
+
+    
 def get_formatter_classes():
     """
     Retrieves all the formatter classes defined within the same module as this function.

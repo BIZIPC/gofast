@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-from __future__ import annotations 
+#   License: BSD-3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
+
+"""
+`baseutils` module offers essential utilities for data processing and analysis,
+including functions for normalization, interpolation, feature selection, 
+outlier removal, and various data manipulation tasks.
+"""
 import os 
 import copy 
 import time
@@ -51,6 +58,7 @@ __all__= [
     'interpolate_grid',
     'interpolate_data', 
     'labels_validator',
+    'make_df', 
     'normalizer',
     'remove_outliers',
     'remove_target_from_array',
@@ -66,14 +74,14 @@ __all__= [
     ]
 
 def remove_outliers(
-    ar: ArrayLike|DataFrame, /, 
+    ar: Union[ArrayLike,DataFrame],  
     method: str = 'IQR',
     threshold: float = 3.0,
     fill_value: Optional[float] = None,
     axis: int = 1,
     interpolate: bool = False,
     kind: str = 'linear'
-) -> ArrayLike|DataFrame:
+) -> Union[ArrayLike, DataFrame]:
     """
     Efficient strategy to remove outliers in the data. 
     
@@ -227,7 +235,7 @@ def _remove_outliers(data, n_std=3):
     return df
 
 def interpolate_grid (
-    arr, / , 
+    arr,
     method ='cubic', 
     fill_value='auto', 
     view = False,
@@ -333,7 +341,7 @@ def interpolate_grid (
     return arri 
 
 def fillNaN(
-    arr: Union[ArrayLike, Series, DataFrame], /, 
+    arr: Union[ArrayLike, Series, DataFrame], 
     method: str = 'ff'
     ) -> Union[ArrayLike, Series, DataFrame]:
     """
@@ -1305,8 +1313,8 @@ def smart_rotation(ax):
 def select_features(
     data: DataFrame,
     features: Optional[List[str]] = None,
-    include: Optional[Union[str, List[str]]] = None,
-    exclude: Optional[Union[str, List[str]]] = None,
+    dtypes_include: Optional[Union[str, List[str]]] = None,
+    dtypes_exclude: Optional[Union[str, List[str]]] = None,
     coerce: bool = False,
     columns: Optional[List[str]] = None,
     verify_integrity: bool = False,
@@ -1324,10 +1332,10 @@ def select_features(
     features : List[str], optional
         Specific feature names to select. An error is raised if any
         feature is not present in `data`.
-    include : str or List[str], optional
+    dtypes_include : str or List[str], optional
         The data type(s) to include in the selection. Possible values
         are the same as for the pandas `include` parameter in `select_dtypes`.
-    exclude : str or List[str], optional
+    dtypes_exclude : str or List[str], optional
         The data type(s) to exclude from the selection. Possible values
         are the same as for the pandas `exclude` parameter in `select_dtypes`.
     coerce : bool, default False
@@ -1402,10 +1410,10 @@ def select_features(
         return data [features] 
     # raise ValueError: at least one of include or exclude must be nonempty
     # use coerce to no raise error and return data frame instead.
-    return data if coerce else data.select_dtypes (include, exclude) 
+    return data if coerce else data.select_dtypes (dtypes_include, dtypes_exclude) 
 
 def speed_rowwise_process(
-    data, /, 
+    data, 
     func, 
     n_jobs=-1
     ):
@@ -1819,7 +1827,7 @@ def lowertify(
 
 
 def save_or_load(
-    fname:str, /,
+    fname:str, 
     arr: NDArray=None,  
     task: str='save', 
     format: str='.txt', 
@@ -1941,14 +1949,14 @@ def save_or_load(
     return arr if task=='load' else None 
 
 def array2hdf5 (
-    filename: str, /, 
+    filename: str, 
     arr: NDArray=None , 
     dataname: str='data',  
     task: str='store', 
     as_frame: bool =..., 
     columns: List[str]=None, 
-)-> NDArray | DataFrame: 
-    """ Load or write array to hdf5
+)-> Union [NDArray , DataFrame]: 
+    """ Load or write array to hdf5.
     
     Parameters 
     -----------
@@ -2010,7 +2018,7 @@ def array2hdf5 (
             
     return data if task=='load' else None 
 
-def remove_target_from_array(arr,/,  target_indices):
+def remove_target_from_array(arr,  target_indices):
     """
     Remove specified columns from a 2D array based on target indices.
 
@@ -2059,12 +2067,16 @@ def remove_target_from_array(arr,/,  target_indices):
     modified_arr = np.delete(arr, target_indices, axis=1)
     return modified_arr, target_arr
 
+# revise the code, elevate the style of programming, return only target if 
+# return_X_y is False 
+
 def extract_target(
-    data: Union[ArrayLike, DataFrame],/, 
+    data: Union[ArrayLike, DataFrame], 
     target_names: Union[str, int, List[Union[str, int]]],
     drop: bool = True,
     columns: Optional[List[str]] = None,
-) -> Tuple[Union[ArrayLike, Series, DataFrame], Union[ArrayLike, DataFrame]]:
+    return_y_X: bool = False
+) -> Union[ArrayLike, Series, DataFrame, Tuple[ArrayLike, pd.DataFrame]]:
     """
     Extracts specified target column(s) from a multidimensional numpy array
     or pandas DataFrame. 
@@ -2088,14 +2100,16 @@ def extract_target(
         If provided and `data` is a DataFrame, specifies new names for the 
         columns in `data`. The length of `columns` must match the number of 
         columns in `data`. This parameter is ignored if `data` is a NumPy array.
+    return_y_X : bool, default False
+        If True, returns a tuple (y, X) where X is the data with the target columns
+        removed and y is the target columns. If False, returns only y.
 
     Returns
     -------
-    Tuple[Union[np.ndarray, pd.Series, pd.DataFrame], Union[np.ndarray, pd.DataFrame]]
-        A tuple containing two elements:
-        - The extracted column(s) as a NumPy array or pandas Series/DataFrame.
-        - The original data with the extracted columns optionally removed, as a
-          NumPy array or pandas DataFrame.
+    Union[ArrayLike, pd.Series, pd.DataFrame, Tuple[ pd.DataFrame, ArrayLike]]
+        If return_X_y is True, returns a tuple (X, y) where X is the data with the 
+        target columns removed and y is the target columns. If return_X_y is False, 
+        returns only y.
 
     Raises
     ------
@@ -2109,13 +2123,18 @@ def extract_target(
     Examples
     --------
     >>> import pandas as pd 
-    >>> from gofast.tools.baseutils import extract_target
     >>> df = pd.DataFrame({
     ...     'A': [1, 2, 3],
     ...     'B': [4, 5, 6],
     ...     'C': [7, 8, 9]
     ... })
-    >>> target, remaining = extract_target(df, 'B', drop=True)
+    >>> target = extract_target(df, 'B', drop=True, return_y_X=False)
+    >>> print(target)
+    0    4
+    1    5
+    2    6
+    Name: B, dtype: int64
+    >>> target, remaining = extract_target(df, 'B', drop=True, return_y_X=True)
     >>> print(target)
     0    4
     1    5
@@ -2127,22 +2146,23 @@ def extract_target(
     1  2  8
     2  3  9
     >>> arr = np.random.rand(5, 3)
-    >>> target, modified_arr = extract_target(arr, 2, )
+    >>> target, modified_arr = extract_target(arr, 2, return_X_y=True)
     >>> print(target)
     >>> print(modified_arr)
     """
-    if isinstance (data, pd.Series): 
-        data = data.to_frame() 
-    if _is_arraylike_1d(data): 
-        # convert to 2d array 
-        data = data.reshape (-1, 1)
-    
+    if isinstance(data, pd.Series):
+        data = data.to_frame()
+    if np.ndim(data) == 1:
+        data = np.expand_dims(data, axis=1)
+
     is_frame = isinstance(data, pd.DataFrame)
-    
+
     if is_frame and columns is not None:
+        columns = is_iterable(columns, exclude_string= True, transform= True)
         if len(columns) != data.shape[1]:
-            raise ValueError("`columns` must match the number of columns in"
-                             f" `data`. Expected {data.shape[1]}, got {len(columns)}.")
+            raise ValueError(
+                "`columns` must match the number of columns in"" `data`."
+                f" Expected {data.shape[1]}, got {len(columns)}.")
         data.columns = columns
 
     if isinstance(target_names, (int, str)):
@@ -2150,18 +2170,17 @@ def extract_target(
 
     if all(isinstance(name, int) for name in target_names):
         if max(target_names, default=-1) >= data.shape[1]:
-            raise ValueError("All integer indices must be within the"
-                             " column range of the data.")
+            raise ValueError(
+                "All integer indices must be within the column range of the data.")
     elif any(isinstance(name, int) for name in target_names) and is_frame:
         target_names = [data.columns[name] if isinstance(name, int) 
                         else name for name in target_names]
 
     if is_frame:
-        missing_cols = [name for name in target_names 
-                        if name not in data.columns]
+        missing_cols = [name for name in target_names if name not in data.columns]
         if missing_cols:
-            raise ValueError(f"Column names {missing_cols} do not match "
-                             "any column in the DataFrame.")
+            raise ValueError(f"Column names {missing_cols} do not match any"
+                             " column in the DataFrame.")
         target = data.loc[:, target_names]
         if drop:
             data = data.drop(columns=target_names)
@@ -2172,11 +2191,13 @@ def extract_target(
         target = data[:, target_names]
         if drop:
             data = np.delete(data, target_names, axis=1)
-            
-    if  isinstance (target, np.ndarray): # squeeze the array 
-        target = np.squeeze (target)
-        
-    return target, data
+
+    if isinstance(target, np.ndarray):
+        target = np.squeeze(target)
+
+    if return_y_X:
+        return target, data
+    return target
 
 def _extract_target(
         X, target: Union[ArrayLike, int, str, List[Union[int, str]]]):
@@ -2243,7 +2264,7 @@ def _extract_target(
     return X, y, target_names
 
 def categorize_target(
-    arr : Union [ArrayLike , Series] , /, 
+    arr : Union [ArrayLike , Series] ,  
     func: _F = None,  
     labels: Union [int, List[int]] = None, 
     rename_labels: Optional[str] = None, 
@@ -3023,7 +3044,7 @@ def binning_statistic(
     return result
 
 @Dataify(auto_columns=True)
-def category_count(data, /, *categorical_columns, error='raise'):
+def category_count(data,  *categorical_columns, error='raise'):
     """
     Count occurrences of each category in one or more categorical columns 
     of a dataset.
@@ -3105,7 +3126,7 @@ def category_count(data, /, *categorical_columns, error='raise'):
 
 @Dataify(auto_columns=True) 
 def soft_bin_stat(
-    data, /, categorical_column, 
+    data,  categorical_column, 
     target_column, 
     statistic='mean', 
     update=False, 
@@ -3337,10 +3358,10 @@ def _handle_non_numeric(data, action='normalize'):
             # Convert Series to DataFrame to use select_dtypes
             data = data.to_frame()
             # Convert back to Series if needed
-            numeric_data = data.select_dtypes(include=[np.number]).squeeze()  
+            numeric_data = data.select_dtypes([np.number]).squeeze()  
         elif isinstance(data, pd.DataFrame):
             # For DataFrame, use select_dtypes to filter numeric data.
-            numeric_data = data.select_dtypes(include=[np.number])
+            numeric_data = data.select_dtypes([np.number])
         # For pandas data structures, select only numeric data types.
         if numeric_data.empty:
             raise ValueError(f"No numeric data to {action}.")
@@ -3535,7 +3556,7 @@ def normalizer(
     return normalized_arrays[0] if len(normalized_arrays) == 1 else normalized_arrays
 
 def smooth1d(
-    ar, /, 
+    ar,
     drop_outliers:bool=True, 
     ma:bool=True, 
     absolute:bool=False,
@@ -3664,7 +3685,7 @@ def smooth1d(
     return arr 
 
 def smoothing (
-    ar, /, 
+    ar,  
     drop_outliers = True ,
     ma=True,
     absolute =False,
@@ -3808,7 +3829,7 @@ def _count_local_minima(arr: ArrayLike, method: str = 'robust') -> int:
 def scale_y(
     y: ArrayLike, 
     x: ArrayLike = None, 
-    deg: int = "auto", 
+    deg: Union [int, str] = "auto", 
     func: _F = None, 
     return_xf: bool = False, 
     view: bool = False
@@ -4355,7 +4376,160 @@ def pandas_manager(
         return _handle_set_action(
             data, name_or_columns, action , error, index)
 
+def make_df(
+    X, y=None, 
+    prefix=None, 
+    target_names=None,
+    coerce=False, 
+    error='raise', 
+    fill_value=np.nan,
+    truncate_X=False
+):
+    """
+    Prepare a DataFrame from input data `X` and `y` with appropriate naming
+    conventions and length checks.
 
+    Parameters
+    ----------
+    X : array-like or DataFrame
+        Input features. If not a DataFrame, `X` will be converted into one with 
+        column names generated using the `prefix` parameter.
+
+    y : array-like or Series, optional
+        Target values. If provided, `y` will be converted into a DataFrame. 
+        If `y` is a 1D array and `target_names` is not given, 'target' will be 
+        used as the default name. For a 2D array, `target_names` will be used 
+        to name the columns.
+
+    prefix : str, optional
+        Prefix for feature column names if `X` is not a DataFrame. Default is 'feature_'.
+
+    target_names : list of str, optional
+        Names for target columns if `y` is 2D. If `target_names` is not provided, 
+        columns will be named using 'target_' prefix.
+
+    coerce : bool, optional
+        Whether to coerce the lengths of `X` and `y` to match if they are inconsistent.
+        Default is False. If True and `len(X) < len(y)`, `X` will be repeated to 
+        match `y`'s length. If `len(y) < len(X)`, `y` will be forward-filled to 
+        match `X`'s length.
+
+    error : str, optional
+        Error handling strategy. Options are:
+        - 'raise': Raises an error if lengths of `X` and `y` are inconsistent 
+          and `coerce` is False.
+        - 'warn': Issues a warning instead of raising an error.
+        - 'ignore': Ignores the inconsistency and proceeds. Default is 'raise'.
+
+    fill_value : scalar, optional
+        Value to use for filling missing values if `coerce` is True and 
+        `len(y) < len(X)`. Default is `np.nan`.
+
+    truncate_X : bool, optional
+        If True and `len(y) < len(X)`, truncate `X` to match the length of `y`.
+        Default is False.
+
+    Returns
+    -------
+    DataFrame
+        Combined DataFrame with features and target(s).
+
+    Notes
+    -----
+    This function is useful for preparing data for machine learning tasks, 
+    ensuring consistency between features and targets. The function handles 
+    common issues such as inconsistent lengths and missing values, providing 
+    options to coerce or truncate data as needed.
+
+    Examples
+    --------
+    >>> from gofast.tools.baseutils import make_df
+    >>> X = np.random.rand(90, 5)
+    >>> y = np.random.rand(100)
+    >>> df = make_data(X, y, coerce=True, error='ignore')
+    >>> print(df.head())
+
+    See Also
+    --------
+    pd.DataFrame : Pandas DataFrame constructor.
+    np.asarray : Convert input to an array.
+
+    References
+    ----------
+    .. [1] Pandas Documentation: https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html
+    .. [2] NumPy Documentation: https://numpy.org/doc/stable/reference/generated/numpy.asarray.html
+    """
+    
+    def to_dataframe(data, prefix, default_name=None):
+        if isinstance(data, pd.DataFrame):
+            return data
+        if isinstance(data, pd.Series):
+            return data.to_frame(name=default_name)
+        data = np.asarray(data)
+        if data.ndim == 1:
+            default_name ='feature' if default_name=='feature_' else default_name 
+            return pd.DataFrame(data, columns=[default_name])
+        column_names = [f"{prefix}{i}" for i in range(data.shape[1])]
+        
+        default_name = column_names if (
+            default_name is None or default_name == f'{prefix}') else default_name
+        
+        if isinstance(default_name, str):
+            default_name = [default_name]
+        
+        if isinstance(default_name, (list, tuple)) and len(default_name) != len(column_names):
+            if error == 'warn':
+                warnings.warn("Provided default names must match the number"
+                              " of columns in data. Using generated names instead.")
+            elif error == 'raise':
+                raise ValueError("Provided default names must match the number of columns in data.")
+            default_name = column_names
+        
+        return pd.DataFrame(data, columns=default_name)
+
+    prefix = prefix or 'feature_'
+    
+    # Convert X to DataFrame
+    X = to_dataframe(X, prefix, f"{prefix}")
+    
+    # Convert y to DataFrame if it is provided
+    if y is not None:
+        if isinstance(target_names, str):
+            target_names = [target_names]
+            
+        y = to_dataframe(y, 'target_', target_names if target_names else 'target')
+
+    # Check for length consistency
+    if y is not None:
+        if len(X) != len(y):
+            msg = f"Inconsistent lengths: len(X)={len(X)}, len(y)={len(y)}."
+            if len(X) < len(y):
+                if error == 'raise' and not coerce:
+                    raise ValueError(msg)
+                elif coerce:
+                    multiplier = (len(y) // len(X)) + 1
+                    X = pd.concat([X] * multiplier).reset_index(drop=True).iloc[:len(y)]
+                    warnings.warn(f"{msg} Coercing X to match y length.")
+                elif error == 'ignore':
+                    pass
+            elif len(y) < len(X):
+                if truncate_X:
+                    X = X.iloc[:len(y)]
+                    if error =='warn': 
+                        warnings.warn(f"{msg} Truncating X to match y length.")
+                elif coerce:
+                    y = y.reindex(np.arange(len(X)), method='ffill',
+                                  fill_value=fill_value)
+                    warnings.warn(f"{msg} Forward filling y to match X length.")
+                else:
+                    raise ValueError(
+                        msg + " y cannot have fewer rows than X. Please check the input.")
+
+    # Combine X and y
+    if y is not None:
+        return pd.concat([X.reset_index(drop=True), y.reset_index(drop=True)], axis=1)
+    
+    return X
 
 
         

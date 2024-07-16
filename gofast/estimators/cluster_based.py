@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+`cluster_based` module offers cluster-based machine learning models
+leveraging clustering techniques to enhance predictive performance.
+"""
 
-from __future__ import annotations 
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.metrics import r2_score
 
 from ..tools.validator import check_is_fitted
 from ._cluster_based import BaseKMF
-from .util import select_default_estimator
 
 __all__=["KMFClassifier", "KMFRegressor"]
 
@@ -168,12 +170,12 @@ class KMFClassifier(BaseKMF, ClassifierMixin):
     >>> from gofast.estimators.cluster_based import KMFClassifier
     >>> from sklearn.datasets import make_classification
     >>> from sklearn.model_selection import train_test_split
-    >>> X, y = make_classification(n_samples=100, n_features=20, 
-                                   random_state=42)
+    >>> X, y = make_classification(n_samples=100, n_features=20, random_state=42)
     >>> X_train, X_test, y_train, y_test = train_test_split(X, y)
     >>> kmf_classifier = KMFClassifier(n_clusters=5)
     >>> kmf_classifier.fit(X_train, y_train)
     >>> y_pred = kmf_classifier.predict(X_test)
+    >>> kmf_classifier.score (X_test, y_test)
 
     See Also
     --------
@@ -192,7 +194,6 @@ class KMFClassifier(BaseKMF, ClassifierMixin):
     .. [3] Pedregosa, F. et al. (2011). Scikit-learn: Machine Learning in 
            Python. Journal of Machine Learning Research. 12:2825-2830.
     """
-    base_estimator = select_default_estimator("dt", "classification")
 
     def __init__(
         self,
@@ -532,7 +533,7 @@ class KMFRegressor(BaseKMF, RegressorMixin):
     >>> X_train, X_test, y_train, y_test = train_test_split(X, y)
     >>> kmf_regressor = KMFRegressor(n_clusters=5)
     >>> kmf_regressor.fit(X_train, y_train)
-
+    >>> kmf_regressor.score (X_test, y_test)
     
     See Also
     --------
@@ -551,7 +552,6 @@ class KMFRegressor(BaseKMF, RegressorMixin):
     .. [3] Pedregosa, F. et al. (2011). Scikit-learn: Machine Learning in 
            Python. Journal of Machine Learning Research. 12:2825-2830.
     """
-    base_estimator = select_default_estimator("dt")
 
     def __init__(
         self,

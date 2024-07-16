@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 
 """
-:mod:`gofast.estimators.dynamic_system` implements various dynamic system 
-models for classification and regression tasks within the gofast library. 
-These models are designed to handle complex, time-dependent data by combining 
-dynamic system theory with machine learning techniques.
+`dynamic_system` implements various dynamic system models for classification 
+and regression tasks within the gofast library. These models are designed to 
+handle complex, time-dependent data by combining dynamic system theory with 
+machine learning techniques.
 """
 from __future__ import annotations 
 import numpy as np

@@ -3,8 +3,8 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-:mod:`~gofast.plot.explore` is a set of base plots for visualization, data 
-exploratory and analyses. E-E-Q Plots encompass the Exploratory plots
+`explore` is a set of base plots for visualization, data exploratory and 
+analyses. E-E-Q Plots encompass the Exploratory plots
 ( :class:`~gofast.plot.QuestPlotter`) and Quick analyses 
 (:class:`~gofast.plot.EasyPlotter`) visualization. 
 """

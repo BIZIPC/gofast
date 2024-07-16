@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+
+"""
+`util` module provides utility functions and classes to 
+support various data manipulation and analysis tasks.
+"""
+
 import os 
 import re
 import shutil
@@ -12,6 +18,199 @@ from .property import GofastConfig
 
 # Attempting to modify the property will raise an error
 GOFAST_ESCAPE= GofastConfig().WHITESPACE_ESCAPE 
+
+__all__=[ 
+     'TerminalSize',
+     'auto_adjust_dataframe_display',
+     'autofit_display', 
+     'beautify_dict',
+     'calculate_column_widths',
+     'calculate_widths',
+     'check_dataframe_columns',
+     'check_index_column_types',
+     'count_functions',
+     'determine_display_columns',
+     'df_advanced_style',
+     'df_base_style',
+     'df_to_custom_dict',
+     'distribute_column_widths',
+     'escape_dataframe_elements',
+     'extract_matching_columns',
+     'extract_truncate_df',
+     'find_best_display_params',
+     'find_best_display_params2',
+     'find_max_display',
+     'find_max_widths',
+     'find_maximum_table_width',
+     'flex_df_formatter',
+     'format_correlations',
+     'format_df',
+     'generate_column_name_mapping',
+     'generate_legend',
+     'get_column_widths_in',
+     'get_dataframe_subset',
+     'get_display_dimensions',
+     'get_displayable_columns',
+     'get_frame_chars',
+     'get_table_width_from', 
+     'get_table_size',
+     'get_terminal_size',
+     'get_terminal_size',
+     'insert_ellipsis_to_df',
+     'is_dataframe_long',
+     'is_numeric_index',
+     'is_numeric_type',
+     'make_format_df',
+     'max_column_lengths',
+     'optimize_col_width',
+     'parse_component_kind',
+     'propose_layout',
+     'rearrange',
+     'refine_df', 
+     'remove_extra_spaces',
+     'resolve_auto_settings',
+     'select_df_styles',
+     'select_optimal_display_dimensions', 
+     'series_to_dataframe',
+     'to_camel_case',
+     'to_snake_case',
+     'validate_data'
+ ]
+
+class TerminalSize:
+    """
+    A utility class to get the size of the terminal window. This class provides
+    methods to obtain the terminal size across different platforms, ensuring
+    compatibility and providing a fallback size when necessary.
+
+    Attributes
+    ----------
+    DEFAULT_SIZE : tuple
+        A default terminal size to fallback to when the actual terminal size
+        cannot be determined. The default is (80, 20).
+
+    Methods
+    -------
+    get_terminal_size()
+        Get the size of the terminal window as (columns, rows). Attempts multiple 
+        methods to ensure compatibility across different platforms.
+    _get_terminal_size_windows()
+        Get the terminal size for Windows platforms using ctypes.
+    _get_terminal_size_unix()
+        Get the terminal size for Unix-like platforms using ioctl syscall.
+
+    Notes
+    -----
+    The `get_terminal_size` method first tries to use `shutil.get_terminal_size` 
+    with a fallback to `DEFAULT_SIZE`. If that fails, it checks the operating 
+    system and attempts to use platform-specific methods. On Windows, it uses 
+    the `ctypes` library to query the terminal size. On Unix-like systems, it 
+    uses the `ioctl` syscall.
+
+    Examples
+    --------
+    >>> from gofast.api.util import TerminalSize
+    >>> TerminalSize.get_terminal_size()
+    (80, 25)
+
+    See Also
+    --------
+    shutil.get_terminal_size : Get the size of the terminal window.
+    
+    References
+    ----------
+    .. [1] Python Software Foundation. Python Language Reference, version 3.9.
+       Available at http://www.python.org
+    .. [2] Python `shutil` module documentation. Available at 
+       https://docs.python.org/3/library/shutil.html#get_terminal_size
+    """
+    
+    DEFAULT_SIZE = (80, 20)
+
+    @staticmethod
+    def get_terminal_size():
+        """
+        Get the size of the terminal window as (columns, rows).
+        Attempts multiple methods to ensure compatibility across different 
+        platforms.
+
+        Returns
+        -------
+        tuple
+            The size of the terminal as (columns, rows).
+        """
+        try:
+            size = shutil.get_terminal_size(fallback=TerminalSize.DEFAULT_SIZE)
+            return size.columns, size.lines
+        except Exception:
+            pass  # Ignore and try other methods
+
+        if os.name == 'nt':
+            return TerminalSize._get_terminal_size_windows()
+        elif os.name == 'posix':
+            return TerminalSize._get_terminal_size_unix()
+
+        return TerminalSize.DEFAULT_SIZE
+
+    @staticmethod
+    def _get_terminal_size_windows():
+        """
+        Get the terminal size for Windows platforms using ctypes.
+
+        Returns
+        -------
+        tuple
+            The size of the terminal as (columns, rows).
+        """
+        import struct
+        from ctypes import windll, create_string_buffer
+        try:
+            h = windll.kernel32.GetStdHandle(-12)
+            csbi = create_string_buffer(22)
+            res = windll.kernel32.GetConsoleScreenBufferInfo(h, csbi)
+            if res:
+                (_, _, _, _, _, left, top, right, bottom, _, _) = struct.unpack(
+                    "hhhhHhhhhhh", csbi.raw)
+                sizex = right - left + 1
+                sizey = bottom - top + 1
+                return sizex, sizey
+        except Exception:
+            pass  # Ignore and fallback to default
+
+        return TerminalSize.DEFAULT_SIZE
+
+    @staticmethod
+    def _get_terminal_size_unix():
+        """
+        Get the terminal size for Unix-like platforms using ioctl syscall.
+
+        Returns
+        -------
+        tuple
+            The size of the terminal as (columns, rows).
+        """
+        import struct
+        import fcntl
+        import termios
+        def ioctl_GWINSZ(fd):
+            try:
+                return struct.unpack('hh', fcntl.ioctl(
+                    fd, termios.TIOCGWINSZ, '1234'))
+            except Exception:
+                return None
+
+        size = ioctl_GWINSZ(0) or ioctl_GWINSZ(1) or ioctl_GWINSZ(2)
+        if not size:
+            try:
+                with open(os.ctermid(), 'rb') as fd:
+                    size = ioctl_GWINSZ(fd.fileno())
+            except Exception:
+                pass  # Ignore and fallback to default
+
+        if size:
+            return size[1], size[0]
+
+        return TerminalSize.DEFAULT_SIZE
 
 def escape_dataframe_elements(
     df, /, 
@@ -160,6 +359,7 @@ def distribute_column_widths(*dfs,  **kws):
         return index_width, column_widths  
 
     max_widths = _compute_maximum_widths(block_columns, column_widths)
+
     adjusted_widths = _apply_maximum_widths(max_widths, block_columns)
     if '...' in column_widths.keys(): 
         # then reinsert ellipsis 
@@ -451,7 +651,7 @@ def get_display_dimensions(
     *dfs, index=True, 
     header=True, 
     max_rows=11, 
-    max_cols=7, 
+    max_cols=5, 
     return_min_dimensions=True
     ):
     """
@@ -498,9 +698,12 @@ def get_display_dimensions(
     """
     def get_single_df_metrics(df):
         # Use external functions to get recommended dimensions
-        auto_rows, auto_cols = auto_adjust_dataframe_display(
-            df, index=index, header=header)
+        # XXX CHECK: Use propose layout currently for a test purpose. 
+        # checking stability of `propose layout` later. 
         
+        # auto_rows, auto_cols = auto_adjust_dataframe_display(
+        #     df, index=index, header=header)
+        auto_rows, auto_cols = propose_layout(df, include_index= index )
         # Adjust these dimensions based on input limits
         adjusted_rows = _adjust_value(max_rows, auto_rows)
         adjusted_cols = _adjust_value(max_cols, auto_cols)
@@ -533,7 +736,6 @@ def is_numeric_index(df):
     # Check if the index data type is a subtype of numpy number
     return pd.api.types.is_numeric_dtype(df.index.dtype)
     
-
 def is_numeric_type(df, target="index"):
     """
     Checks if the index or columns of a DataFrame are numeric.
@@ -582,13 +784,15 @@ def is_numeric_type(df, target="index"):
     
     # Handle both regular and MultiIndex cases
     if hasattr(data_attribute, 'levels'):  # MultiIndex case
-        return all(pd.api.types.is_numeric_dtype(level.dtype) for level in data_attribute.levels)
+        return all(pd.api.types.is_numeric_dtype(level.dtype)
+                   for level in data_attribute.levels)
     else:  # Single level index or columns
         return pd.api.types.is_numeric_dtype(data_attribute.dtype)
 
-
-def extract_truncate_df(df, include_truncate=False, max_rows=100, max_cols=7, 
-                        return_indices_cols=False):
+def extract_truncate_df(
+    df, include_truncate=False, max_rows=100, max_cols=7, 
+    return_indices_cols=False
+    ):
     """
     Extracts a subset of rows and columns from a dataframe based on its string 
     representation. Optionally includes truncated indices and returns them 
@@ -647,7 +851,6 @@ def extract_truncate_df(df, include_truncate=False, max_rows=100, max_cols=7,
     148  148
     149  149
     """
-
     # check indices whether it is numeric, if Numeric keepit otherwise reset it 
     truncated_df = df.copy() 
     name_indexes = [] 
@@ -656,9 +859,12 @@ def extract_truncate_df(df, include_truncate=False, max_rows=100, max_cols=7,
         truncated_df.reset_index (drop=True, inplace =True)
     columns = truncated_df.columns.tolist() 
     
-    max_rows, max_cols = find_best_display_params2(df)(
-        max_rows=max_rows, max_cols=max_rows)
-    
+    # XXX CHECK: Use propose layout currently for a test purpose. 
+    # checking stability of `propose layout` later. 
+    max_rows , max_cols = select_optimal_display_dimensions ( 
+        df, max_rows= max_rows, max_cols = max_cols, 
+        minimize_cols = True )
+  
     df_string= truncated_df.to_string(
         index =True, header=True, max_rows=max_rows, max_cols=max_cols )
     # Find all index occurrences at the start of each line
@@ -686,6 +892,79 @@ def extract_truncate_df(df, include_truncate=False, max_rows=100, max_cols=7,
         return indices, columns, subset_df
     
     return subset_df 
+
+def select_optimal_display_dimensions(
+        df, max_rows="auto", max_cols="auto", **layout_kws):
+    """
+    Select optimal rows and columns for displaying a DataFrame within 
+    terminal constraints.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The DataFrame to be validated and adjusted.
+    max_rows : {'auto', int}, optional
+        The maximum number of rows to display. If 'auto', it is determined 
+        automatically.
+        Default is 'auto'.
+    max_cols : {'auto', int}, optional
+        The maximum number of columns to display. If 'auto', it is determined 
+        automatically.
+        Default is 'auto'.
+    **layout_kws : dict, optional
+        Additional keyword arguments passed to `propose_layout` for customizing layout.
+    
+    Returns
+    -------
+    max_rows : int
+        The optimal number of rows for display.
+    max_cols : int
+        The optimal number of columns for display.
+    
+    Notes
+    -----
+    The function first validates the input DataFrame and then calculates the optimal 
+    number of rows and columns that can be displayed within the given constraints. 
+    It ensures that the display dimensions do not exceed the automatically calculated 
+    layout dimensions or the actual size of the DataFrame.
+    
+    Examples
+    --------
+    >>> from gofast.api.util import select_optimal_display_dimensions
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'A': range(1, 101),
+    ...     'B': ['long_text'] * 100,
+    ...     'C': range(101, 201)
+    ... })
+    >>> max_rows, max_cols = select_optimal_display_dimensions(df, max_rows=10, max_cols=5)
+    >>> print(f"Max Rows: {max_rows}, Max Columns: {max_cols}")
+    """
+    # Validate the input DataFrame
+    df = validate_data(df)
+    
+    # Propose optimal layout based on the DataFrame and additional layout settings
+    auto_nrows, auto_ncols = propose_layouts(df, **layout_kws)
+    
+    # Determine the maximum number of columns to display
+    if max_cols == "auto":
+        max_cols = auto_ncols
+    
+    # Determine the maximum number of rows to display
+    if max_rows == "auto":
+        max_rows = auto_nrows
+    
+    # Ensure the given maximum columns do not exceed 
+    # the automatically calculated maximum
+    max_cols = min(max_cols, auto_ncols)
+    
+    # Ensure the given maximum rows do not exceed the actual 
+    # number of rows in the DataFrame
+    nrows = len(df)
+    if max_rows > nrows:
+        max_rows = auto_nrows
+    
+    return max_rows, max_cols
 
 def extract_matching_columns(header_line, data_columns):
     """
@@ -735,8 +1014,7 @@ def extract_matching_columns(header_line, data_columns):
         # Check if the column is exactly in the normalized header parts
         if column in normalized_header_parts:
             matching_columns.append(column)
-    
-    
+
     return matching_columns
 
 def insert_ellipsis_to_df(sub_df, full_df=None, include_index=True):
@@ -749,8 +1027,7 @@ def insert_ellipsis_to_df(sub_df, full_df=None, include_index=True):
         The DataFrame into which ellipsis will be inserted.
     full_df : pd.DataFrame, optional
         The full DataFrame from which sub_df is derived. If provided, used to 
-        determine
-        whether ellipsis are needed for rows or columns.
+        determine whether ellipsis are needed for rows or columns.
     include_index : bool, default True
         Whether to include ellipsis in the index if rows are truncated.
 
@@ -801,6 +1078,102 @@ def insert_ellipsis_to_df(sub_df, full_df=None, include_index=True):
 
     return modified_df
 
+def validate_precision(precision, /):
+    """
+    Validates and converts the precision parameter to ensure it is a 
+    non-negative integer.
+
+    Parameters
+    ----------
+    precision : int, float, np.integer, np.floating
+        The precision value to be validated.
+
+    Returns
+    -------
+    int
+        The validated and converted precision value.
+
+    Raises
+    ------
+    ValueError
+        If the precision is not a non-negative number or cannot be 
+        converted to a non-negative integer.
+
+    Examples
+    --------
+    >>> validate_precision(3)
+    3
+    >>> validate_precision(3.0)
+    3
+    >>> validate_precision(np.int32(2))
+    2
+    >>> validate_precision(np.float64(2.0))
+    2
+    >>> validate_precision(-1)
+    Traceback (most recent call last):
+        ...
+    ValueError: Precision must be a non-negative integer.
+    >>> validate_precision('three')
+    Traceback (most recent call last):
+        ...
+    ValueError: Precision must be a non-negative integer.
+    """
+    precision = precision or 4
+    try:
+        precision = int(precision)
+        if precision < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValueError("Precision must be a non-negative integer.")
+    return precision
+
+def apply_precision(value, precision=4):
+    """
+    Applies precision to a numerical value only if the decimal part is 
+    larger than the specified precision. Otherwise, returns the value 
+    as is.
+
+    Parameters
+    ----------
+    value : int, float, np.integer, np.floating
+        The numerical value to be formatted.
+    precision : int, optional
+        The number of decimal places to format floating-point numbers. 
+        Default is 4.
+
+    Returns
+    -------
+    int, float
+        The formatted value if the decimal part is larger than the 
+        specified precision; otherwise, the value as is.
+
+    Examples
+    --------
+    >>> from gofast.api.util import apply_precision
+    >>> apply_precision(123.456789, 2)
+    123.46
+    >>> apply_precision(123.4, 2)
+    123.4
+    >>> apply_precision(np.int32(456), 2)
+    456
+    >>> apply_precision(np.float64(456.78), 2)
+    456.78
+    >>> apply_precision(123, 2)
+    123
+    >>> apply_precision(123.00, 2)
+    123.0
+    """
+    precision = validate_precision(precision)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    elif isinstance(value, (float, np.floating)):
+        rounded_value = round(value, precision)
+        if value == rounded_value:
+            return value
+        return rounded_value
+    return value
+
+
 def get_dataframe_subset(df, indices=None, columns=None):
     """
     Extracts a subset of a DataFrame based on specified indices and columns.
@@ -841,6 +1214,7 @@ def flex_df_formatter(
     style="auto", 
     column_widths=None,
     max_index_length=None,
+    precision=4
     ):
     """
     Formats and prints a DataFrame with dynamic sizing options, custom number 
@@ -881,8 +1255,7 @@ def flex_df_formatter(
         below the header (column names).
     table_width : int, str, optional
         The overall width of the table. If set to 'auto', it will adjust
-        based on the content
-        and the terminal width.
+        based on the content and the terminal width.
     output_format : str, optional
         The format of the output. Supports 'string' for plain text output or 
         'html' for HTML formatted output.
@@ -901,6 +1274,8 @@ def flex_df_formatter(
         properly aligned with the data columns. This automatic calculation is 
         designed to adapt to the varying lengths of index entries, providing a 
         dynamically adjusted display that optimally uses available space.
+    precision:int, optional, default=4
+        The number of decimal places to round numerical values to.
         
     Returns
     -------
@@ -951,11 +1326,14 @@ def flex_df_formatter(
     df = validate_data(df )
     max_rows, max_cols = resolve_auto_settings( max_rows, max_cols )
     
-    if max_rows =="auto" or max_cols =="auto": 
-        max_rows, max_cols = find_best_display_params2(
-            *[df],index =index, header=header)(
-                max_rows=max_rows, max_cols=max_cols, )
-
+    df = refine_df(df, precision = precision )
+    if max_rows =="auto" or max_cols =="auto":
+        #XXX TODO: propose layout... 
+        max_rows , max_cols = propose_layouts(
+            *[df], include_index= index, minimize_cols =True )
+        # max_rows, max_cols = find_best_display_params2(
+        #     *[df],index =index, header=header)(
+        #         max_rows=max_rows, max_cols=max_cols, )
     # Apply float formatting to the DataFrame
     if output_format == 'html': 
         # Use render for HTML output
@@ -964,11 +1342,20 @@ def flex_df_formatter(
         df= make_format_df(df, GOFAST_ESCAPE, apply_to_column= True)
         # Convert DataFrame to string with the specified format options
         formatted_df = df.to_string(
-            index=index, header=header, max_rows=max_rows, max_cols=max_cols, 
+            index=index, 
+            header=header, 
+            max_rows=max_rows, 
+            max_cols=max_cols, 
             float_format=lambda x: float_format.format(x) if isinstance(
                 x, (float, np.float64)) else x
             )
-        
+    # update max_cols with the auto maximum width layout calculation 
+    _, auto_max_cols = propose_layouts(
+        *[df], include_index= index, minimize_cols= True )
+    
+    if max_cols > auto_max_cols : 
+        max_cols = auto_max_cols 
+    
     style= select_df_styles(style, df )
     if style =='advanced': 
         formatted_output = df_advanced_style(
@@ -1104,7 +1491,10 @@ def select_df_styles(style, df, **kwargs):
     return style
 
 def is_dataframe_long(
-        df, max_rows=100, max_cols=7, return_rows_cols_size=False):
+        df, max_rows="auto", max_cols="auto", 
+        return_rows_cols_size=False, 
+        minimize_cols = False
+        ):
     """
     Determines whether a DataFrame is considered 'long' based on the 
     number of rows and columns.
@@ -1124,7 +1514,10 @@ def is_dataframe_long(
     return_expected_rows_cols : bool, optional
         If True, returns the calculated maximum rows and columns based on 
         internal adjustments or external utilities.
-
+    minimize_cols : bool, default=False
+        If True, reduce the number of columns by one to minimize the chance 
+        of column overlap, ensuring better fitting within the terminal width.
+        
     Returns
     -------
     bool
@@ -1158,15 +1551,11 @@ def is_dataframe_long(
     or data aggregations, should be applied.
     """
     df = validate_data(df )
+    auto_rows, auto_cols = propose_layouts(df, minimize_cols = minimize_cols )
     rows, columns = df.shape  
-    
     # Get terminal size
-    # terminal_size = shutil.get_terminal_size()
-    # terminal_cols = terminal_size.columns
-    # terminal_rows = terminal_size.lines
-    _, auto_rows = get_terminal_size()
-    auto_cols= get_displayable_columns(
-        df, buffer_space=3, min_col_width="auto")
+    # _, auto_rows = get_terminal_size()
+    # auto_cols= get_displayable_columns(df, min_col_width="auto")
     if max_rows == "auto": 
         max_rows = auto_rows 
         # to terminal row sizes 
@@ -1180,9 +1569,117 @@ def is_dataframe_long(
         max_rows = _adjust_value(max_rows, auto_rows)
         max_cols = _adjust_value(max_cols, auto_cols)
         return max_rows, max_cols 
-    
     # Check if the DataFrame exceeds the specified row or column limits
     return rows > max_rows or columns > max_cols
+
+def propose_layouts(
+    *dfs, include_index=True, 
+    max_text_char=50, 
+    buffer_space=2, 
+    minimize_cols=False, 
+    adjust_dfs =True, 
+    precision= 4, 
+    is_numeric_datetime='ignore', 
+):
+    """
+    Proposes the optimal number of rows and columns for displaying DataFrames
+    based on terminal width.
+
+    Parameters
+    ----------
+    *dfs : pandas.DataFrame
+        One or more DataFrames for which to propose the layout.
+        
+    include_index : bool, default=True
+        Whether to include the index in the layout calculation.
+        
+    max_text_char : int, default=50
+        The maximum number of characters to consider per column for text
+        representation. Strings longer than this will be truncated and 
+        appended with '...' if `adjust_dfs` is set too ``True``.
+        
+    buffer_space : int, default=2
+        The buffer space between columns in the layout calculation.
+        
+    minimize_cols : bool, default=False
+        If True, reduce the number of columns by one to minimize the chance 
+        of column overlap, ensuring better fitting within the terminal width.
+        
+    adjust_dfs: bool, default =True, 
+       For layout display, dataframe values are formatted according to 
+       numeric (round values ) and categorical ( string object). 
+       If the maximum number of characters for string values are
+       longer than `max_text_char`, strings will be truncated and appended 
+       with '...'. To consider formatting the datetime, set `is_numeric_datetime` 
+       either to ``True`` or ``False`` for formating as string datetime format. 
+       
+    precision : int, , Default is 4.
+        The number of decimal places to round numerical values to. Apply only 
+        if `adjusts_dfs` is ``True``. 
+        
+    is_numeric_datetime : str or bool, optional
+        If `True`, consider datetime columns as numeric. If `False`, format 
+        datetime columns as strings. If ``'ignore'``, do not process datetime 
+        columns. Default is ``'ignore'``. Enable only if `adjust_df=True`. 
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - int: The optimal number of rows.
+        - int: The optimal number of columns.
+
+    Notes
+    -----
+    This function calculates the optimal layout for displaying multiple
+    DataFrames based on the terminal width. The layout is proposed by
+    determining the minimum number of rows and columns required to fit
+    the DataFrames side by side without exceeding the terminal width.
+
+    The layout calculation considers the maximum number of characters
+    per column, the buffer space between columns, and whether to include
+    the index in the layout. 
+
+    Examples
+    --------
+    >>> from gofast.api.util import propose_layouts
+    >>> import pandas as pd
+    >>> df1 = pd.DataFrame({'A': [1, 2, 3], 'B': ['x', 'y', 'z']})
+    >>> df2 = pd.DataFrame({'C': [4, 5, 6], 'D': ['a', 'b', 'c']})
+    >>> rows, cols = propose_layouts(df1, df2)
+    >>> print(f"Optimal layout: {rows} rows, {cols} columns")
+    Optimal layout: 28 rows, 2 columns
+
+    See Also
+    --------
+    pandas.DataFrame : Two-dimensional, size-mutable, potentially 
+        heterogeneous tabular data.
+    
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in Python. 
+           Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
+    """
+    def get_layout_params(df):
+        return propose_layout(
+            df, 
+            include_index=include_index, 
+            max_text_char=max_text_char, 
+            buffer_space=buffer_space, 
+            adjust_df=adjust_dfs, 
+            precision =precision, 
+            is_numeric_datetime=is_numeric_datetime
+        )
+
+    layout_params = [get_layout_params(df) for df in dfs]
+    nrows, ncols = zip(*layout_params)
+    
+    ncols = min(ncols)
+    if minimize_cols: 
+        ncols = ncols -1 if ncols > 1 else ncols 
+    return min(nrows), ncols 
 
 def df_base_style(
     formatted_df, 
@@ -1265,7 +1762,6 @@ def df_base_style(
     # Determine the maximum width of any line 
     # in the string representation of the DataFrame
     max_line_width = max(len(line) for line in formatted_df.split('\n'))
-    
     # Check if table width is set to 'auto' which indicates 
     # that the width should adapt to the content
     if table_width == 'auto':
@@ -1277,8 +1773,9 @@ def df_base_style(
             # Use the maximum line width if it is less than the terminal width
             table_width = max_line_width  
         else:
+            #XXXTODO: change max to min 
             # Otherwise, use the larger of terminal width or line width
-            table_width = max(terminal_width, max_line_width)  
+            table_width = min(terminal_width, max_line_width)  
     
     # Format the title and create separators based 
     # on the calculated or specified table width
@@ -1311,7 +1808,8 @@ def _robust_df_display(
     sub_line='-', 
     header_line="=", 
     title=None, 
-    df=None
+    df=None, 
+    buffer_space=2
     ):
     """
     Formats and displays a DataFrame as a neatly aligned string based on
@@ -1349,23 +1847,23 @@ def _robust_df_display(
 
     Examples
     --------
+    >>> from gofast.api.util import _robust_df_display
     >>> df = pd.DataFrame({
             "A": range(5),
             "B": ['one', 'two', 'three', 'four', 'five']
         })
     >>> formatted_str = df.to_string()
-    >>> print(_df_display(
+    >>> print(_robust_df_display(
             formatted_str, header=True, index=True, title="Sample DataFrame"))
-    |                         Sample DataFrame                          |
-    ===================================================================
-     A    B
-    ----------------------------------------
-     0  one
-     1  two
-     2  three
-     3  four
-     4  five
-    ===================================================================
+    Sample DataFrame
+    ============
+        A      B
+    ------------
+    1   1    two
+    2   2  three
+    3   3   four
+    4   4   five
+    ============
     """
     
     # Split the input string (formatted DataFrame) into separate lines
@@ -1375,7 +1873,10 @@ def _robust_df_display(
     # Calculate widths for index and columns with a limit 
     # of 50 characters for each text element
     auto_max_index_length, *auto_column_widths = calculate_column_widths(
-        lines, include_index=True, include_column_width=True, df=df,
+        lines, 
+        include_index=True,
+        include_column_width=True,
+        df=df,
         max_text_length=50
     )
   
@@ -1391,11 +1892,10 @@ def _robust_df_display(
     if column_widths is None:
         column_widths = auto_column_widths
     
-    
     # Use the automatically determined index length if not specified
     if max_index_length is None:
         max_index_length = auto_max_index_length
-    max_index_length += 3  # Add extra spaces for alignment
+    max_index_length += buffer_space  # Add extra spaces for alignment
  
     # Format the header line with adjusted widths
     header_parts = lines[0].split()
@@ -1452,37 +1952,43 @@ def _robust_df_display(
     
     return formatted_output
 
-def make_format_df(subset_df, whitespace_sub="%g%o#f#", apply_to_column=False):
+def make_format_df(
+        subset_df, whitespace_sub="%g%o#f#", apply_to_column=False, 
+        max_text_length=50):
     """
     Creates a new DataFrame where each string value of each column that 
     contains a whitespace is replaced by '%g%o#f#'. This is useful to fix the 
-    issue with multiple whitespaces in all string values of the DataFrame. Optionally,
-    replaces whitespaces in column names as well.
+    issue with multiple whitespaces in all string values of the DataFrame. 
+    Optionally, replaces whitespaces in column names as well.
 
     Parameters:
         subset_df (pd.DataFrame): The input DataFrame to be formatted.
         whitespace_sub (str): The substitution string for whitespaces.
         apply_to_column (bool): If True, also replace whitespaces in column names.
+        max_text_length (int): The maximum allowed length of the string before truncation.
 
     Returns:
         pd.DataFrame: A new DataFrame with formatted string values.
     """
     # Create a copy of the DataFrame to avoid modifying the original one
     formatted_df = subset_df.copy()
-    
+
     # Optionally replace whitespaces in column names
     if apply_to_column:
-        formatted_df.columns = [col.replace(' ', whitespace_sub) 
-                                for col in formatted_df.columns]
+        formatted_df.columns = [
+            col.replace(' ', whitespace_sub) for col in formatted_df.columns]
 
     # Loop through each column in the DataFrame
     for col in formatted_df.columns:
         # Check if the column type is object (typically used for strings)
-        if formatted_df[col].dtype == object: 
-            # Replace whitespaces in string values with '%g%o#f#'
+        if formatted_df[col].dtype == object:
+            # Apply format_cell to each cell in the column
+            formatted_df[col] = formatted_df[col].apply(
+                lambda x: format_cell(x, max_text_length))
+            # Replace whitespaces in string values with the specified substitution string
             formatted_df[col] = formatted_df[col].replace(
                 r'\s+', whitespace_sub, regex=True)
-    
+
     return formatted_df
 
 def df_advanced_style(
@@ -1557,7 +2063,6 @@ def df_advanced_style(
      1  |     4  5  6
      ===================
     """
-
     # Split the formatted DataFrame string into individual lines.
     lines = formatted_df.split('\n')
     new_lines = []
@@ -1620,7 +2125,6 @@ def df_advanced_style(
             
         new_lines.append(new_line)
 
-    
     max_line_width = max(len(line) for line in new_lines)
     table_width = max_line_width if table_width == 'auto' else max(
         min(table_width, max_line_width), len(header))
@@ -1850,8 +2354,8 @@ def auto_adjust_dataframe_display(df, header=True, index=True, sample_size=100):
     >>> print(df.to_string(max_rows=max_rows, max_cols=max_cols))
     """
     validate_data(df)
-    # Get terminal size
     
+    # Get terminal size
     terminal_size = shutil.get_terminal_size()
     screen_width = terminal_size.columns
     screen_height = terminal_size.lines
@@ -1946,9 +2450,12 @@ def find_best_display_params(
 
     # Collect maximum row and column counts needed for each DataFrame
     for df in dfs:
-        optimal_rows, optimal_cols = auto_adjust_dataframe_display(
-            df, header=header, index=index, sample_size=sample_size
+        optimal_rows, optimal_cols = propose_layout(
+            df, include_index= index
         )
+        # optimal_rows, optimal_cols = auto_adjust_dataframe_display(
+        #     df, header=header, index=index, sample_size=sample_size
+        # )
         max_rows_list.append(optimal_rows)
         max_cols_list.append(optimal_cols)
 
@@ -2004,12 +2511,17 @@ def find_best_display_params2(*dfs, index=True, header=True, sample_size=100):
     """
     max_rows_list = []
     max_cols_list = []
-
+    
     # Collect maximum row and column counts needed for each DataFrame
     for df in dfs:
-        optimal_rows, optimal_cols = auto_adjust_dataframe_display(
-            df, header=header, index=index, sample_size=sample_size
+        # XXX CHECK: Use propose layout currently for a test purpose. 
+        # checking stability of `propose layout`. 
+        optimal_rows, optimal_cols = propose_layout(
+            df, include_index= index
         )
+        # optimal_rows, optimal_cols = auto_adjust_dataframe_display(
+        #     df, header=header, index=index, sample_size=sample_size
+        # )
         max_rows_list.append(optimal_rows)
         max_cols_list.append(optimal_cols)
 
@@ -2156,8 +2668,14 @@ def find_maximum_table_width(summary_contents, header_marker='='):
     return max(header_line_lengths, default=0)
 
 def format_text(
-        text, key=None, key_length=15, max_char_text=50, 
-        add_frame_lines =False, border_line='=' ):
+    text, 
+    key=None, 
+    key_length=15, 
+    max_char_text=50, 
+    add_frame_lines =False, 
+    border_line='=' , 
+    buffer_space = 4 
+    ):
     """
     Formats a block of text to fit within a specified maximum character width,
     optionally prefixing it with a key. If the text exceeds the maximum width,
@@ -2180,6 +2698,10 @@ def format_text(
        If True, frame the text with '=' line (top and bottom)
     border_line: str, optional 
       The border line to frame the text.  Default is '='
+    buffer_space: int, default=4 
+       The extra space to force breaken the text. Using a large value will 
+       provide nice reading and force terminating the line sentence with no 
+       preprosition like `a`, 'of' or `the` etc. 
       
     Returns
     -------
@@ -2205,12 +2727,11 @@ def format_text(
     - Text that exceeds the `max_char_text` limit is wrapped to new lines, with
       proper alignment to match the initial line's formatting.
     """
-    
     if key is not None:
         # If key_length is None, use the length of the key + 1 
         # for the space after the key
         if key_length is None:
-            key_length = len(key) + 1
+            key_length = len(key) # + 1
         key_str = f"{key.ljust(key_length)} : "
     elif key_length is not None:
         # If key is None but key_length is specified, use spaces
@@ -2219,23 +2740,24 @@ def format_text(
         # If both key and key_length are None, there's no key part
         key_str = ""
     
-    # Adjust max_char_text based on the length of the key part
-    effective_max_char_text = (max_char_text - len(key_str) + 2 if key_str else max_char_text)
+    # Adjust max_char_text based on the length of the key part: +3 for " : ". 
+    effective_max_char_text = (max_char_text - len(key_str) + buffer_space 
+                               if key_str else max_char_text)
     formatted_text = ""
     text=str(text)
     while text:
         # If the remaining text is shorter than the effective
         # max length, or if there's no key part, add it as is
-        if len(text) <= effective_max_char_text - 4 or not key_str: # -4 for extraspace 
+        if len(text) <= effective_max_char_text - buffer_space or not key_str:
             formatted_text += key_str + text
             break
         else:
             # Find the space to break the line, ensuring it doesn't
             # exceed effective_max_char_text
-            break_point = text.rfind(' ', 0, effective_max_char_text-4)
+            break_point = text.rfind(' ', 0, effective_max_char_text- buffer_space)
             
             if break_point == -1:  # No spaces found, force break
-                break_point = effective_max_char_text -4 
+                break_point = effective_max_char_text -buffer_space 
             # Add the line to formatted_text
             formatted_text += key_str + text[:break_point].rstrip() + "\n"
             # Remove the added part from text
@@ -2245,12 +2767,12 @@ def format_text(
             key_str = " " * len(key_str)
 
     if add_frame_lines: 
-        frame_lines = border_line * (effective_max_char_text + 1 )
+        frame_lines = border_line * max_char_text  # (effective_max_char_text + 1 )
         formatted_text = frame_lines +'\n' + formatted_text +'\n' + frame_lines
 
     return formatted_text
 
-def format_value(value):
+def format_value(value, precision=4):
     """
     Format a numeric value to a string, rounding floats to four decimal
     places and converting integers directly to strings.
@@ -2274,9 +2796,11 @@ def format_value(value):
     '123.4568'
     """
     value_str =str(value)
+    precision = validate_precision( precision)
     if isinstance(value, (int, float, np.integer, np.floating)): 
-        value_str = f"{value}" if isinstance ( 
-            value, int) else  f"{float(value):.4f}" 
+        value = apply_precision(value, precision )
+        value_str = f"{value}" # if isinstance ( 
+        #     value, int) else  f"{float(value):.{precision}f}" 
     return value_str 
 
 def get_frame_chars(frame_char):
@@ -2406,7 +2930,7 @@ def calculate_widths(df, max_text_length=50):
     """
 
     formatted_cells = df.applymap(lambda x: str(format_value(x))
-                                  [:max_text_length] + '...' if len(
+                                  [:max_text_length -3] + '...' if len(
         str(x)) > max_text_length else str(format_value(x)))
     max_col_widths = {col: max(len(col), max(len(x) for x in formatted_cells[col]))
                       for col in df.columns}
@@ -2419,7 +2943,8 @@ def format_df(
     df, 
     max_text_length=50, 
     title=None, 
-    autofit=False, 
+    autofit=True, 
+    minimize_cols=False, 
     ):
     """
     Formats a pandas DataFrame for pretty-printing in a console or
@@ -2445,6 +2970,10 @@ def format_df(
         If True, adjusts the column widths and the number of visible rows
         based on the DataFrame's content and available display size. Default
         is False.
+        
+    minimize_cols : bool, default=False
+        If True, reduce the number of columns by one to minimize the chance 
+        of column overlap, ensuring better fitting within the terminal width.
 
     Returns
     -------
@@ -2493,19 +3022,13 @@ def format_df(
     ensuring all fields are visible without exceeding the provided max text length.
     
     """
-
     # Set the title or default to an empty string
     title = str(title or '').title()
    
     if autofit: 
         # If autofit is True, use custom logic to adjust DataFrame display settings
         # dynamically based on content and available space.
-        # Here, the function extract_truncate_df limits the display to 11 rows
-        # and 7 columns for larger data sets to fit the console or output window.
-        df_escaped = extract_truncate_df(df, max_rows="auto", max_cols="auto")
-        # insert_ellipsis_to_df might add visual cues (ellipsis) to indicate truncated parts.
-        df = insert_ellipsis_to_df(df_escaped, df) 
-
+        df = autofit_display(df, minimize_cols = minimize_cols )
     # Use helper functions to format cells and calculate widths
     max_col_widths, max_index_width = calculate_widths(df, max_text_length)
 
@@ -2535,6 +3058,161 @@ def format_df(
         max_width = find_maximum_table_width(formatted_string)
         title = title.center(max_width) + "\n"
     return title + formatted_string
+
+def is_autofit_needed(
+        df, 
+        check_rows=True, 
+        include_index="auto", 
+        **layout_kws
+    ):
+    """
+    Determine if autofit is needed for displaying the DataFrame within 
+    terminal constraints.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The DataFrame to be evaluated.
+    check_rows : bool, optional
+        Whether to consider the number of rows in the evaluation. Default is True.
+    include_index : {'auto', bool}, optional
+        Whether to include the index in the layout proposal. If 'auto', the index is 
+        included if it contains string values. Default is 'auto'.
+    **layout_kws : dict, optional
+        Additional keyword arguments passed to `propose_layouts` for customizing layout.
+    
+    Returns
+    -------
+    bool
+        True if autofit is needed, False otherwise.
+    
+    Notes
+    -----
+    The function compares the number of columns and rows (if `check_rows` is True) in 
+    the proposed layout based on the terminal size with the actual dimensions of the 
+    DataFrame. If the proposed number of columns is less than the number of columns in 
+    the DataFrame, or if the proposed number of rows is less than the number of rows in 
+    the DataFrame (when `check_rows` is True), autofit is needed.
+    
+    Examples
+    --------
+    >>> from gofast.api.util import is_autofit_needed
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'A': range(1, 101),
+    ...     'B': ['long_text'] * 100,
+    ...     'C': range(101, 201)
+    ... })
+    >>> autofit_required = is_autofit_needed(df)
+    >>> print(f"Is autofit needed? {autofit_required}")
+    """
+    # Propose optimal layout based on the DataFrame and additional layout settings
+    nrows, ncols = propose_layouts(
+        df, include_index=include_index, **layout_kws)
+    
+    # Determine if autofit is needed
+    if not check_rows:
+        return ncols < len(df.columns)
+    else:
+        return (ncols < len(df.columns)) or (nrows < len(df))
+
+def autofit_display(
+    df, 
+    max_rows=11, 
+    max_cols='auto', 
+    include_index='auto',
+    max_text_char=50,
+    buffer_space=2, 
+    **layout_kws
+):
+    """
+    Automatically adjusts the DataFrame to fit within the terminal layout.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The DataFrame to be adjusted for display.
+    max_rows : {'auto', int}, optional
+        The maximum number of rows to display. If 'auto', it is determined 
+        automatically based on terminal dimensions. Default is 'auto'.
+    max_cols : {'auto', int}, optional
+        The maximum number of columns to display. If 'auto', it is determined 
+        automatically based on terminal dimensions. Default is 'auto'.
+    include_index : {'auto', bool}, optional
+        Whether to include the DataFrame index in the display. If 'auto', the index 
+        is included if it contains string values. If True, the index is always 
+        included. If False, the index is never included. Default is 'auto'.
+    max_text_char : int, optional
+        The maximum number of characters for text columns before truncation occurs. 
+        Values exceeding this limit are truncated. Default is 50.
+    buffer_space : int, optional
+        The number of spaces between columns. This space is also applied between 
+        the index and the first column if the index is included. Default is 2.
+    **layout_kws : dict, optional
+        Additional keyword arguments passed to `propose_layouts` for 
+        customizing layout.
+    Returns
+    -------
+    pandas.DataFrame
+        The adjusted DataFrame that fits within the terminal layout.
+
+    Notes
+    -----
+    The function dynamically adjusts the DataFrame display settings based on the 
+    content and the available terminal space. The number of rows and columns to 
+    display is determined either by the provided maximum values or calculated 
+    automatically to fit within the terminal window. Truncation is applied to 
+    both rows and columns, and ellipses (`...`) are inserted to indicate 
+    truncated parts of the DataFrame.
+
+    The layout adjustment can be formulated as follows:
+
+    .. math::
+        n_{rows} = \min(\text{max\_rows}, \text{auto\_nrows})
+    
+    .. math::
+        n_{cols} = \min(\text{max\_cols}, \text{auto\_ncols})
+    
+    Where :math:`\text{auto\_nrows}` and :math:`\text{auto\_ncols}` are the 
+    automatically determined number of rows and columns that can fit in the 
+    terminal, and :math:`\text{max\_rows}` and :math:`\text{max\_cols}` are the 
+    user-provided maximum values.
+
+    Examples
+    --------
+    >>> from gofast.api.util import autofit_display
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'A': range(1, 101),
+    ...     'B': ['long_text'] * 100,
+    ...     'C': range(101, 201)
+    ... })
+    >>> display_df = autofit_display(df, max_rows=10, max_cols=5)
+    >>> print(display_df)
+
+    See Also
+    --------
+    pandas.DataFrame : Two-dimensional, size-mutable, potentially heterogeneous 
+        tabular data.
+
+    References
+    ----------
+    .. [1] G. McKinney, "Data Structures for Statistical Computing in Python," 
+           Proceedings of the 9th Python in Science Conference, 2010.
+    """
+    # Determine the layout automatically based on the DataFrame and display settings.
+    # # Find the best display parameters based on given or auto values.
+    # # Ensure ncols does not exceed the auto-determined number of columns.
+    nrows , ncols = select_optimal_display_dimensions ( 
+        df, max_rows= max_rows, max_cols = max_cols, **layout_kws)
+    
+    # Extract and truncate the DataFrame to fit within the determined rows and columns.
+    df_escaped = extract_truncate_df(df, max_rows=nrows, max_cols=ncols)
+    
+    # Insert ellipsis into the DataFrame to indicate truncation points.
+    df = insert_ellipsis_to_df(df_escaped, df)
+    
+    return df
 
 def validate_data(data, columns=None, error_mode='raise'):
     """
@@ -2630,7 +3308,8 @@ def validate_data(data, columns=None, error_mode='raise'):
         raise TypeError(
             "Unsupported data type. Data must be a DataFrame, array, dict, or Series."
             f" Got {type(data).__name__!r}")
-
+        
+    df = round_numeric_values(df)
     return df
 
 def format_correlations(
@@ -2646,7 +3325,7 @@ def format_correlations(
     error_mode='warn', 
     precomputed=False,
     legend_markers=None, 
-    autofit=False, 
+    autofit="auto", 
     ):
     """
     Computes and formats the correlation matrix for a DataFrame's numeric columns, 
@@ -2698,7 +3377,7 @@ def format_correlations(
     autofit : bool, optional
         If True, adjusts the column widths and the number of visible rows
         based on the DataFrame's content and available display size. Default
-        is False.
+        is 'auto'.
        
     Returns
     -------
@@ -2785,22 +3464,137 @@ def format_correlations(
                 return '-+'.ljust(4)
         else:
             return f"{value:.4f}"
-    
+        
+    corr_matrix= refine_df(corr_matrix)
+    if autofit =='auto': 
+        autofit = is_autofit_needed(corr_matrix, minimize_cols =True )
+        
     if autofit: 
         # remove ... to avoid confusion with no correlated symbol 
-        no_corr_placeholder=''
-        
+        no_corr_placeholder='' 
     formatted_corr = corr_matrix.applymap(format_value)
-    formatted_df = format_df(formatted_corr, autofit= autofit)
-    max_width = find_maximum_table_width(formatted_df)
+    formatted_df = format_df(formatted_corr, autofit= autofit,minimize_cols=True )
+    max_width = get_table_width_from(formatted_df)
+ 
+    # max_width = find_maximum_table_width(formatted_df)
     legend = ""
     if use_symbols:
         legend = generate_legend(
-            legend_markers, no_corr_placeholder, hide_diag,  max_width)
+            legend_markers, 
+            no_corr_placeholder, 
+            hide_diag,  
+            max_width
+        )
     if title:
         title = title.center(max_width) + "\n"
 
     return title + formatted_df + legend
+
+def get_table_width_from(
+    formatted_str, /,
+    border_char="=", 
+    check_first=True, 
+    deep_check=True, 
+    width_strategy='max', 
+    error="warn"):
+    """
+    Calculate the maximum table width from the given formatted string based on 
+    the border style.
+    
+    Parameters
+    ----------
+    formatted_str : str
+        The string containing the formatted table.
+    border_char : str, optional
+        The character used for the table border. Default is '='.
+    check_first : bool, optional
+        If True, check the width of the first border line found and return it. 
+        If False, check for additional border lines if the first one is found. 
+        Default is True.
+    deep_check : bool, optional
+        If True, evaluate all lines containing the border character to determine 
+        the table width. If False, follow the `check_first` strategy. Default is 
+        True.
+    width_strategy : {'max', 'min', 'average'}, optional
+        Strategy to determine the table width if `deep_check` is True. 'max' 
+        returns the longest border line. 'min' returns the shortest border line. 
+        'average' returns the average width of all border lines. Default is 'max'.
+    error : {'warn', 'raise', 'ignore'}, optional
+        How to handle cases where no border line is found. 'warn' logs a warning 
+        message. 'raise' raises an exception. 'ignore' does nothing and returns 
+        None. Default is 'warn'.
+    
+    Returns
+    -------
+    int or None
+        The calculated table width, or None if no border line is found and error 
+        handling is set to 'ignore'.
+    
+    Notes
+    -----
+    This function identifies lines in the `formatted_str` containing the 
+    `border_char` and calculates the width of the table based on the specified 
+    strategies and checks.
+    
+    The calculation follows these steps:
+    
+    1. Identify lines in `formatted_str` containing `border_char`.
+    2. If no such lines are found, handle the error based on `error` parameter.
+    3. If `deep_check` is False:
+        - If `check_first` is True, return the length of the first border line.
+        - Otherwise, return the length of the last border line.
+    4. If `deep_check` is True:
+        - Compute the lengths of all border lines.
+        - If `width_strategy` is 'average', return the average length of border 
+          lines:
+          
+          .. math:: 
+              \text{average\_width} = \frac{\sum_{i=1}^{n} \text{length}_i}{n}
+        
+        - If `width_strategy` is 'min', return the minimum length of border lines.
+        - If `width_strategy` is 'max', return the maximum length of border lines.
+    
+    Examples
+    --------
+    >>> from gofast.api.util import get_table_width_from
+    >>> formatted_str = "=======\n| Col |\n=======\n"
+    >>> get_table_width_from(formatted_str)
+    7
+    
+    >>> formatted_str = "=====\n| C |\n=====\n"
+    >>> get_table_width_from(formatted_str, border_char='=')
+    5
+    
+    See Also
+    --------
+    pandas.DataFrame : DataFrame structure used in pandas for data manipulation 
+        and analysis.
+    
+    References
+    ----------
+    .. [1] McKinney, Wes. "Data Structures for Statistical Computing in Python." 
+           Proceedings of the 9th Python in Science Conference. 2010.
+    """
+    border_lines = [line for line in formatted_str.splitlines() if border_char in line]
+
+    if not border_lines:
+        if error== "warn":
+            warnings.warn(" No border line found in the formatted string.")
+        elif error== "raise":
+            raise ValueError("Error: No border line found in the formatted string.")
+        return None
+
+    if not deep_check:
+        return len(border_lines[0]) if check_first else len(border_lines[-1])
+
+    line_lengths = [len(line) for line in border_lines]
+
+    if width_strategy == 'average':
+        return sum(line_lengths) // len(line_lengths)
+    elif width_strategy == 'min':
+        return min(line_lengths)
+    else:  # width_strategy == 'max'
+        return max(line_lengths)
 
 def generate_legend(
     custom_markers=None, 
@@ -2912,9 +3706,9 @@ def generate_legend(
         legend_text, 
         key='Legend', 
         key_length=len('Legend'), 
-        max_char_text=max_width + len('Legend'), 
+        max_char_text=max_width, # + len('Legend'), 
         add_frame_lines=add_frame_lines,
-        border_line=border_line
+        border_line=border_line, 
         )
     return legend
 
@@ -3152,7 +3946,7 @@ def optimize_col_width (max_cols=4, df=None, min_col_width=10):
     else:
         return min_col_width  # Return min_col_width if no columns fit
 
-def get_displayable_columns(cols_or_df, /, buffer_space=4, min_col_width=10):
+def get_displayable_columns(cols_or_df, /, buffer_space=2, min_col_width=10):
     """
     Computes the number of columns that can be displayed in the terminal based
     on the maximum column width, considering a buffer space between columns.
@@ -3199,16 +3993,20 @@ def get_displayable_columns(cols_or_df, /, buffer_space=4, min_col_width=10):
     # Create a temporary DataFrame to facilitate column width calculation
     df = pd.DataFrame(columns=cols)
     # Calculate the optimal column width
-    max_col_width = optimize_col_width(max_cols=num_cols, df=df,
+    max_col_width = optimize_col_width(max_cols=num_cols, df=df, 
                                        min_col_width=min_col_width)
     # Retrieve the current terminal width
     terminal_width, _ = get_terminal_size()
-
-    # Calculate the total space available per column including buffer
-    available_space_per_column = max_col_width + buffer_space
-    # Determine the maximum number of columns that can fit in the terminal
-    max_displayable_cols = terminal_width // available_space_per_column
-
+    try: 
+        # XXX CHECK: Use propose layout currently for a test purpose. 
+        # checking stability of `propose layout`. 
+        _, max_displayable_cols= propose_layout(df)
+    except: 
+        # Calculate the total space available per column including buffer
+        available_space_per_column = max_col_width + buffer_space
+        # Determine the maximum number of columns that can fit in the terminal
+        max_displayable_cols = terminal_width // available_space_per_column
+    
     return min(num_cols, max_displayable_cols)
 
 def to_camel_case(text, delimiter=None, use_regex=False):
@@ -3575,28 +4373,773 @@ def format_dict_result(
             if include_message else "\n".join(formatted_lines)
             )
 
-if __name__=='__main__': 
-    # Example usage:
-    data = {
-        'col0': [1, 2, 3, 4],
-        'col1': [4, 3, 2, 1],
-        'col2': [10, 20, 30, 40],
-        'col3': [40, 30, 20, 10],
-        'col4': [5, 6, 7, 8]
-    }
-    df = pd.DataFrame(data)
+def max_column_lengths(df, include_index='auto', max_text_char=50):
+    """
+    Calculate the maximum column lengths for a DataFrame, truncating text 
+    values to max_text_char if they exceed it.
 
-    # Calling the function
-    result = format_correlations(df, 0.8, 0.9, False, hide_diag= True)
-    print(result)
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame for which to calculate column lengths.
+    include_index : bool or str, optional
+        Whether to include the index in the calculation. If 'auto', 
+        the function includes the index if it is not the default 
+        integer index (default is 'auto').
+    max_text_char : int, optional
+        Maximum number of characters for text values in columns 
+        (default is 50).
 
-    # Example usage
-    data = {
-        'col0': [1, 2, 3, 4],
-        'col1': [4, 3, 2, 1],
-        'col2': [10, 20, 30, 40],
-        'col3': [40, 30, 20, 10],
-        'col4': [5, 6, 7, 8]
+    Returns
+    -------
+    col_lengths : dict
+        A dictionary with column names as keys and their maximum lengths 
+        as values.
+    index_length : int
+        The maximum length of the index if include_index is True or 'auto',
+        otherwise 0.
+
+    Examples
+    --------
+    >>> df = pd.DataFrame({
+    ...     'A': [1, 2, 3, 4],
+    ...     'B': ['short', 'a bit longer', 'even longer than before', 
+    ...           'short'],
+    ...     'C': ['some long text here', 'short', 
+    ...           'even longer text than before', 'tiny']
+    ... })
+    >>> max_column_lengths(df, include_index=True, max_text_char=15)
+    ({'A': 1, 'B': 15, 'C': 15}, 1)
+
+    >>> max_column_lengths(df, include_index=False, max_text_char=10)
+    ({'A': 1, 'B': 10, 'C': 10}, 0)
+    
+    >>> max_column_lengths(df, include_index='auto', max_text_char=10)
+    ({'A': 1, 'B': 10, 'C': 10}, 0)
+    """
+    def truncate_and_measure(val):
+        return min(len(str(val)), max_text_char)
+
+    col_lengths = {
+        str(col): max(len(str(col)), df[col].astype(str).map(truncate_and_measure).max())
+        for col in df.columns
     }
+
+    if include_index == 'auto':
+        include_index = not df.index.equals(pd.RangeIndex(start=0, stop=len(df)))
+
+    index_length = 0
+    if include_index:
+        index_length = max(len(str(idx)) for idx in df.index)
+
+    return col_lengths, index_length
+
+def find_max_display(df, include_index=True, buffer_space=2, max_text_char=50):
+    """
+    Find the maximum number of rows and columns to display in the terminal 
+    without overlapping, fitting well within the terminal size.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to be displayed.
+    include_index : bool or str, optional
+        Whether to include the index in the calculation. If 'auto', 
+        the function includes the index if it is not the default 
+        integer index (default is True).
+    buffer_space : int, optional
+        The buffer space between columns (default is 3).
+    max_text_char : int, optional
+        Maximum number of characters for text values in columns 
+        (default is 50).
+
+    Returns
+    -------
+    max_rows : int
+        Maximum number of rows that can be displayed.
+    max_cols : int
+        Maximum number of columns that can be displayed.
+
+    Examples
+    --------
+    >>> df = pd.DataFrame({
+    ...     'A': [1, 2, 3, 4],
+    ...     'B': ['short', 'a bit longer', 'even longer than before', 
+    ...           'short'],
+    ...     'C': ['some long text here', 'short', 
+    ...           'even longer text than before', 'tiny']
+    ... })
+    >>> find_max_display(df, include_index=True, max_text_char=15)
+    (4, 3)
+    
+    >>> find_max_display(df, include_index='auto', max_text_char=10)
+    (4, 3)
+    """
+    # Validate the DataFrame
+    df = validate_data(df)
+    
+    # Get terminal size
+    term_width, term_height = TerminalSize.get_terminal_size()
+    
+    # Calculate max column lengths, potentially including index length
+    col_lengths, index_length = max_column_lengths(df, include_index, max_text_char)
+    
+    # Total width calculation
+    total_width = sum(col_lengths.values()) + buffer_space * len(col_lengths)
+    if include_index:
+        total_width += index_length + buffer_space
+    
+    # Determine maximum number of columns that fit within terminal width
+    if total_width > term_width:
+        col_widths = {col: length + buffer_space for col, length in col_lengths.items()}
+        display_cols = determine_display_columns(col_widths, term_width, buffer_space)
+    else:
+        display_cols = list(df.columns)
+        
+    max_cols = len(display_cols)
+    # Determine maximum number of rows that fit within terminal height
+    max_rows = min(len(df), term_height - 1)  # 1 row for the header
+    
+    return max_rows, max_cols
+
+def determine_display_columns(col_widths, max_width, buffer_space):
+    """
+    Determine which columns to display based on the available width.
+
+    Parameters
+    ----------
+    col_widths : dict
+        Dictionary of column names and their respective widths.
+    max_width : int
+        Maximum available width in the terminal.
+    buffer_space : int
+        Space between columns.
+
+    Returns
+    -------
+    display_cols : list
+        List of columns to be displayed.
+    """
+    cumulative_width = 0
+    display_cols = []
+    col_items = list(col_widths.items())
+    
+    # Try to fit as many columns from the start
+    for col, width in col_items:
+        if cumulative_width + width > max_width:
+            break
+        display_cols.append(col)
+        cumulative_width += width
+
+    remaining_width = max_width - cumulative_width
+
+    # Fit columns from the end if there's space left
+    for col, width in reversed(col_items[len(display_cols):]):
+        if width + buffer_space > remaining_width:
+            break
+        display_cols.append(col)
+        remaining_width -= (width + buffer_space)
+    
+    # Combine start and end columns
+    display_cols = display_cols[:len(display_cols)//2] + display_cols[-len(display_cols)//2:]
+
+    return display_cols
+
+def rearrange(obj):
+    """
+    Rearrange the given dictionary, DataFrame, or list such that elements are 
+    arranged as first element, last element, second element, second last 
+    element, and so on.
+
+    Parameters
+    ----------
+    obj : Union[Dict, pd.DataFrame, List]
+        The object to be rearranged. This can be a dictionary, DataFrame, 
+        or list.
+
+    Returns
+    -------
+    Union[Dict, pd.DataFrame, List]
+        The rearranged object with the same type and length as the input.
+    
+    Notes
+    -----
+    The function handles different types of objects by rearranging their 
+    elements in a specific pattern:
+    - For dictionaries, keys and values are rearranged.
+    - For DataFrames, columns are rearranged.
+    - For lists, elements are rearranged.
+    
+    The rearrangement pattern can be described as:
+    .. math::
+        \text{rearranged} = [x_0, x_{-1}, x_1, x_{-2}, x_2, \ldots]
+
+    Examples
+    --------
+    >>> from gofast.api.util import rearrange
+    >>> dico = {'A': 'valueA', 'B': 'valueB', 'C': 'valueC', 'D': 'valueD'}
+    >>> rearrange(dico)
+    {'A': 'valueA', 'D': 'valueD', 'B': 'valueB', 'C': 'valueC'}
+    
+    >>> data = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6], 'C': [7, 8, 9]})
+    >>> rearrange(data)
+       A  C  B
+    0  1  7  4
+    1  2  8  5
+    2  3  9  6
+    
+    >>> lst = ['A', 'B', 'C', 'D']
+    >>> rearrange(lst)
+    ['A', 'D', 'B', 'C']
+    
+    See Also
+    --------
+    pandas.DataFrame : Two-dimensional, size-mutable, potentially heterogeneous 
+        tabular data.
+    
+    References
+    ----------
+    .. [1] Python Software Foundation. Python Language Reference, version 3.9. 
+       Available at http://www.python.org
+    .. [2] Wes McKinney. "pandas: a Foundational Python Library for Data 
+       Analysis and Statistics." Python for Data Analysis. O'Reilly Media, 
+       2012.
+    """
+    def rearrange_list(lst):
+        rearranged = []
+        i, j = 0, len(lst) - 1
+        while i <= j:
+            if i == j:
+                rearranged.append(lst[i])
+            else:
+                rearranged.append(lst[i])
+                rearranged.append(lst[j])
+            i += 1
+            j -= 1
+        return rearranged
+    
+    if isinstance(obj, dict):
+        keys, values = list(obj.keys()), list(obj.values())
+        rearranged_keys = rearrange_list(keys)
+        rearranged_values = rearrange_list(values)
+        return dict(zip(rearranged_keys, rearranged_values))
+    
+    elif isinstance(obj, pd.DataFrame):
+        cols = obj.columns.tolist()
+        rearranged_cols = rearrange_list(cols)
+        return obj[rearranged_cols]
+    
+    elif isinstance(obj, list):
+        return rearrange_list(obj)
+    
+    else:
+        raise TypeError("Input must be a dictionary, DataFrame, or list.")
+
+def propose_layout(
+    data, 
+    include_index=True, 
+    max_text_char=50,
+    buffer_space=2, 
+    adjust_df=True, 
+    precision = 4, 
+    is_numeric_datetime='ignore',
+    ):
+    """
+    Propose the number of columns and rows to display based on the terminal 
+    size.
+
+    Parameters
+    ----------
+    data : `pandas.DataFrame`
+        The data to display. This should be a pandas DataFrame containing the 
+        data you want to fit into the terminal.
+    
+    include_index : `bool`, optional
+        Whether to include the index in the computation. If `True`, the index 
+        width is considered in the layout calculation. Default is `True`.
+    
+    max_text_char : `int`, optional
+        Maximum number of characters for text values in columns. This truncates 
+        the text values to ensure they fit within the specified limit. 
+        Default is 50.
+    
+    buffer_space : `int`, optional
+        The space in characters between columns to ensure readability. Default 
+        is 2.
+        
+    adjust_df: bool, default =True, 
+       For layout display, dataframe values are formatted according to 
+       numeric (round values ) and categorical ( string object). 
+       If the maximum number of characters for string values are
+       longer than `max_text_char`, strings will be truncated and appended 
+       with '...'. To consider formatting the datetime, set `is_numeric_datetime` 
+       either to ``True`` or ``False`` for formating as string datetime format. 
+       
+    precision : int, , Default is 4.
+        The number of decimal places to round numerical values to. Apply only 
+        if `adjust_df` is ``True``. 
+        
+    is_numeric_datetime : str or bool, optional
+        If `True`, consider datetime columns as numeric. If `False`, format 
+        datetime columns as strings. If ``'ignore'``, do not process datetime 
+        columns. Default is ``'ignore'``.  Enabled only if `adjust_df` is ``True``. 
+        
+    Returns
+    -------
+    tuple
+        The number of columns and rows to display.
+
+    Notes
+    -----
+    The function computes the layout by first determining the terminal size 
+    using `get_terminal_size`. It then calculates the width of each column 
+    and the index (if included) by using the `max_column_lengths` function. 
+    The number of columns that can fit in the terminal is determined based on 
+    the cumulative width of the columns and the buffer space. The number of 
+    rows is simply the terminal height minus a fixed space for headers and 
+    padding.
+
+    The calculation can be summarized as:
+
+    .. math::
+        \text{num\_columns} = \left\lfloor \frac{\text{available\_width}}\\
+            {\text{column\_width} + \text{buffer\_space}} \right\rfloor
+
+        \text{num\_rows} = \text{terminal\_height} - 2
+
+    where :math:`\text{available\_width}` is the terminal width minus the index 
+    width (if included).
+
+    Examples
+    --------
+    >>> from gofast.api.util import propose_layout
+    >>> import pandas as pd
+    >>> data = pd.DataFrame({
+    ...     'Column1': range(10),
+    ...     'Column2': ['short', 'a bit longer', 'even longer than before', 
+    ...                'short'] * 2,
+    ...     'Column3': ['some long text here', 'short', 
+    ...                'even longer text than before', 'tiny'] * 2
+    ... })
+    >>> rows, columns = propose_layout(data, include_index=True)
+    >>> print(f"Proposed layout: {columns} columns, {rows} rows")
+
+    See Also
+    --------
+    get_terminal_size : Function to get the size of the terminal.
+    max_column_lengths : Function to calculate the maximum column lengths 
+    for a DataFrame.
+
+    References
+    ----------
+    .. [1] Python Software Foundation. Python Language Reference, version 3.9. 
+       Available at http://www.python.org
+    .. [2] Wes McKinney. "pandas: a Foundational Python Library for Data 
+       Analysis and Statistics." Python for Data Analysis. O'Reilly Media, 
+       2012.
+    """
+    data = validate_data(data )
+    
+    if adjust_df: 
+        data = refine_df(
+            data, precision= precision, 
+            max_text_char= max_text_char, 
+            is_numeric_datetime= is_numeric_datetime 
+            )
+        
+    terminal_width, terminal_height = get_table_size(return_height= True )
+    # terminal_width, terminal_height = get_terminal_size()
+    col_lengths, index_length = max_column_lengths(
+        data, include_index=include_index, max_text_char=max_text_char)
+
+    # Calculate total width needed for the columns
+    total_col_width = sum(col_lengths.values())
+    
+    # Add buffer space between columns and include index width if necessary
+    # -1 for number of interval NI = Number of Columns -1 
+    total_width = total_col_width + (buffer_space * (len(col_lengths) - 1))
+    # total_width = total_col_width + (buffer_space * len(col_lengths) ) 
+    if include_index:
+        total_width += index_length + buffer_space 
+    # Determine the number of columns that can fit in the terminal width
+    if total_width <= terminal_width:
+        num_columns = len(col_lengths)
+    else:
+        cumulative_width =(index_length + buffer_space) if include_index else 0 
+        num_columns = 0
+        col_lengths = rearrange(col_lengths)
+        for col, length in col_lengths.items():
+            # Maximize col by adding buffer_space 
+            cumulative_width += (length + buffer_space)
+            if cumulative_width > terminal_width:
+                break
+            num_columns += 1
+    # Determine the number of rows that can fit in the terminal height
+    num_rows = terminal_height - 2  # Subtracting 2 for header row and padding
+    
+    # Ensure at least one column and row are displayed
+    num_columns = max(1, num_columns)
+    num_rows = max(1, num_rows)
+
+    return num_rows, num_columns
+
+
+def refine_df(
+    data, /, 
+    precision=4,
+    max_text_char=50, 
+    is_numeric_datetime='ignore'
+    ):
+    """
+    Refines a DataFrame by setting precision for numerical values and truncating
+    long strings.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The input DataFrame.
+    precision : int, optional
+        The number of decimal places to round numerical values to.
+        Default is 4.
+    max_text_char : int, optional
+        The maximum number of characters for string values. Strings
+        longer than this will be truncated and appended with '...'.
+        Default is 50.
+    is_numeric_datetime : str or bool, optional
+        If `True`, consider datetime columns as numeric. If `False`, format 
+        datetime columns as strings. If ``'ignore'``, do not process datetime 
+        columns. Default is ``'ignore'``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The refined DataFrame.
+
+    Notes
+    -----
+    This function processes a DataFrame to format numerical values to
+    a specified precision and truncates string values that exceed a
+    given length. For numerical values, the function applies rounding
+    to the specified number of decimal places. For string values, if
+    the length of the string exceeds `max_text_char`, the string is
+    truncated to `max_text_char - 3` characters, and '...' is appended
+    to indicate truncation.
+
+    Mathematically, the rounding of numerical values can be expressed as:
+
+    .. math::
+        x_{\text{rounded}} = \text{round}(x, \text{precision})
+
+    The truncation of string values can be expressed as:
+
+    .. math::
+        s_{\text{truncated}} =
+        \begin{cases}
+        s & \text{if } \text{len}(s) \leq \text{max\_text\_char} \\
+        s[:\text{max\_text\_char}-3] + '...' & \text{if } \text{len}(s) > \text{max\_text\_char}
+        \end{cases}
+
+    Examples
+    --------
+    >>> from gofast.api.util import refine_df
+    >>> from gofast.api.util import refine_df
+    >>> df = pd.DataFrame({'A': [1.123456, 2.345678, 3.987654], 
+    ...                    'B': ['short', 
+    ...                          'a very long string that exceeds the maximum character length', 
+    ...                          'new lines test'], 
+                             'C': [1.0, 2.1, 3.6]})
+    >>> formatted_df = refine_df(df, precision=8, max_text_char=10)
+    >>> print(formatted_df)
+    >>> df = pd.DataFrame({'A': [1.123456, 2.345678, 3.987654], 
+    ...                    'B': ['short', 
+    ...                          'a very long string that exceeds the maximum character length'],
+    ...                    'C': [pd.Timestamp('2023-01-01'), 
+    ...                          pd.Timestamp('2023-01-02'), 
+    ...                          pd.Timestamp('2023-01-03')]})
+    >>> refined_df = refine_df(df, precision=2, max_text_char=10, is_numeric_datetime=False)
+    >>> print(refined_df)
+         A           B                   C
+    0  1.12       short  2023-01-01 00:00:00
+    1  2.35  a very lo...  2023-01-02 00:00:00
+    2  3.99  a very lo...  2023-01-03 00:00:00
+
+    See Also
+    --------
+    pandas.DataFrame.round : Round a DataFrame to a variable number
+        of decimal places.
+    pandas.Series.str.slice : Slice substrings from each element in
+        the Series/Index.
+
+    References
+    ----------
+    .. [1] McKinney, Wes. "pandas: a foundational Python library for
+       data analysis and statistics." Python for High Performance
+       and Scientific Computing (2011): 1-9.
+    """
+    
+    data = validate_data(data )
+    def format_numeric(x, precision):
+        precision= validate_precision (precision )
+        return round(x, precision)
+
+    def format_string(x, max_text_char):
+        if len(x) > max_text_char:
+            return x[:max_text_char-3] + '...'
+        return x
+
+    refined_data = data.copy()
+    # Format numerical values
+    refined_data = refined_data.round(precision)
+    
+    # for col in refined_data.select_dtypes(include=[float, int]).columns:
+    #     refined_data[col] = refined_data[col].apply(
+    #         lambda x: format_numeric(x, precision))
+    
+    if is_numeric_datetime != 'ignore':
+        # Include datetime columns as numeric if specified
+        if is_numeric_datetime:
+            for col in refined_data.select_dtypes(include=['datetime']).columns:
+                refined_data[col] = refined_data[col].apply(
+                    lambda x: format_numeric(x.timestamp(), precision) if pd.notnull(x) else x)
+        else:
+            for col in refined_data.select_dtypes(include=['datetime']).columns:
+                refined_data[col] = refined_data[col].apply(
+                    lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if pd.notnull(x) else x)
+    
+    # Truncate string values
+    for col in refined_data.select_dtypes(include=[object]).columns:
+        refined_data[col] = refined_data[col].apply(
+            lambda x: format_string(x, max_text_char) if isinstance(x, str) else x)
+    
+    return refined_data
+
+
+def count_functions(
+    module_name, 
+    include_class=False, 
+    return_counts=True, 
+    include_private=False, 
+    include_local=False
+    ):
+    """
+    Count and list the number of functions and classes in a specified module.
+
+    Parameters
+    ----------
+    module_name : str
+        The name of the module to inspect, in the format `package.module`.
+    include_class : bool, optional
+        Whether to include classes in the count and listing. Default is 
+        `False`.
+    return_counts : bool, optional
+        Whether to return only the count of functions and classes (if 
+        ``include_class`` is `True`). If `False`, returns a list of functions 
+        and classes in alphabetical order. Default is `True`.
+    include_private : bool, optional
+        Whether to include private functions and classes (those starting with 
+        `_`). Default is `False`.
+    include_local : bool, optional
+        Whether to include local (nested) functions in the count and listing. 
+        Default is `False`.
+
+    Returns
+    -------
+    int or list
+        If ``return_counts`` is `True`, returns the count of functions and 
+        classes (if ``include_class`` is `True`). If ``return_counts`` is 
+        `False`, returns a list of function and class names (if 
+        ``include_class`` is `True`) in alphabetical order.
+
+    Notes
+    -----
+    This function dynamically imports the specified module and analyzes its 
+    Abstract Syntax Tree (AST) to count and list functions and classes. It 
+    provides flexibility to include or exclude private and local functions 
+    based on the parameters provided.
+
+    The process can be summarized as:
+
+    .. math::
+        \text{total\_count} = 
+        \text{len(functions)} + \text{len(classes)}
+
+    where:
+
+    - :math:`\text{functions}` is the list of functions found in the module.
+    - :math:`\text{classes}` is the list of classes found in the module 
+      (if ``include_class`` is `True`).
+
+    Examples
+    --------
+    >>> from gofast.api.util import count_functions_classes
+    >>> count_functions_classes('gofast.api.util', include_class=True,
+                                return_counts=True)
+    10
+
+    >>> count_functions('gofast.api.util', include_class=True,
+                                return_counts=False)
+    ['ClassA', 'ClassB', 'func1', 'func2', 'func3']
+
+    >>> count_functions('gofast.api.util', include_class=False, 
+                                return_counts=True, include_private=True)
+    15
+
+    >>> count_functions('gofast.api.util', include_class=False, 
+                                return_counts=False, include_private=True)
+    ['_private_func1', '_private_func2', 'func1', 'func2']
+
+    See Also
+    --------
+    ast : Abstract Syntax Tree (AST) module for parsing Python source code.
+
+    References
+    ----------
+    .. [1] Python Software Foundation. Python Language Reference, version 3.9. 
+       Available at http://www.python.org
+    .. [2] Python `ast` module documentation. Available at 
+       https://docs.python.org/3/library/ast.html
+    """
+ 
+    try:
+        import ast
+    except ImportError as e:  # Catch the specific ImportError exception
+        raise ImportError(
+            "The 'ast' module could not be imported. This module is essential"
+            " for analyzing Python source code to count functions and classes."
+            " Ensure that you are using a standard Python distribution, which"
+            " includes the 'ast' module by default."
+        ) from e
+
+    import inspect
+    import importlib
+    # Import the module dynamically
+    module = importlib.import_module(module_name)
+
+    # Get the source code of the module
+    source = inspect.getsource(module)
+
+    # Parse the source code into an AST
+    tree = ast.parse(source)
+
+    # Initialize lists to store function and class names
+    functions = []
+    classes = []
+
+    def is_local_function(node):
+        """Determine if the function is local (nested)."""
+        while node:
+            if isinstance(node, ast.FunctionDef):
+                return True
+            node = getattr(node, 'parent', None)
+        return False
+
+    # Add parent references to each node
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            child.parent = node
+
+    # Traverse the AST to find function and class definitions
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            if (include_private or not node.name.startswith('_')) and \
+               (include_local or not is_local_function(node.parent)):
+                functions.append(node.name)
+        elif isinstance(node, ast.ClassDef) and include_class:
+            if include_private or not node.name.startswith('_'):
+                classes.append(node.name)
+
+    # Combine and sort the lists if needed
+    if include_class:
+        result = sorted(functions + classes)
+    else:
+        result = sorted(functions)
+
+    if return_counts:
+        return len(result)
+    else:
+        return result
+
+def round_numeric_values(df, precision=4):
+    """
+    Rounds numeric floating values in a DataFrame to the specified 
+    precision. Integers and non-numeric values are not modified.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The DataFrame whose numeric floating values are to be rounded. 
+        The DataFrame can contain mixed data types, including integers, 
+        floating-point numbers, and non-numeric values.
+    precision : int, optional
+        The number of decimal places to round to. Defaults to 4. 
+        - If `precision` is set to a positive integer, it specifies 
+          the number of decimal places.
+        - If `precision` is set to a negative integer, it specifies 
+          the number of positions to the left of the decimal point.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame with numeric floating values rounded to the 
+        specified precision. Integers and non-numeric values remain 
+        unchanged.
+
+    Raises
+    ------
+    ValueError
+        If `precision` is not an integer.
+
+    Notes
+    -----
+    This function applies rounding only to floating-point numbers. 
+    Integers and non-numeric values remain unchanged. The function 
+    uses pandas' `applymap` to apply the rounding operation element-wise 
+    across the DataFrame.
+
+    The mathematical formulation for the rounding operation is given by:
+
+    .. math::
+        y = 
+        \begin{cases} 
+        \text{round}(x, \text{precision}) & \text{if } x \in \mathbb{R} \\
+        x & \text{otherwise} \\
+        \end{cases}
+
+    Where:
+    - :math:`x` is the input value
+    - :math:`y` is the output value after rounding
+    - :math:`\text{precision}` is the specified number of decimal places
+
+    Examples
+    --------
+    >>> from gofast.api.util import round_numeric_values
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'A': [1.12345, 2.6789, 3],
+    ...     'B': [4, 5.98765, 'text'],
+    ...     'C': [7.123456, 8.654321, 9.0]
+    ... })
+    >>> round_numeric_values(df, precision=2)
+           A      B     C
+    0  1.12      4  7.12
+    1  2.68  5.99  8.65
+    2     3  text     9
+
+    See Also
+    --------
+    pandas.DataFrame.applymap : Element-wise operation on DataFrame.
+
+    References
+    ----------
+    .. [1] "NumPy Documentation", https://numpy.org/doc/stable/
+
+    """
+    def round_if_float(x):
+        if isinstance(x, float):
+            return round(x, precision)
+        return x
+
+    return df.applymap(round_if_float)
+
 
     

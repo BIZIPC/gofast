@@ -3,7 +3,7 @@
 from .feature_engineering import ( 
     FeatureImportanceSelector,
     SequentialBackwardSelector,
-    FloatCategoricalToIntTransformer,
+    FloatCategoricalToInt,
     KMeansFeaturizer,
     AttributesCombinator,
     StratifyFromBaseFeature,
@@ -19,6 +19,7 @@ from .feature_engineering import (
     PolynomialFeatureCombiner,
     DimensionalityReducer,
     CategoricalEncoder,
+    CategoricalEncoder2, 
     FeatureScaler,
     MissingValueImputer,
     ColumnSelector,
@@ -27,7 +28,7 @@ from .feature_engineering import (
 __all__= [
     'FeatureImportanceSelector', 
     'SequentialBackwardSelector',
-    'FloatCategoricalToIntTransformer', 
+    'FloatCategoricalToInt', 
     'KMeansFeaturizer',
     'AttributesCombinator', 
     'StratifyFromBaseFeature',
@@ -45,6 +46,7 @@ __all__= [
     'PolynomialFeatureCombiner', 
     'DimensionalityReducer', 
     'CategoricalEncoder', 
+    'CategoricalEncoder2', 
     'FeatureScaler', 
     'MissingValueImputer', 
     'ColumnSelector', 

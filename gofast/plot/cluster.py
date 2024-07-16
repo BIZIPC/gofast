@@ -2,6 +2,13 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""
+The `cluster` module provides visualization tools for cluster analysis. 
+It includes functions for plotting silhouettes, dendrograms, cluster comparisons,
+Voronoi diagrams, and more, aiding in the evaluation and interpretation of 
+clustering results.
+"""
+
 from __future__ import annotations 
 import itertools 
 import warnings 

@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+The `mlviz` module provides a variety of visualization tools 
+for plotting confusion matrices, ROC curves, learning curves, regression 
+diagnostics, SHAP summaries, and more, facilitating comprehensive model 
+performance analysis.
+"""
 
 from __future__ import annotations 
 import warnings 

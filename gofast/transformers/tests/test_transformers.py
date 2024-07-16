@@ -37,9 +37,8 @@ from gofast.transformers.feature_engineering import (
     KMeansFeaturizer, 
     CategoryFrequencyEncoder,
     ) 
-from gofast.transformers.lexical_temporal import  ( 
+from gofast.transformers.text import  ( 
     TextFeatureExtractor, 
-    DateFeatureExtractor, 
     TextToVectorTransformer
     )
 from gofast.transformers.ts import ( 
@@ -52,6 +51,7 @@ from gofast.transformers.ts import (
     SeasonalDecomposeTransformer,
     FourierFeaturesTransformer,
     TrendFeatureExtractor,
+    DateFeatureExtractor, 
     )
     
 from gofast.transformers.image import (

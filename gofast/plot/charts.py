@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `charts` module provides functions for creating various types of charts. 
+It includes tools for plotting pie charts and creating radar 
+charts to visually represent data in an informative way.
+"""
 
 import numpy as np 
 import pandas as pd 

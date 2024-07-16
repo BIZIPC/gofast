@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+#   License: BSD-3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
+
+"""
+The `dimensionality` module offers visualization tools for dimensionality
+reduction analysis. It includes functions for plotting unified 
+PCA results, individual PCA components, and cumulative variance explained by 
+PCA components.
+"""
 
 from __future__ import annotations 
 import warnings 

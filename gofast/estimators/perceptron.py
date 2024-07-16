@@ -3,10 +3,10 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-:mod:`~gofast.estimators.perceptron` contains a collection of estimators
-implementing various machine learning algorithms based on perceptron and 
-gradient descent techniques. The implementations are designed to provide 
-robust and flexible models for both classification and regression tasks. 
+`perceptron` contains a collection of estimators implementing various
+machine learning algorithms based on perceptron and gradient descent
+techniques. The implementations are designed to provide robust and flexible
+models for both classification and regression tasks. 
 """
 
 from __future__ import annotations 

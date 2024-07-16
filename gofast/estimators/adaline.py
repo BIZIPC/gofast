@@ -2,9 +2,9 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 """
-The `gofast.estimators.adaline` module implements various versions of the 
-Adaptive Linear Neuron (Adaline) algorithm for both regression and 
-classification tasks. The Adaline algorithm is a foundational model in machine 
+`adaline` module implements various versions of the Adaptive Linear Neuron 
+(Adaline) algorithm for both regression and classification tasks.
+The Adaline algorithm is a foundational model in machine 
 learning that uses a linear activation function and is trained using gradient 
 descent. This module includes different variants of Adaline to handle 
 stochastic and batch training as well as mixed tasks that can perform both 
@@ -20,13 +20,12 @@ from sklearn.metrics import mean_squared_error, accuracy_score, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils import shuffle
+from sklearn.utils._param_validation import StrOptions 
 
 try:from sklearn.utils import type_of_target
 except: from ..tools.coreutils import type_of_target 
 from ..tools.validator import check_X_y, check_array 
-from ..tools.validator import check_is_fitted, parameter_validator 
-from ..tools._param_validation import validate_params
-from ..tools._param_validation import Interval, StrOptions, Real, Integral
+from ..tools.validator import check_is_fitted
 from ._adaline import BaseAdalineStochastic 
 from .util import activator 
   
@@ -34,7 +33,6 @@ __all__= [
         "AdalineClassifier","AdalineMixte","AdalineRegressor",
         "AdalineStochasticRegressor","AdalineStochasticClassifier",
     ]
-
 
 class AdalineStochasticRegressor(BaseAdalineStochastic, RegressorMixin):
     """
@@ -163,21 +161,7 @@ class AdalineStochasticRegressor(BaseAdalineStochastic, RegressorMixin):
            and Duchesnay, E. (2011). Scikit-learn: Machine Learning in Python. 
            Journal of Machine Learning Research, 12, 2825-2830.
     """
-    @validate_params(
-        {
-            "eta0": [Interval(Real, 0, 1, closed="neither")],
-            "max_iter": [Interval(Integral, 1, None, closed="left")],
-            "early_stopping": [bool],
-            "validation_fraction": [Interval(Real, 0, 1, closed="neither")],
-            "tol": [Interval(Real, 0, None, closed="neither")],
-            "warm_start": [bool],
-            "learning_rate": [StrOptions({"constant", "adaptive"})],
-            "eta0_decay": [Interval(Real, 0, 1, closed="neither")],
-            "shuffle": [bool],
-            "random_state": [Integral, None],
-            "verbose": [bool]
-        }
-    )
+    
     def __init__(
             self, 
             eta0=0.001, 
@@ -291,12 +275,15 @@ class AdalineStochasticRegressor(BaseAdalineStochastic, RegressorMixin):
         sklearn.linear_model.Ridge : Ridge regression.
     
         """
-        X, y = check_X_y(X, y, estimator=self)
-        
-        self.learning_rate = parameter_validator(
-            "learning_rate", target_strs={"adaptive", "constant"})(
-                self.learning_rate)
-                
+        self._validate_params() 
+        check_params = dict(
+            estimator = self, 
+            accept_sparse="csc", 
+            ensure_2d=False, 
+            dtype=None, 
+            )
+        X, y = self._validate_data(X, y, **check_params)
+
         if not self.warm_start or not hasattr(self, 'weights_'):
             self._initialize_weights(X.shape[1])
        
@@ -586,25 +573,12 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
     .. [1] Widrow, B., Hoff, M.E., 1960. Adaptive switching circuits. IRE WESCON 
            Convention Record, New York, 96-104.
     """
-
-    @validate_params(
-        {
-            "eta0": [Interval(Real, 0, 1, closed="neither")],
-            "max_iter": [Interval(Integral, 1, None, closed="left")],
-            "early_stopping": [bool],
-            "validation_fraction": [Interval(Real, 0, 1, closed="neither")],
-            "tol": [Interval(Real, 0, None, closed="neither")],
-            "warm_start": [bool],
-            "learning_rate": [StrOptions({"constant", "adaptive"})],
-            "eta0_decay": [Interval(Real, 0, 1, closed="neither")],
+    _parameter_constraints: dict ={
+            **BaseAdalineStochastic._parameter_constraints,
             "activation": [ StrOptions(
                 {'sigmoid', 'relu', 'leaky_relu', 'identity', 'elu', 'tanh', 'softmax'}),
                 callable], 
-            "shuffle": [bool],
-            "random_state": [Integral, None],
-            "verbose": [bool]
         }
-    )
     def __init__(
             self, 
             eta0=0.001, 
@@ -615,7 +589,7 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
             warm_start=False, 
             learning_rate='constant', 
             eta0_decay=0.99, 
-            activation="sigmoid", 
+            activation='sigmoid', 
             shuffle=True, 
             random_state=None, 
             verbose=False
@@ -633,6 +607,7 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
             random_state=random_state, 
             verbose=verbose
             )
+        
         self.activation=activation 
         
 
@@ -725,7 +700,14 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
         .. [1] Widrow, B., Hoff, M.E., 1960. Adaptive switching circuits. IRE WESCON 
                Convention Record, New York, 96-104.
         """
-        X, y = check_X_y(X, y, estimator=self, ensure_2d=True, multi_output=True)
+        self._validate_params() 
+        check_params = dict(
+            estimator = self, 
+            accept_sparse="csc", 
+            ensure_2d=False, dtype=None, 
+            multi_output=True
+            )
+        X, y = self._validate_data(X, y, **check_params)
         self.label_binarizer_ = LabelBinarizer()
         y = self.label_binarizer_.fit_transform(y)
         
@@ -734,10 +716,6 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
         
         rgen = np.random.RandomState(self.random_state)
         
-        self.learning_rate = parameter_validator(
-            "learning_rate", target_strs={"adaptive", "constant"})(
-                self.learning_rate)
-
         if not self.warm_start or not hasattr(self, 'weights_'):
             self.weights_ = rgen.normal(loc=0.0, scale=0.01, size=(X.shape[1] + 1, y.shape[1]))
         
@@ -759,7 +737,7 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
             cost = []
             for xi, target in zip(X, y):
                 for idx in range(self.weights_.shape[1]):
-                    error = target[idx] - self.activation(xi, idx)
+                    error = target[idx] - self.net_activation(xi, idx)
                     self.weights_[1:, idx] += self.eta0 * xi * error
                     self.weights_[0, idx] += self.eta0 * error
                     cost.append(error ** 2 / 2.0) 
@@ -846,17 +824,17 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
         >>> print('Predicted class labels:', y_pred)
     
         """
-
+        
         check_is_fitted(self, 'weights_')
         X = check_array(X, accept_large_sparse=True, accept_sparse=True)
     
         if len(self.label_binarizer_.classes_) == 2:
             return self.label_binarizer_.inverse_transform(
-                np.where(self.activation(X, 0) >= 0.0, 1, 0))
+                np.where(self._activator(self.net_activation(X, 0)) >= 0.0, 1, 0))
         else:
             # Calculate the activations for all classes
             activations = np.column_stack(
-                [self.activation(X, idx) for idx in range(self.weights_.shape[1])])
+                [self.net_activation(X, idx) for idx in range(self.weights_.shape[1])])
     
             # Find the indices of the maximum values along each row
             indices = np.argmax(activations, axis=1)
@@ -943,7 +921,7 @@ class AdalineStochasticClassifier(BaseAdalineStochastic, ClassifierMixin):
     
     def _activator (self, z): 
         """Compute the activation function, defayult is sigmoid."""
-        return activator (z, self.activation  )
+        return activator (z, activation=self.activation  )
 
     def _is_classifier (self):
         "Flag to indicate the type of problem."

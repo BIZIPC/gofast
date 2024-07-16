@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 # config.py in the gofast.plot package
 
 class PlotConfig:

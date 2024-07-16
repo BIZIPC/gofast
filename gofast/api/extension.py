@@ -1,9 +1,29 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `extension` module provides extended utilities and classes for 
+cloning objects, fetching and resolving estimator names, and performing 
+introspection tasks.
+"""
+
+import os 
 import re 
 import copy as Copy
 import warnings
+
+__all__=[
+     'DynamicDataFrame',
+     'MetaLen',
+     'RegexMap',
+     'clone',
+     'fetch_estimator_name',
+     'get_base_estimator',
+     'isinstance_',
+     'make_introspection',
+     'rename_instance_class',
+     'resolve_estimator_name',
+ ]
 
 class RegexMap:
     """
@@ -378,6 +398,90 @@ def _custom_repr_class(cloned_instance, new_name: str, return_type='class'):
     
     return cloned_instance if return_type == 'instance' else new_class
 
+### XXX TODO 
+class DynamicDataFrame:
+    def __init__(self, df, max_colwidth=50, precision=4, include_index=True):
+        self.df = df
+        self.max_colwidth = max_colwidth
+        self.precision = precision
+        self.include_index = include_index
+        self._set_terminal_size()
+
+    def set_option(self, option, value):
+        if option == 'display.max_colwidth':
+            self.max_colwidth = value
+        elif option == 'display.precision':
+            self.precision = value
+        elif option == 'display.include_index':
+            self.include_index = value
+        self._set_terminal_size()
+
+    def _set_terminal_size(self):
+        self.terminal_size = os.get_terminal_size()
+
+    def _get_max_col_lengths(self):
+        max_lengths = {}
+        if self.include_index:
+            max_lengths['index'] = max(len(str(i)) for i in self.df.index)
+
+        for col in self.df.columns:
+            max_lengths[col] = max(len(str(col)), self.df[col].astype(str).str.len().max())
+
+        return max_lengths
+
+    def _truncate(self, s, max_length):
+        return (s[:max_length - 3] + '...') if len(s) > max_length else s
+
+    def _format_value(self, value):
+        if isinstance(value, float):
+            return f"{value:.{self.precision}f}"
+        return str(value)
+
+    def _print_row(self, row):
+        formatted_row = [self._truncate(self._format_value(value), self.max_colwidth
+                                        ) for value in row]
+        print(" | ".join(formatted_row))
+
+    def display(self):
+        max_lengths = self._get_max_col_lengths()
+        terminal_width = self.terminal_size.columns
+        terminal_height = self.terminal_size.lines
+
+        total_width = 0
+        if self.include_index:
+            total_width += max_lengths['index'] + 3  # Include space for index column
+
+        cols_to_display = []
+        for col in self.df.columns:
+            col_width = min(max_lengths[col], self.max_colwidth)
+            if total_width + col_width + 3 > terminal_width:
+                break
+            cols_to_display.append(col)
+            total_width += col_width + 3
+
+        rows_to_display = min(len(self.df), terminal_height - 3)  # Reserve lines for headers and ellipsis
+
+        # Print column headers
+        header = ['Index'] if self.include_index else []
+        header.extend([self._truncate(col, self.max_colwidth) for col in cols_to_display])
+        print(" | ".join(header))
+
+        # Print rows
+        for i in range(rows_to_display):
+            if self.include_index:
+                row = [self.df.index[i]]
+            else:
+                row = []
+            row.extend([self.df.iloc[i][col] for col in cols_to_display])
+            self._print_row(row)
+
+        if len(self.df) > rows_to_display:
+            print("...")
+
+        if len(self.df.columns) > len(cols_to_display):
+            print(f"[Displaying {len(cols_to_display)} of {len(self.df.columns)} columns]")
+        if len(self.df) > rows_to_display:
+            print(f"[Displaying {rows_to_display} of {len(self.df)} rows]")
 
 def make_introspection(target_obj, source_obj):
     """

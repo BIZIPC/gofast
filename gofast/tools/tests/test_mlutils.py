@@ -41,7 +41,7 @@ from gofast.tools.mlutils import deserialize_data, soft_data_split
 from gofast.tools.mlutils import laplace_smoothing, laplace_smoothing_categorical 
 from gofast.tools.mlutils import laplace_smoothing_word, handle_imbalance, smart_split # 
 
-DOWNLOAD_FILE='https://raw.githubusercontent.com/WEgeophysics/gofast/main/gofast/datasets/data/bagoue.csv'
+DOWNLOAD_FILE='https://raw.githubusercontent.com/earthai-tech/gofast/main/gofast/datasets/data/bagoue.csv'
 with resources.path ('gofast.datasets.data', "bagoue.csv") as csv_f : 
     csv_file = str(csv_f)
 

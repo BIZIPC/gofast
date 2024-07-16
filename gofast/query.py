@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+:mod:`gofast.query` module provides tools for database analysis, featuring 
+the `DBAnalysis` class to facilitate querying and analyzing database 
+structures and contents efficiently.
+"""
 
 import os 
 import re
@@ -11,6 +16,8 @@ from .exceptions import NotFittedError
 from .tools._dependency import import_optional_dependency
 from .tools.coreutils import normalize_string
  
+__all__= ['DBAnalysis']
+
 class DBAnalysis:
     """
     A class for performing various data analysis tasks using SQL.

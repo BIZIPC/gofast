@@ -60,8 +60,7 @@ def test_visualize_data(setup_geo_system):
     })
 
     # Test the visualization method for an interactive map
-    map_result = setup_geo_system.visualizeData(gdf, plot_type='map',
-                                                location=[10.1, 125.6], zoom_start=12)
+    map_result = setup_geo_system.visualizeData(gdf, plot_type='map', location=[10.1, 125.6], zoom_start=12)
     assert isinstance(map_result, folium.Map)
 
 def test_evaluate_impact(setup_geo_system):

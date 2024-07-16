@@ -2,6 +2,10 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides a comprehensive set of utilities for evaluating, visualizing, and 
+analyzing machine learning models, including tools for cross-validation, 
+performance metrics, and results presentation."""
+
 from __future__ import annotations 
 import re
 import inspect
@@ -67,7 +71,160 @@ __all__= [
     "shrink_covariance_cv_score",
   ]
 
+class NoneHandler:
+    """
+    A utility class to handle `None` values in hyperparameters for various
+    scikit-learn estimators. This class provides a mechanism to assign
+    appropriate default values to hyperparameters that are set to `None`,
+    based on the type of estimator being used.
 
+    Parameters
+    ----------
+    estimator : BaseEstimator
+        An instance of a scikit-learn estimator. The type of the estimator
+        is used to determine the appropriate default values for its
+        hyperparameters.
+
+    Attributes
+    ----------
+    estimator : BaseEstimator
+        The scikit-learn estimator instance provided during initialization.
+    estimator_type : str
+        The name of the estimator class.
+    none_handlers : dict
+        A dictionary where keys are compiled regular expressions matching
+        estimator types, and values are lambda functions that provide
+        default values for `None` hyperparameters.
+
+    Methods
+    -------
+    handle_none(param, value)
+        Handle `None` values for the given hyperparameter based on the
+        estimator type.
+    default_handler(param)
+        Provide a default value for unknown estimators based on common
+        hyperparameters.
+
+    Examples
+    --------
+    >>> from gofast.models.utils import NoneHandler
+    >>> from sklearn.tree import DecisionTreeClassifier
+    >>> handler = NoneHandler(DecisionTreeClassifier())
+    >>> handler.handle_none('max_depth', None)
+    None
+
+    Notes
+    -----
+    This class uses regular expressions to match estimator types and
+    assigns default values to hyperparameters that are set to `None`.
+    For example, `max_depth` in `DecisionTreeClassifier` is assigned
+    `float('inf')` if it is `None`.
+
+    The assignment of default values is based on the type of estimator
+    and the specific hyperparameter. For decision trees and related
+    estimators, the `max_depth` parameter is set to `float('inf')` when
+    `None` is encountered:
+    
+    .. math::
+        \text{max\_depth} = \infty \text{ if } \text{max\_depth} = \text{None}
+
+    For support vector machines (SVMs), the `gamma` parameter is set to
+    `'scale'` if it is `None`:
+    
+    .. math::
+        \text{gamma} = \text{'scale'} \text{ if } \text{gamma} = \text{None}
+
+    See Also
+    --------
+    sklearn.tree.DecisionTreeClassifier : Decision tree classifier.
+    sklearn.svm.SVC : Support vector classification.
+    sklearn.ensemble.RandomForestClassifier : Random forest classifier.
+    sklearn.ensemble.GradientBoostingClassifier : Gradient boosting
+        classifier.
+    
+    References
+    ----------
+    .. [1] Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V.,
+       Thirion, B., Grisel, O., Blondel, M., Prettenhofer, P., Weiss, R.,
+       Dubourg, V., Vanderplas, J., Passos, A., Cournapeau, D., Brucher,
+       M., Perrot, M., Duchesnay, E. (2011). Scikit-learn: Machine Learning
+       in Python. Journal of Machine Learning Research, 12, 2825-2830.
+    """
+    def __init__(self, estimator):
+        self.estimator = estimator
+        self.estimator_type = type(estimator).__name__
+        self.none_handlers = self._initialize_handlers()
+
+    def _initialize_handlers(self):
+        handlers = {
+            re.compile(r'DecisionTree.*'): lambda param: ( # float('int'))
+                None if param == 'max_depth' else None
+            ),
+            re.compile(r'SV.*'): lambda param: (
+                'scale' if param == 'gamma' else None
+            ),
+            re.compile(r'RandomForest.*|ExtraTrees.*'): lambda param: (
+                None if param == 'max_depth' else None
+            ),
+            re.compile(r'GradientBoosting.*|HistGradientBoosting.*'): lambda param: (
+                None if param == 'max_depth' else None
+            ),
+            # We can add more estimators and their None handlers as needed
+        }
+        return handlers
+
+    def handle_none(self, param, value):
+        """
+        Handle `None` values for the given hyperparameter based on the
+        estimator type.
+
+        Parameters
+        ----------
+        param : str
+            The name of the hyperparameter.
+        value : any
+            The value of the hyperparameter.
+
+        Returns
+        -------
+        any
+            The default value for the hyperparameter if it is `None`,
+            otherwise the original value.
+        """
+        if value is not None:
+            return value
+
+        for pattern, handler in self.none_handlers.items():
+            if pattern.match(self.estimator_type):
+                return handler(param)
+        
+        return self.default_handler(param)
+
+    def default_handler(self, param):
+        """
+        Provide a default value for unknown estimators based on common
+        hyperparameters.
+
+        Parameters
+        ----------
+        param : str
+            The name of the hyperparameter.
+
+        Returns
+        -------
+        any
+            The default value for the hyperparameter.
+        """
+        default_values = {
+            'max_depth': None,  # Use None for max_depth instead of inf
+            'gamma': 'scale',  # Default value for gamma in SVMs
+            'n_estimators': 100,  # Common default for ensemble methods
+            'learning_rate': 0.1,  # Common default for boosting methods
+            # Add more common hyperparameters as needed
+        }
+        return default_values.get(param, None)
+    
+    
 def align_estimators_with_params(param_grids, estimators=None):
     """
     Reorganize estimators and their corresponding parameter grids.
@@ -891,7 +1048,7 @@ def get_cv_mean_std_scores(
 
 def get_split_best_scores(cvres:Dict[str, ArrayLike], 
                        split:int=0)->Dict[str, float]: 
-    """ Get the best score at each split from cross-validation results
+    """Get the best score at each split from cross-validation results.
     
     Parameters 
     -----------
@@ -954,7 +1111,7 @@ def display_model_max_details(cvres:Dict[str, ArrayLike], cv:int =4):
 
     
 def display_fine_tuned_results ( cvmodels: list[_F] ): 
-    """Display fined -tuning results 
+    """Display fined -tuning results.
     
     Parameters 
     -----------
@@ -2309,26 +2466,31 @@ def apply_param_types(estimator: BaseEstimator, param_dict: dict) -> dict:
     """
     param_types = get_param_types(estimator)
     new_param_dict = {}
-    
     for param, value in param_dict.items():
         if param in param_types:
-            if value is None: 
-                new_param_dict[param] = value
-                continue 
             expected_type = param_types[param]
-            new_param_dict[param] = expected_type(value)
+            if value is None:
+                new_param_dict[param] = value
+            elif isinstance(value, expected_type):
+                new_param_dict[param] = value
+            else:
+                try:
+                    new_param_dict[param] = expected_type(value)
+                except (TypeError, ValueError):
+                    new_param_dict[param] = value
         else:
             new_param_dict[param] = value  # keep original if param not found
         
-        # sometimes, param can hold string and float, try to convert to float 
-        # if string is passed 
-        if isinstance ( new_param_dict[param], str): 
-            try : 
-                new_param_dict[param] = float( new_param_dict[param]) 
-            except : 
-                pass 
+        # Attempt to convert string to float if applicable
+        if isinstance(new_param_dict[param], str):
+            try:
+                new_param_dict[param] = float(new_param_dict[param])
+            except ValueError:
+                pass
             
     return new_param_dict
+
+
 
 def process_performance_data(df, mode='average', on='@data'):
     """
@@ -2440,7 +2602,6 @@ def process_performance_data(df, mode='average', on='@data'):
 
     raise ValueError("Invalid parameters for 'mode' or 'on'")
     
-
 def update_if_higher(
     results_dict, 
     estimator_name, 
@@ -2508,4 +2669,146 @@ def update_if_higher(
         
     return results_dict, best_params_dict
 
+def prepare_estimators_and_param_grids(
+        estimators, param_grids, alignment_mode='soft'):
+    """
+    Prepare and associate estimators and their corresponding parameter grids.
+
+    This function takes in estimators and parameter grids in various formats and
+    ensures they are correctly associated and aligned. It supports both dictionary
+    and list inputs for flexibility and versatility.
+
+    Parameters
+    ----------
+    estimators : dict or list
+        Estimators can be provided in two formats:
+        - As a dictionary where keys are estimator names and values are estimator
+          objects.
+          Example: ``{'rf': RandomForestClassifier(), 'svc': SVC()}``
+        - As a list of estimator objects. The function will use the class names 
+          as keys.
+          Example: ``[RandomForestClassifier(), SVC()]``
+
+    param_grids : dict or list
+        Parameter grids can be provided in two formats:
+        - As a dictionary where keys match the estimator names and values 
+        are parameter grids.
+          Example: ``{'rf': {'n_estimators': [10, 100], 'max_depth': [None, 10]},
+                      'svc': {'C': [1, 10], 'kernel': ['linear', 'rbf']}}``
+        - As a list of parameter grids. The function will align them with 
+          estimators by order if alignment_mode is 'soft'.
+          Example: ``[{'n_estimators': [10, 100], 'max_depth': [None, 10]}, 
+                      {'C': [1, 10], 'kernel': ['linear', 'rbf']}]``
+
+    alignment_mode : str, optional
+        Specifies the alignment mode for associating parameter grids with 
+        estimators when provided as lists.
+        - 'soft': Align parameter grids with estimators by order.
+        - 'strict': Raise an error if parameter grids are provided as lists.
+        Default is 'soft'.
+
+    Returns
+    -------
+    est_dict : dict
+        A dictionary where keys are estimator names and values are estimator 
+        objects.
+
+    param_dict : dict
+        A dictionary where keys are estimator names and values are parameter 
+        grids.
+
+    Raises
+    ------
+    ValueError
+        If the length of estimators and parameter grids do not match, or if 
+        the keys of the dictionaries do not match, or if the alignment mode is invalid.
+
+    Notes
+    -----
+    This function ensures that the estimators and parameter grids are correctly
+    aligned and associated.
+    If both estimators and parameter grids are provided as dictionaries, their 
+    keys must match.
+    If they are provided as lists, the function uses the order to align them in 
+    'soft' mode,and raises an error in 'strict' mode.
+
+    Examples
+    --------
+    >>> from gofast.models.utils import prepare_estimators_and_param_grids
+    >>> from sklearn.ensemble import RandomForestClassifier
+    >>> from sklearn.svm import SVC
+    >>> estimators = {'rf': RandomForestClassifier(), 'svc': SVC()}
+    >>> param_grids = {'rf': {'n_estimators': [10, 100], 'max_depth': [None, 10]},
+    ...                'svc': {'C': [1, 10], 'kernel': ['linear', 'rbf']}}
+    >>> est_dict, param_dict = prepare_estimators_and_param_grids(estimators, param_grids)
+    >>> print(est_dict)
+    {'rf': RandomForestClassifier(), 'svc': SVC()}
+    >>> print(param_dict)
+    {'rf': {'n_estimators': [10, 100], 'max_depth': [None, 10]}, 
+    'svc': {'C': [1, 10], 'kernel': ['linear', 'rbf']}}
+
+    See Also
+    --------
+    sklearn.ensemble.RandomForestClassifier : A random forest classifier.
+    sklearn.svm.SVC : A support vector classifier.
+
+    References
+    ----------
+    .. [1] Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion, B., Grisel, O., 
+       Blondel, M., Prettenhofer, P., Weiss, R., Dubourg, V., Vanderplas, J.,
+       Passos, A., Cournapeau, D., Brucher, M., Perrot, M., and Duchesnay, E. (2011). 
+       Scikit-learn: Machine Learning in Python. Journal of Machine Learning 
+       Research, 12, 2825-2830.
+    """
+    if isinstance(estimators, dict):
+        est_dict = estimators
+    elif isinstance(estimators, list):
+        est_dict = {get_estimator_name(est): est for est in estimators}
+    else:
+        raise ValueError("Estimators should be a dictionary or a list.")
+
+    if isinstance(param_grids, dict):
+        param_dict = param_grids
+    elif isinstance(param_grids, list):
+        if alignment_mode == 'soft':
+            if len(param_grids) != len(est_dict):
+                raise ValueError(
+                    "Length of parameter grids does not match the length of estimators.")
+            param_dict = {name: param_grids[i] for i, name in enumerate(est_dict.keys())}
+        elif alignment_mode == 'strict':
+            raise ValueError("In strict mode, param_grids should be a dictionary"
+                             " with matching keys to estimators.")
+        else:
+            raise ValueError("Invalid alignment_mode. Use 'soft' or 'strict'.")
+    else:
+        raise ValueError("param_grids should be a dictionary or a list.")
+
+    if est_dict.keys() != param_dict.keys():
+        raise ValueError("Keys of estimators and param_grids must match.")
+
+    return est_dict, param_dict
+
+if __name__=='__main__': 
+    from sklearn.ensemble import RandomForestClassifier
+    # from gofast.models.utils import prepare_estimators_and_param_grids
+
+    # Example usage:
+    estimators = {'rf': RandomForestClassifier(), 'svc': SVC()}
+    param_grids = {'rf': {'n_estimators': [10, 100], 'max_depth': [None, 10]},
+                    'svc': {'C': [1, 10], 'kernel': ['linear', 'rbf']}}
+    
+    estimators_list, param_grids_list = [
+        RandomForestClassifier(), SVC()], [{'n_estimators': [10, 100], 
+                                            'max_depth': [None, 10]}, 
+                                            {'C': [1, 10], 'kernel': ['linear', 'rbf']}]
+    
+    # Testing the function
+    est_dict, param_dict = prepare_estimators_and_param_grids(estimators, param_grids)
+    print(est_dict)
+    print(param_dict)
+    
+    est_dict, param_dict = prepare_estimators_and_param_grids(
+        estimators_list, param_grids_list)
+    print(est_dict)
+    print(param_dict)
 

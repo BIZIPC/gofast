@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Enables models Selection Optimizer
+"""Enables `HyperbandSearchCV` model selection optimizer.
 
 The API and results of this estimator might change without any deprecation
 cycle.

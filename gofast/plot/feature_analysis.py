@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `feature_analysis` module provides visualization tools for feature 
+analysis in machine learning models. It includes functions for 
+plotting feature importances, interactions, correlations with targets, 
+dependence plots, feature selection processes, permutation importance, 
+and regularization paths.
+"""
 
 from __future__ import annotations 
 import warnings

@@ -1,8 +1,11 @@
+# -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+
 """
-Optimizing searches helper functions
-"""
+Provides classes and functions designed to optimize machine learning models, 
+featuring methods for hyperparameter tuning and strategies for executing 
+searches in parallel."""
 
 import joblib
 import concurrent 
@@ -20,6 +23,7 @@ from ..tools.coreutils import ellipsis2false
 from ..tools.validator import get_estimator_name , check_X_y 
 from ._optimize import BaseOptimizer, _perform_search, _validate_parameters
 from .utils import get_strategy_method, params_combinations # noqa
+from .utils import prepare_estimators_and_param_grids
 
 
 __all__=[
@@ -1749,6 +1753,40 @@ class ParallelOptimizer(BaseOptimizer):
         results = dict(results)
         self.summary_ = ModelSummary(descriptor="ParallelOptimizer", **results)
         return self.summary_.summary(results)
+    
+# write a robust function to create a list of dict estimator ( name , estimators ) and 
+# list of param_grids ( name, estimator_param_grids ) for instance 
+# >>> estimators = {'rf': RandomForestClassifier(), 'svc': SVC()}
+# >>> param_grids = {'rf': {'n_estimators': [10, 100], 'max_depth': [None, 10]},
+# ...                'svc': {'C': [1, 10], 'kernel': ['linear', 'rbf']}}
+
+# function must associate the estimators and param_grids. 
+# note first check whether the length of estimator and param_grids much if not raise error 
+# if estimators is given as {'name1': estimator1, name2: estimator2, ... } already 
+# the name should much in param_grids as 
+# {name1: param_grid1 , name2: param_grid2, ...} 
+
+# if estimators is given as list like [ estimator1, estimator 2] , transform then 
+# by using the estimator name as key as { estimator1 name: estimator1, estimator name2: estimator2}
+# if a list of param_grid is given as [ param_grid1, param_grid2 ] and estimator is given 
+# as {'name1': estimator1, name2: estimator2 } , add new parameter 'alignment_mode' ; 
+#   - if alignment mode is 'soft'(default), then associate the name of estimator to each paramgrid
+#     as param_grids will become { name1: param_grid1, 'name2: param_grid2}
+#    - if aligment mode is 'strict' , then raise error indicating that need to specify the 
+#      param_grid mode. 
+#      However if single estimator and single paramgrid like estimators = estimator or [estimator ] 
+#      and param_grids = param_grid or [param_grid] or course that mean the single estimator is equal 
+#      to it param_grids so estimator will become { estimator name: estimator } and 
+#      param_grids should be {estimator name: param_grid }
+
+# note that if estimator is given as 
+# estimtors = {'name1': estimator1, name2: estimator2, ... }
+# and { = {name1: param_grid1 , name2: param_grid2, ...} , you must check that the name 
+# in estimators.keys and param_grids.keys are identic, the same. 
+
+# function must return estimators, param_grids 
+# find the best function name and parameters name. You can also add more parameters for 
+# versatility and flexibility ; 
 
 def optimize_search(
     estimators: Dict[str, BaseEstimator], 
@@ -1811,9 +1849,8 @@ def optimize_search(
     >>> results = optimize_search(estimators, param_grids, X, y,strategy='RSCV',
     ...                          save_results=False, n_jobs=4)
     """
-    if set(estimators.keys()) != set(param_grids.keys()):
-        raise ValueError("The keys in 'estimators' and 'param_grids' must match.")
-
+    estimators, param_grids = prepare_estimators_and_param_grids(
+        estimators, param_grids)
     strategy_class = get_strategy_method(strategy)
 
     def perform_search(estimator_name, estimator, param_grid):

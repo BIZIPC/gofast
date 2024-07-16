@@ -2,6 +2,13 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""
+:mod:`gofast.base` module offers core classes and utilities for data handling 
+and preprocessing. It includes functionality for managing missing data, 
+merging data frames and series, and processing features and targets for 
+machine learning tasks.
+"""
+
 from __future__ import annotations
 import re
 import copy

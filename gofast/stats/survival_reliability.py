@@ -2,6 +2,9 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides specialized functions for survival and reliability analysis, 
+including Kaplan-Meier survival analysis and decision curve analysis (DCA)."""
+
 from __future__ import annotations 
 import numpy as np
 import pandas as pd

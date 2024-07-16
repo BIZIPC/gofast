@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+`box` module provides utilities for handling and transforming 
+data structures encapsulated in "boxes". It includes classes and functions 
+for encoding, normalizing, merging, and converting between various data 
+formats and box structures.
+"""
 
 import itertools
 import numpy as np

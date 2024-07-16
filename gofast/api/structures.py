@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `structure` module includes data structures such as `Boxspace`,
+`Bunch`, and `FlexDict` that provide flexible and efficient ways to organize,
+store, and manipulate structured data within the gofast framework.
+"""
 
 import numpy as np
 import pandas as pd 
 from .util import format_value,format_dict_result
+
+__all__= ['Boxspace', 'Bunch', 'FlexDict']
 
 class Bunch:
     """

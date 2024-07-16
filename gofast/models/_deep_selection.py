@@ -27,8 +27,6 @@ class HyperbandSearchCV(BaseSearchCV):
     successive halving, effectively balancing the exploration of the hyperparameter 
     space with the exploitation of promising configurations.
 
-    Mathematical Formulation
-    ------------------------
     The Hyperband algorithm is based on the idea of dynamically allocating 
     resources to different configurations of hyperparameters based on their 
     performance. Given a maximum amount of resource `R` that can be allocated 

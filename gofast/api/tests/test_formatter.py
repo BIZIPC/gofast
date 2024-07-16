@@ -157,7 +157,7 @@ class TestDataFrameFormatter(unittest.TestCase):
         self.assertTrue(isinstance(formatter.df, pd.DataFrame))
 
     def test_format_output(self):
-        formatter = DataFrameFormatter("Test Title")
+        formatter = DataFrameFormatter("Test Title", max_cols= 7)
         formatter.add_df(self.df)
         output_str = str(formatter)
         self.assertIn("Test Title", output_str)

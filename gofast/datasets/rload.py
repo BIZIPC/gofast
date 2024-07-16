@@ -3,9 +3,10 @@
 #   Author: LKouadio <etanoyau@gmail.com> 
 
 """
-Remote Loader 
-==============
 Fetch data online from zenodo record or repository.  
+Provides functions and classes for loading and managing datasets, including 
+remote loading, extracting from archives, and moving
+
 """
 from __future__ import print_function , annotations 
 import os 

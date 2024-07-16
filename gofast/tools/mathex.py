@@ -4,7 +4,6 @@
 """
 Utilities to process and compute parameters. Module for Algebra calculus.
 """
-from __future__ import annotations 
 import copy 
 import inspect 
 import warnings 
@@ -97,9 +96,9 @@ __all__=[
 
 def compute_p_values(
     data, depvar,
-    method='pearson', 
-    significance_threshold=0.05, 
-    ignore=None
+    method: str='pearson', 
+    significance_threshold: float=0.05, 
+    ignore: Optional [Union [str, list]]=None
     ):
     """
     Compute p-values for the correlation between each independent variable
@@ -215,7 +214,7 @@ def compute_p_values(
     }
      
     # Select only numeric columns
-    data = data.select_dtypes(include=[np.number])
+    data = data.select_dtypes([np.number])
     if data.empty:
         raise ValueError("P-value calculations expect numeric data, but"
                          " the DataFrame contains no numeric data.")
@@ -242,11 +241,11 @@ def compute_p_values(
 
 def compute_balance_accuracy(
     y_true, y_pred, 
-    epsilon=1e-15,
-    zero_division=0, 
-    strategy="ovr",
-    normalize=False, 
-    sample_weight=None):
+    epsilon:float=1e-15,
+    zero_division: int=0, 
+    strategy: str="ovr",
+    normalize: bool=False, 
+    sample_weight:Optional[ArrayLike]=None):
     """
     Compute the balanced accuracy for binary or multiclass classification 
     problems, determining the appropriate calculation method based on the 
@@ -1216,7 +1215,7 @@ def _compute_ovo_sens_spec(y_true, y_pred, labels, return_array=True):
     return sensitivity, specificity
 
 def calculate_histogram_bins(
-        data, /,  bins='auto', range=None, normalize=False):
+        data:ArrayLike,  bins:Union [int, str, list]='auto', range:Tuple[float, float]=None, normalize: bool=False):
     """
     Calculates histogram bin edges from data with optional normalization.
 
@@ -1315,6 +1314,14 @@ def rank_data(data, method='average'):
     scipy.stats.rankdata : Rank the data in an array.
     numpy.argsort : Returns the indices that would sort an array.
     """
+    if isinstance (data, pd.DataFrame): 
+        # check whether there is numerical values 
+        data = data.select_dtypes ( [np.number]) 
+        if data.empty: 
+            raise ValueError(
+            "Ranking calculus expects numeric data. Got empty"
+            " DataFrame after checking for numeric"
+            ) 
     sorter = np.argsort(data)
     inv = np.empty_like(sorter)
     inv[sorter] = np.arange(len(data))
@@ -1351,11 +1358,11 @@ def rank_data(data, method='average'):
 
 def optimized_spearmanr(
     y_true, y_pred, *, 
-    sample_weight=None, 
-    tie_method='average', 
-    nan_policy='propagate', 
-    control_vars=None,
-    multioutput='uniform_average'
+    sample_weight:Optional[ArrayLike]=None, 
+    tie_method:str='average', 
+    nan_policy:str='propagate', 
+    control_vars:Optional[ArrayLike]=None,
+    multioutput:str='uniform_average'
     ):
     """
     Compute Spearman's rank correlation coefficient with support for 
@@ -1503,7 +1510,7 @@ def _compute_spearmanr(
         corr = np.corrcoef(ranks_true, ranks_pred)[0, 1]
     return corr
 
-def adjust_for_control_vars(y_true, y_pred, control_vars=None):
+def adjust_for_control_vars(y_true:ArrayLike, y_pred:ArrayLike, control_vars:Optional[Union[ArrayLike, List[ArrayLike]]]=None):
     """
     Adjusts y_true and y_pred for either regression or classification tasks by 
     removing the influence of control variables. 
@@ -1585,7 +1592,7 @@ def adjust_for_control_vars(y_true, y_pred, control_vars=None):
    
     return adjusted_y_true, adjusted_y_true
 
-def adjust_for_control_vars_regression(y_true, y_pred, control_vars):
+def adjust_for_control_vars_regression(y_true:ArrayLike, y_pred: ArrayLike, control_vars: Union[ArrayLike, List[ArrayLike]]):
     """
     Adjust y_true and y_pred for regression tasks by accounting for the influence
     of specified control variables through residualization.
@@ -1681,7 +1688,7 @@ def adjust_for_control_vars_regression(y_true, y_pred, control_vars):
 
     return residuals_true, residuals_pred
 
-def adjust_for_control_vars_classification(y_true, y_pred, control_vars):
+def adjust_for_control_vars_classification(y_true:ArrayLike, y_pred:ArrayLike, control_vars:DataFrame):
     """
     Adjusts `y_true` and `y_pred` in a classification task by stratifying the
     data based on control variables. It optionally applies logistic regression
@@ -2270,7 +2277,7 @@ def calculate_residuals(
 
     return residuals
 
-def infer_sankey_columns(data: DataFrame, /, 
+def infer_sankey_columns(data: DataFrame,
   ) -> Tuple[List[str], List[str], List[int]]:
     """
     Infers source, target, and value columns for a Sankey diagram 
@@ -2312,7 +2319,7 @@ def infer_sankey_columns(data: DataFrame, /,
 
     # Heuristic: The source is often the first column, the target is the second,
     # and the value is the third or the one with numeric data
-    numeric_cols = data.select_dtypes(include=[float, int]).columns
+    numeric_cols = data.select_dtypes([float, int]).columns
 
     if len(numeric_cols) == 0:
         raise ValueError(
@@ -2347,7 +2354,7 @@ def infer_sankey_columns(data: DataFrame, /,
     return sources, targets, values
 
 def compute_sunburst_data(
-    data: DataFrame, /, 
+    data: DataFrame, 
     hierarchy: Optional[List[str]] = None, 
     value_column: Optional[str] = None
   ) -> List[Dict[str, str]]:
@@ -2439,7 +2446,7 @@ def compute_sunburst_data(
         tuple(x.items()) in seen or seen.add(tuple(x.items())))]
 
 def compute_effort_yield(
-        d: ArrayLike, /, reverse: bool = True
+        d: ArrayLike,  reverse: bool = True
         ) -> Tuple[ArrayLike, np.ndarray]:
     """
     Compute effort and yield values from importance data for use in 
@@ -3044,14 +3051,13 @@ def normalize(X, y=None):
         return X_normalized, y_normalized
 
     return X_normalized
-
 def moving_average (
     y:ArrayLike,
     *, 
     window_size:int  = 3 , 
     method:str  ='sma',
     mode:str  ='same', 
-    alpha: int  =.5 
+    alpha: Union [int, float]  =.5 
 )-> ArrayLike: 
     """ A moving average is  used with time series data to smooth out
     short-term fluctuations and highlight longer-term trends or cycles.
@@ -3149,28 +3155,28 @@ def moving_average (
                           f" {smart_format(['sma', 'cma', 'wma', 'ema'], 'or')}")
     if  1. <= alpha <= 0 : 
         raise ValueError ('alpha should be less than 1. and greater than 0. ')
-        
-    if method =='sma': 
-        ya = np.convolve(y , np.ones (window_size), mode ) / window_size 
-        
+ 
     if method =='cma': 
         y = np.cumsum (y) 
         ya = np.array([ y[ii]/ len(y[:ii +1]) for ii in range(len(y))]) 
         
-    if method =='wma': 
+    elif method =='wma': 
         w = np.cumsum(np.ones(window_size, dtype = float))
         w /= np.sum(w)
         ya = np.convolve(y, w[::-1], mode ) #/window_size
         
-    if method =='ema': 
+    elif method =='ema': 
         ya = np.array ([y[0]]) 
         for ii in range(1, len(y)): 
             v = y[ii] * alpha + ( 1- alpha ) * ya[-1]
             ya = np.append(ya, v)
+    else:
+        ya = np.convolve(y , np.ones (window_size), mode ) / window_size 
             
     return ya 
 
-def count_local_minima(arr, /, method='robust', order=1):
+
+def count_local_minima(arr,  method='robust', order=1):
     """
     Count the number of local minima in a 1D array.
     
@@ -3229,8 +3235,8 @@ def count_local_minima(arr, /, method='robust', order=1):
         return len(local_minima_indices)
     
 def get_azimuth (
-    xlon: str | ArrayLike, 
-    ylat: str| ArrayLike, 
+    xlon: Union [str, ArrayLike], 
+    ylat:Union[ str, ArrayLike], 
     *, 
     data: DataFrame =None, 
     utm_zone:str=None, 
@@ -3597,12 +3603,12 @@ def linkage_matrix(
 
 @AppendDocReferences(refglossary.__doc__)
 def scalePosition(
-        ydata: ArrayLike | _SP | Series | DataFrame ,
-        xdata: ArrayLike| Series = None, 
-        func : Optional [_F] = None ,
-        c_order: Optional[int|str] = 0,
-        show: bool =False, 
-        **kws): 
+        ydata: Union[ArrayLike, _SP, Series, DataFrame],
+        xdata: Union[ArrayLike, Series] = None, 
+        func: Optional[_F] = None,
+        c_order: Optional[Union[int, str]] = 0,
+        show: bool = False, 
+        **kws):
     """ Correct data location or position and return new corrected location 
     
     Parameters 
@@ -3835,185 +3841,6 @@ def _manage_colors (c, default = ['ok', 'ob-', 'r-']):
     return c [:3] # return 3colors 
      
 
-@AppendDocReferences(refglossary.__doc__)
-def plot_ (
-    *args : List [Union [str, ArrayLike, ...]],
-    fig_size: Tuple[int] = None,
-    raw : bool = False, 
-    style : str = 'seaborn',   
-    dtype: str  ='erp',
-    kind: Optional[str] = None , 
-    fig_title_kws: dict=None, 
-    fbtw:bool=False, 
-    fig=None, 
-    ax=None, 
-    **kws
-    ) -> None : 
-    """ Quick visualization for fitting model, |ERP| and |VES| curves.
-    
-    :param x: array-like - array of data for x-axis representation 
-    :param y: array-like - array of data for plot y-axis  representation
-    :param fig_size: tuple - Matplotlib (MPL) figure size; should be a tuple 
-         value of integers e.g. `figsize =(10, 5)`.
-    :param raw: bool- Originally the `plot_` function is intended for the 
-        fitting |ERP| model i.e. the correct value of |ERP| data. However, 
-        when the `raw` is set to ``True``, it plots the both curves: The 
-        fitting model as well as the uncorrected model. So both curves are 
-        overlaining or supperposed.
-    :param style: str - Pyplot style. Default is ``seaborn``
-    :param dtype: str - Kind of data provided. Can be |ERP| data or |VES| data. 
-        When the |ERP| data are provided, the common plot is sufficient to 
-        visualize all the data insight i.e. the default value of `kind` is kept 
-        to ``None``. However, when the data collected is |VES| data, the 
-        convenient plot for visualization is the ``loglog`` for parameter
-        `kind``  while the `dtype` can be set to `VES` to specify the labels 
-        into the x-axis. The default value of `dtype` is ``erp`` for common 
-        visualization. 
-    :param kind:  str - Use to specify the kind of data provided. See the 
-        explanation of `dtype` parameters. By default `kind` is set to ``None``
-        i.e. its keep the normal plots. It can be ``loglog``, ``semilogx`` and 
-        ``semilogy``.
-        
-    :param fbtw: bool, default=False, 
-        Mostly used for |VES| data. If ``True``, filled the computed 
-        fractured zone using the parameters computed from 
-        :func:`~.gofast.tools.mathex .ohmicArea`. 
-    :param fig_title_kws: dict, 
-        Additional keywords argument passed in dictionnary to customize 
-        the figure title. 
-    :param fig: Matplotlib.pyplot.figure
-        add plot on the same figure. 
-        
-    :param kws: dict - Additional `Matplotlib plot`_ keyword arguments. To cus-
-        tomize the plot, one can provide a dictionnary of MPL keyword 
-        additional arguments like the example below.
-    
-    :Example: 
-        >>> import numpy as np 
-        >>> from gofast.tools.mathex  import plot_ 
-        >>> x, y = np.arange(0 , 60, 10) ,np.abs( np.random.randn (6)) 
-        >>> KWS = dict (xlabel ='Stations positions', ylabel= 'resistivity(ohm.m)', 
-                    rlabel = 'raw cuve', rotate = 45 ) 
-        >>> plot_(x, y, '-ok', raw = True , style = 'seaborn-whitegrid', 
-                  figsize = (7, 7) ,**KWS )
-    
-    """
-
-    plt.style.use(style)
-    # retrieve all the aggregated data from keywords arguments
-    if (rlabel := kws.get('rlabel')) is not None : 
-        del kws['rlabel']
-    if (xlabel := kws.get('xlabel')) is not None : 
-        del kws['xlabel']
-    if (ylabel := kws.get('ylabel')) is not None : 
-        del kws['ylabel']
-    if (rotate:= kws.get ('rotate')) is not None: 
-        del kws ['rotate']
-    if (leg:= kws.get ('leg')) is not None: 
-        del kws ['leg']
-    if (show_grid:= kws.get ('show_grid')) is not None: 
-        del kws ['show_grid']
-    if (title:= kws.get ('title')) is not None: 
-        del kws ['title']
-    x , y, *args = args 
-    
-    if ( fig is None 
-        or ax is None
-        ): 
-        fig, ax = plt.subplots(1,1, figsize =fig_size)
-        # fig = plt.figure(1, figsize =fig_size)
-    
-    ax.plot (x, y,*args, 
-              **kws)
-    if raw: 
-        kind = kind.lower(
-            ) if isinstance(kind, str) else kind 
-        if kind =='semilogx': 
-            ax.semilogx (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-        elif kind =='semilogy': 
-            ax.semilogy (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-        elif kind =='loglog': 
-            ax.loglog (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-        else: 
-            ax.plot (x, y, 
-                      color = '#9EB3DD',
-                      label =rlabel, 
-                      )
-            
-        if fbtw and dtype=='ves': 
-            # remove colors 
-            args = [ag for ag in args if not isinstance (ag, str)] 
-            if len(args ) <4 : 
-                raise TypeError ("'Fill_between' expects four arguments:"
-                                " (x0, y0) for fitting plot and (x1, y1)"
-                                " for ohmic area. Got {len(args)}")
-            xf, yf , xo, yo,*_ = args  
-            # find the index position in xf 
-            ixp = list ( find_close_position (xf, xo ) ) 
-            ax.fill_between(xo, yf[ixp], y2=yo  )
-            
-    dtype = dtype.lower() if isinstance(dtype, str) else dtype
-    
-    if dtype is None:
-        dtype ='erp'  
-    if dtype not in ('erp', 'ves'): kind ='erp' 
-    
-    if dtype =='erp':
-        ax.set_xticks (x,
-                    labels = ['S{:02}'.format(int(i)) for i in x ],
-                    rotation = 0. if rotate is None else rotate 
-                    )
-    elif dtype =='ves': 
-        ax.set_xticks (x,
-                    rotation = 0. if rotate is None else rotate 
-                    )
-        
-    ax.set_xlabel ('AB/2 (m)' if dtype=='ves' else "Stations"
-                ) if xlabel is  None  else plt.xlabel (xlabel)
-    ax.set_ylabel ('Resistivity (Ω.m)'
-                ) if ylabel is None else plt.ylabel (ylabel)
-    
-    
-    t0= {'erp': 'Plot Electrical Resistivity Profiling', 
-         'sfi': 'Pseudo-fracturing index', 
-         'ves': 'Vertical Electrical Sounding'
-         }
-
-    fig_title_kws = fig_title_kws or dict (
-            t = t0.get( dtype) or  title, 
-            style ='italic', 
-            bbox =dict(boxstyle='round',facecolor ='lightgrey'))
-        
-    if len(x) >= 20: 
-        for kk, label in enumerate ( ax.xaxis.get_ticklabels()) :
-            if kk% 10 ==0: 
-               label.set_visible(True) 
-            else: label.set_visible(False) 
-            
- 
-    if show_grid is not None: 
-        # plt.minorticks_on()
-        ax.grid (visible =True, which='both')
-    plt.tight_layout()
-    fig.suptitle(**fig_title_kws)
-    plt.legend (leg, loc ='best') if leg  else plt.legend ()
-    plt.show ()
-   
-def quickplot (arr: ArrayLike | List[float], dl:float  =10)-> None: 
-    """Quick plot to see the anomaly"""
-    
-    plt.plot(np.arange(0, len(arr) * dl, dl), arr , ls ='-', c='k')
-    plt.show() 
- 
 
 def convert_distance_to_m(
         value:_T ,
@@ -4466,7 +4293,7 @@ def savgol_filter(x, window_length, polyorder, deriv=0, delta=1.0,
     return y        
 
 def compute_errors (
-    arr, /, 
+    arr,  
     error ='std', 
     axis = 0, 
     return_confidence=False 
@@ -4589,7 +4416,6 @@ def compute_errors (
 
 def quality_control2(
     ar, 
-     /, 
     tol: float= .5 , 
     return_data=False,
     to_log10: bool =False, 
@@ -4950,7 +4776,7 @@ def get_bearing (latlon1, latlon2,  to_deg = True ):
         
     return b 
 
-def find_closest( arr, /, values ): 
+def find_closest( arr, values ): 
     """Get the closest value in array  from given values.
     
     Parameters 
@@ -5126,7 +4952,7 @@ def _kind_of_model(degree, x, y) :
     w= init_weights(x=x, y=y)
     return x, w  # Return the matrix x and the weights vector w 
     
-def adaptive_moving_average(data, /, window_size_factor=0.1):
+def adaptive_moving_average(data,  window_size_factor=0.1):
     """ Adaptative moving average as  smoothing technique. 
  
     Parameters 
@@ -5177,11 +5003,11 @@ def adaptive_moving_average(data, /, window_size_factor=0.1):
     return result
 
 def torres_verdin_filter(
-    arr, /,  
-    weight_factor: float=.1, 
-    beta:bool=1., 
-    logify:bool=False, 
-    axis:int = ..., 
+    arr,  
+    weight_factor: float = 0.1, 
+    beta: float = 1.0, 
+    logify: bool = False, 
+    axis: int = None, 
     ):
     """
     Calculates the adaptive moving average of a given data array from 
@@ -5239,8 +5065,9 @@ def torres_verdin_filter(
     >>> plt.show () 
     
     """
-    arr = is_iterable( arr, exclude_string =True, transform =True ) 
-    axis, logify= ellipsis2false(axis, logify, default_value =( None , False))
+    arr = is_iterable(arr, exclude_string=True, transform=True)
+    axis = 0 if axis is None else axis  # Set default axis to 0 if not specified
+    logify = bool(logify)
     
     def _filtering_1d_array( ar, wf, b ): 
         if len(ar) < 2:

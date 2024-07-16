@@ -313,9 +313,7 @@ def inspect_data(
     
     # Recommendations based on the report
     if not is_valid:
-        print("YES")
         # report ["Recommendations"] = '-' *62
-        
         if integrity_report['missing_values'].any():
             recommendations['rec_missing_values']= (
                 "- Consider handling missing values using imputation or removal."

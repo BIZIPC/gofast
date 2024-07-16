@@ -2,6 +2,9 @@
 #   Licence: BSD 3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides core components and utilities for generating standardized docstrings
+across the `gofast` API, enhancing consistency and readability in documentation."""
+
 import re 
 
 __all__=[

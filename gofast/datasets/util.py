@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+Provides utility functions for data management, simulation adjustments,
+distribution checks, and extraction of geographical data.
+"""
+
 import re
 import copy
 import random
@@ -15,9 +20,36 @@ import pandas as pd
 from ..api.formatter import DescriptionFormatter
 from ..api.structures import Boxspace
 from ..compat.sklearn import  train_test_split 
-from ..tools.coreutils import is_in_if, add_noises_to
+from ..tools.coreutils import is_in_if, add_noises_to, validate_noise 
 from ..tools.coreutils import smart_format, is_iterable, validate_ratio 
 from .metadata import SimulationMetadata
+
+__all__= [
+     'apply_scaling',
+     'build_continent_country_dict',
+     'build_dataset_description',
+     'build_distributions_from',
+     'build_reserve_details_by_country',
+     'check_distributions',
+     'extract_minerals_from_countries',
+     'extract_minerals_from_regions',
+     'fetch_simulation_metadata',
+     'find_countries_and_minerals_by_region',
+     'find_countries_by_distributions',
+     'find_countries_by_minerals',
+     'find_countries_by_region',
+     'find_mineral_by_country',
+     'find_mineral_distributions',
+     'find_mineral_location',
+     'generate_regression_output',
+     'generate_synthetic_values',
+     'is_structure_nested',
+     'manage_data',
+     'manage_nested_lists',
+     'rename_data_columns',
+     'select_location_for_mineral',
+     'validate_noise_level',
+  ]
 
 def validate_region(region, mode="strict"):
     """
@@ -1668,14 +1700,12 @@ def manage_data(
         samples.
     
     """
-    
     # Ensure the correct data types for the parameters
     as_frame, return_X_y, split_X_y = map(
         lambda x: bool(x), [as_frame, return_X_y, split_X_y]
     )
     test_size = float(test_size)
-    if noise is not None:
-        noise = float(noise)
+   
     if seed is not None:
         seed = int(seed)
     
@@ -1693,8 +1723,18 @@ def manage_data(
         y = data [target_names].squeeze ()  
         data.drop( columns = target_names, inplace =True )
         
-    # Noises only in the data not in target
-    data = add_noises_to(data, noise=noise, seed=seed)
+    # # Apply noises: Noises only in the data not in target
+    # add_gaussian_noise=False 
+    # noise = validate_noise(noise )
+    
+    # if noise=='gaussian': 
+    #     add_gaussian_noise=True 
+    #     #Small value of noise. Do nothing when gaussian noises 
+    #     # is applied, just to skip value error. 
+    #     noise =.1 
+        
+    data = add_noises_to(
+        data, noise=noise, seed=seed)
 
     if not as_frame:
         data = np.asarray(data)
@@ -1707,7 +1747,10 @@ def manage_data(
         return data, y
 
     frame[feature_names] = add_noises_to(
-        frame[feature_names], noise=noise, seed=seed)
+        frame[feature_names], 
+        noise=noise,
+        seed=seed, 
+        )
 
     if as_frame:
         return frame
@@ -1720,6 +1763,7 @@ def manage_data(
         feature_names=feature_names,
         **kwargs
     )
+
 
 def get_item_from ( spec , /,  default_items, default_number = 7 ): 
     """ Accept either interger or a list. 

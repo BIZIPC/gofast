@@ -8,13 +8,13 @@ test_data_generation.py
 import pytest
 import numpy as np
 import pandas as pd
-from gofast.datasets.generate import make_classification, make_regression
-from gofast.datasets.generate import make_social_media_comments, make_african_demo 
-from gofast.datasets.generate import make_agronomy_feedback, make_mining_ops 
-from gofast.datasets.generate import  make_sounding, make_medical_diagnosis
-from gofast.datasets.generate import  make_well_logging, make_ert,make_tem
-from gofast.datasets.generate import make_erp, make_elogging, make_gadget_sales
-from gofast.datasets.generate import make_retail_store, make_cc_factors, make_water_demand
+from gofast.datasets.make import make_classification, make_regression
+from gofast.datasets.make import make_social_media_comments, make_african_demo 
+from gofast.datasets.make import make_agronomy_feedback, make_mining_ops 
+from gofast.datasets.make import  make_sounding, make_medical_diagnosis
+from gofast.datasets.make import  make_well_logging, make_ert,make_tem
+from gofast.datasets.make import make_erp, make_elogging, make_gadget_sales
+from gofast.datasets.make import make_retail_store, make_cc_factors, make_water_demand
 
 @pytest.mark.parametrize("function, config", [
     (make_classification, {'n_samples': 100, 'n_features': 20, 'return_X_y': True}),
@@ -24,7 +24,7 @@ from gofast.datasets.generate import make_retail_store, make_cc_factors, make_wa
     (make_agronomy_feedback, {'samples': 100, 'num_years': 5, 'return_X_y': True}),
     (make_mining_ops, {'samples': 1000, 'return_X_y': True}),
     (make_sounding, {'samples': 100, 'num_layers': 5, 'return_X_y': True}),
-    (make_medical_diagnosis, {'samples': 1000, 'return_X_y': True}),
+    (make_medical_diagnosis, {'samples': 1000, 'return_X_y': True, "as_frame":False}),
 ])
 def test_dataset_generators_batch1(function, config):
     X, y = function(**config)

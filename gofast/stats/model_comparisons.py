@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+
+"""Provides tools for statistical comparison and visualization of model 
+performance, including tests like the Friedman and Wilcoxon tests, and 
+functions for plotting comparison diagrams."""
+
 import warnings
 import itertools
 import numpy as np 

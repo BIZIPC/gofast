@@ -2,10 +2,9 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 """
-Learning utilities for data transformation, 
-model learning and inspections. 
+Learning utilities for data transformation, model learning and inspections. 
 """
-from __future__ import annotations 
+
 import os
 import re 
 import copy 
@@ -50,7 +49,7 @@ from .coreutils import _assert_all_types, is_in_if,  ellipsis2false
 from .coreutils import smart_format, is_iterable, get_valid_kwargs
 from .coreutils import is_classification_task, to_numeric_dtypes
 from .coreutils import validate_feature, download_progress_hook, exist_features
-from .coreutils import contains_delimiter 
+from .coreutils import contains_delimiter, nan_to_na 
 from .funcutils import ensure_pkg
 from .validator import _is_numeric_dtype, _is_arraylike_1d 
 from .validator import get_estimator_name, check_array, check_consistent_length
@@ -59,44 +58,49 @@ from .validator import check_mixed_data_types, validate_data_types
 
 _logger = gofastlog().get_gofast_logger(__name__)
 
-__all__=[ 
-    "fetch_tgz", 
-    "fetch_model", 
-    "evaluate_model",
-    "get_global_score", 
-    "get_correlated_features", 
-    "resampling", 
-    "bin_counting", 
-    "soft_imputer", 
-    "soft_scaler", 
-    "select_feature_importances", 
-    "load_model", 
-    "load_csv", 
-    "make_pipe",
-    "build_data_preprocessor", 
-    "bi_selector", 
-    "stats_from_prediction", 
-    "fetch_tgz", 
-    "fetch_model", 
-    "load_csv", 
-    "discretize_categories", 
-    "stratify_categories", 
-    "serialize_data", 
-    "deserialize_data", 
-    "soft_data_split",
-    "laplace_smoothing", 
-    "laplace_smoothing_categorical", 
-    "laplace_smoothing_word", 
-    "handle_imbalance", 
-    "smart_split",
-    "save_dataframes", 
-    "stats_from_prediction", 
-    "one_click_preprocess", 
-    "soft_encoder", 
-    "display_feature_contributions"
-    ]
 
-def one_click_preprocess(
+__all__=[
+     'base_local_tgz_fetch',
+     'base_url_tgz_fetch',
+     'bi_selector',
+     'bin_counting',
+     'build_data_preprocessor',
+     'deserialize_data',
+     'discretize_categories',
+     'display_feature_contributions',
+     'evaluate_model',
+     'fetch_model',
+     'fetch_tgz',
+     'fetch_tgz_from_url',
+     'fetch_tgz_locally',
+     'format_model_score',
+     'get_correlated_features',
+     'get_feature_contributions',
+     'get_global_score',
+     'handle_imbalance',
+     'laplace_smoothing',
+     'laplace_smoothing_categorical',
+     'laplace_smoothing_word',
+     'load_csv',
+     'load_model',
+     'make_pipe',
+     'one_click_prep',
+     'process_df',
+     'resampling',
+     'save_dataframes',
+     'select_feature_importances',
+     'serialize_data',
+     'smart_split',
+     'soft_data_split',
+     'soft_encoder',
+     'soft_imputer',
+     'soft_scaler',
+     'stats_from_prediction',
+     'stratify_categories',
+ ]
+
+
+def one_click_prep (
     data: DataFrame, 
     target_columns=None,
     columns=None, 
@@ -217,8 +221,8 @@ def one_click_preprocess(
             target_columns, str) else target_columns
 
     # Identify numeric and categorical features based on their data type.
-    numeric_features = data.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    categorical_features = data.select_dtypes(include=['object']).columns.tolist()
+    numeric_features = data.select_dtypes(['int64', 'float64']).columns.tolist()
+    categorical_features = data.select_dtypes(['object']).columns.tolist()
     
     # Exclude target columns from the numeric features list if specified.
     if target_columns is not None:
@@ -292,15 +296,15 @@ def one_click_preprocess(
     # Return the preprocessed DataFrame.
     return data_processed
 
-def soft_encoder (
-    data:DataFrame | ArrayLike, /, 
-    columns: List[str] =None, 
-    func: _F=None, 
-    categories: dict=None, 
-    get_dummies:bool=..., 
-    parse_cols:bool =..., 
-    return_cat_codes:bool=..., 
-    ) -> DataFrame: 
+def soft_encoder(
+    data: Union[DataFrame, ArrayLike], 
+    columns: List[str] = None, 
+    func: _F = None, 
+    categories: Dict[str, List] = None, 
+    get_dummies: bool = ..., 
+    parse_cols: bool = ..., 
+    return_cat_codes: bool = ..., 
+) -> DataFrame:
     """
     Encode multiple categorical variables in a dataset.
 
@@ -451,8 +455,8 @@ def soft_encoder (
                        raise_warning='silence')
 
     # Recheck and convert data to numeric dtypes if possible
-    df = to_numeric_dtypes(df)
-
+    # and handle NaN to fit it specified types. 
+    df = nan_to_na(to_numeric_dtypes(df)) 
     # Ensure columns are iterable and parse them if necessary
     if columns is not None:
         columns = list(is_iterable(columns, exclude_string=True, 
@@ -500,7 +504,9 @@ def soft_encoder (
     if categories is None:
         categories = {}
         for col in cat_columns:
-            categories[col] = list(np.unique(df[col]))
+            # Drop NaN values before finding unique categories
+            unique_values = np.unique(df[col].dropna())
+            categories[col] =  list(unique_values) 
 
     # Ensure categories is a dictionary
     if not isinstance(categories, dict):
@@ -656,12 +662,13 @@ def resampling(
 
 def bin_counting(
     data: DataFrame, 
-    bin_columns: str|List[str, ...], 
-    tname:str|Series[int], 
-    odds="N+", 
-    return_counts: bool=...,
-    tolog: bool=..., 
-    ): 
+    bin_columns: Union[str, List[str]], 
+    tname: Union[str, Series[int]], 
+    odds: str = "N+", 
+    return_counts: bool = ..., 
+    tolog: bool = ..., 
+    encode_categorical: bool = ..., 
+) -> None:
     """ Bin counting categorical variable and turn it into probabilistic 
     ratio.
     
@@ -688,8 +695,9 @@ def bin_counting(
     data: dataframe 
        Data containing the categorical values. 
        
-    bin_columns: str or list 
-       The columns to applied the bin_countings 
+    bin_columns: str or list , 
+       The columns to apply the bin_counting. If 'auto', the columns are 
+       extracted and categorized before applying the `bin_counting`. 
        
     tname: str, pd.Series
       The target name for which the counting is operated. If series, it 
@@ -711,6 +719,9 @@ def bin_counting(
       much more frequently than not.) The log transform again comes to our  
       rescue. Another useful property of the logarithm is that it turns a 
       division 
+      
+    encode_categorical : bool, optional
+        If `True`, encode categorical variables. Default is `False`.
 
     Returns 
     --------
@@ -780,10 +791,22 @@ def bin_counting(
            Targeting. Proceedings of the 15th ACM SIGKDD International 
            Conference on Knowledge Discovery and Data Mining (2009): 209–218     
     """
+    return_counts, tolog, encode_categorical= ellipsis2false(
+        return_counts, tolog, encode_categorical)   
     # assert everything
     if not is_frame (data, df_only =True ):
         raise TypeError(f"Expect dataframe. Got {type(data).__name__!r}")
-    
+        
+    if isinstance (bin_columns, str) and bin_columns=='auto': 
+        ttname = tname if isinstance (tname, str) else None # pass 
+        _, bin_columns = process_df(
+            data, target_name= ttname,
+            exclude_target=True if ttname else False 
+        )
+        
+    if encode_categorical: 
+        data = soft_encoder(data) 
+        
     if not _is_numeric_dtype(data, to_array= True): 
         raise TypeError ("Expect data with encoded categorical variables."
                          " Please check your data.")
@@ -798,11 +821,9 @@ def bin_counting(
         # concatenate target 
         data= pd.concat ( [ data, tname], axis = 1 )
         tname = tname.name  # take the name 
-        
-    return_counts, tolog = ellipsis2false(return_counts, tolog)    
-    bin_columns= is_iterable( bin_columns, exclude_string= True, 
-                                 transform =True )
-    tname = str(tname) ; #bin_column = str(bin_column)
+    
+    bin_columns= is_iterable(bin_columns, exclude_string= True, transform =True )
+    tname = str(tname) ; 
     target_all_counts =[]
     
     validate_feature(data, features =bin_columns + [tname] )
@@ -829,7 +850,7 @@ def bin_counting(
     return d
 
 def _single_counts ( 
-        d,/,  bin_column, tname, odds = "N+",
+        d,  bin_column, tname, odds = "N+",
         tolog= False, return_counts = False ): 
     """ An isolated part of bin counting. 
     Compute single bin_counting. """
@@ -874,7 +895,7 @@ def _single_counts (
     
     return d, target_all
 
-def _target_counting(d, / ,  bin_column, tname ):
+def _target_counting(d, bin_column, tname ):
     """ An isolated part of counting the target. 
     
     :param d: DataFrame 
@@ -921,7 +942,7 @@ def _bin_counting (counts, tname, odds="N+" ):
 
     return counts, bin_counts  
  
-def laplace_smoothing_word(word, class_, /, word_counts, class_counts, V):
+def laplace_smoothing_word(word, class_,  word_counts, class_counts, V):
     """
     Apply Laplace smoothing to estimate the conditional probability of a 
     word given a class.
@@ -988,7 +1009,7 @@ def laplace_smoothing_word(word, class_, /, word_counts, class_counts, V):
     return probability
 
 def laplace_smoothing_categorical(
-        data, /, feature_col, class_col, V=None):
+        data, feature_col, class_col, V=None):
     """
     Apply Laplace smoothing to estimate conditional probabilities of 
     categorical features given a class in a dataset.
@@ -1134,13 +1155,13 @@ def laplace_smoothing(
         return np.column_stack(smoothed_probs_list)
 
 def evaluate_model(
-    model: Optional[_F[[NDArray, NDArray], NDArray]] = None,
+    model: Optional[_F] = None,
     X: Optional[Union[NDArray, DataFrame]] = None,
     Xt: Optional[Union[NDArray, DataFrame]] = None,
     y: Optional[Union[NDArray, Series]] = None, 
     yt: Optional[Union[NDArray, Series]] = None,
     y_pred: Optional[Union[NDArray, Series]] = None,
-    scorer: Union[str, _F[[NDArray, NDArray], float]] = 'accuracy_score',
+    scorer: Union[str, _F] = 'accuracy_score',
     eval: bool = False,
     **kws: Any
 ) -> Union[Tuple[Optional[Union[NDArray, Series]], Optional[float]],
@@ -1301,7 +1322,7 @@ def get_correlated_features(
             f"Expect ['pearson'|'spearman'|'covariance'], got{corr!r} ")
     # collect numerical values and exclude cat values
     
-    df = select_features(data, include ='number')
+    df = select_features(data, None, 'number')
         
     # use pipe to chain different func applied to df 
     c_df = ( 
@@ -1546,7 +1567,7 @@ def fetch_tgz(
     show_progress: bool = False
 ) -> None:
     """
-    Fetches and extracts a .tgz file from a specified URL, optionally into 
+    Fetches and extracts a 'tgz' file from a specified URL, optionally into 
     a target directory.
 
     If `data_path` is provided and does not exist, it is created. If `data_path`
@@ -1617,6 +1638,182 @@ def fetch_tgz(
     if show_progress:
         print("Download and extraction complete.")
 
+def process_df(
+    data,
+    target_name=None, 
+    exclude_target=False, 
+    return_frame=False, 
+    include_datetime=True,
+    is_numeric_datetime=True, 
+    return_target=False, 
+    encode_cat_columns=False, 
+    error='warn', 
+    ):
+    """
+    Processes a DataFrame to separate numeric and categorical data.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The input DataFrame.
+    target_name : str or list of str, optional
+        The name(s) of the target column(s) to exclude. If a single 
+        target column is provided, it can be given as a string. 
+        If multiple target columns are provided, they should be given 
+        as a list of strings.
+    exclude_target : bool, optional
+        If `True`, exclude the target column(s) from the returned 
+        numeric and categorical data. Default is `False`.
+    return_frame : bool, optional
+        If `True`, return DataFrames for numeric and categorical data. 
+        If `False`, return lists of column names. Default is `False`.
+    include_datetime : bool, optional
+        If `True`, include datetime columns in the processing. 
+        Default is `True`.
+    is_numeric_datetime : bool, optional
+        If `True`, consider datetime columns as numeric. Default is `True`.
+    return_target : bool, optional
+        If `True`, return the target data along with numeric and 
+        categorical data. Default is `False`.
+    encode_cat_columns : bool, optional
+        If `True`, encode categorical variables. Default is `False`.
+    error : str, optional
+        How to handle errors when target columns are not found. Options 
+        are ``'warn'``, ``'raise'``, ``'ignore'``. Default is ``'warn'``.
+
+    Returns
+    -------
+    tuple
+        If `return_frame` is `True`, returns a tuple of DataFrames 
+        (`numeric_df`, `categorical_df`, `target_df`). 
+        If `return_frame` is `False`, returns a tuple of lists 
+        (`numeric_columns`, `categorical_columns`, `target_columns`).
+
+    Raises
+    ------
+    ValueError
+        If `exclude_target` is `True` and `target_name` is not provided.
+        If specified target columns do not exist in the DataFrame 
+        and ``error`` is set to ``'raise'``.
+
+    Notes
+    -----
+    The function processes a DataFrame to separate numeric and 
+    categorical data, with optional inclusion of datetime columns. 
+    If `target_name` is provided, it can be excluded from the data 
+    or returned separately. The function handles missing target 
+    columns based on the ``error`` parameter.
+
+    Mathematically, the separation of numeric and categorical columns 
+    can be represented as:
+
+    .. math:: 
+        X_{\text{numeric}} = \{ x_i \mid x_i \in \mathbb{R}, \forall i \}
+    
+    .. math:: 
+        X_{\text{categorical}} = \{ x_i \mid x_i \notin \mathbb{R}, \forall i \}
+
+    where :math:`X` is the set of all columns in the DataFrame, 
+    :math:`X_{\text{numeric}}` is the set of numeric columns, and 
+    :math:`X_{\text{categorical}}` is the set of categorical columns.
+
+    Examples
+    --------
+    >>> from gofast.tools.mlutils import process_df
+    >>> df = pd.DataFrame({'A': [1, 2, 3], 
+    ...                    'B': ['a', 'b', 'c'], 
+    ...                    'C': pd.to_datetime(['2020-01-01', '2020-01-02', '2020-01-03'])})
+    >>> numeric_columns, categorical_columns = process_df(df)
+    >>> numeric_columns
+    ['A']
+    >>> categorical_columns
+    ['B']
+
+    >>> numeric_df, categorical_df = process_df(df, return_frame=True)
+    >>> numeric_df
+       A
+    0  1
+    1  2
+    2  3
+    >>> categorical_df
+       B
+    0  a
+    1  b
+    2  c
+
+    >>> numeric_columns, categorical_columns, target_columns = process_df(
+    ...     df, target_name='A', exclude_target=True, return_target=True)
+    >>> numeric_columns
+    []
+    >>> categorical_columns
+    ['B']
+    >>> target_columns
+    ['A']
+
+    See Also
+    --------
+    pandas.DataFrame.select_dtypes : Select columns by data type.
+    pandas.concat : Concatenate pandas objects along a particular axis.
+
+    References
+    ----------
+    .. [1] McKinney, Wes. "pandas: a foundational Python library for data 
+       analysis and statistics." Python for High Performance and Scientific 
+       Computing (2011): 1-9.
+    """
+
+    is_frame(data, df_only =True, raise_exception=True, objname='data')
+    if exclude_target and not target_name:
+        raise ValueError("If exclude_target is True, target_name must be provided.")
+    
+    if isinstance(target_name, str):
+        target_name = [target_name]
+    
+    if target_name:
+        missing_targets = [target for target in target_name if target not in data.columns]
+        if missing_targets:
+            if error == 'warn':
+                warnings.warn(f"Target columns {missing_targets} not found in DataFrame.")
+            elif error == 'raise':
+                raise ValueError(f"Target columns {missing_targets} not found in DataFrame.")
+            # Filter out missing targets
+            target_name = [target for target in target_name if target in data.columns]
+    
+    numeric_df = data.select_dtypes([np.number])
+    categorical_df = data.select_dtypes(None, [np.number])
+    
+    if include_datetime:
+        datetime_df = data.select_dtypes(['datetime'])
+        if is_numeric_datetime:
+            numeric_df = pd.concat([numeric_df, datetime_df], axis=1)
+        else:
+            categorical_df = pd.concat([categorical_df, datetime_df], axis=1)
+    
+    target_df = pd.DataFrame()
+    if target_name:
+        target_df = data[target_name]
+    
+    if exclude_target and target_name:
+        numeric_df = numeric_df.drop(columns=target_name, errors='ignore')
+        categorical_df = categorical_df.drop(columns=target_name, errors='ignore')
+    
+    if encode_cat_columns and not categorical_df.empty: 
+        categorical_df = soft_encoder ( categorical_df )
+        
+    if return_frame:
+        if return_target:
+            return numeric_df, categorical_df, target_df
+        else:
+            return numeric_df, categorical_df
+    else:
+        if return_target:
+            return ( 
+                numeric_df.columns.tolist(), categorical_df.columns.tolist(),
+                target_df.columns.tolist()
+                )
+        else:
+            return numeric_df.columns.tolist(), categorical_df.columns.tolist()
+
 def base_url_tgz_fetch(
     data_url: str, tgz_filename: str,  
     data_path: Optional[str]=None, 
@@ -1624,7 +1821,7 @@ def base_url_tgz_fetch(
     **kwargs
     ) -> Union[str, None]:
     """
-    Fetches a .tgz file from a given URL, saves it to a specified directory, 
+    Fetches a tgz file from a given URL, saves it to a specified directory, 
     and optionally extracts a specific file from it.
 
     This function downloads a .tgz file from the specified URL and saves it to 
@@ -1701,12 +1898,12 @@ def base_url_tgz_fetch(
 
 def fetch_tgz_from_url(
     data_url: str, tgz_filename: str, 
-    data_path: Optional[str, Path]=None, 
+    data_path: Optional[Union [str, Path]]=None, 
     file_to_retrieve: Optional[str] = None, 
     **kwargs
     ) -> Optional[Path]:
     """
-    Fetches a .tgz file from a given URL, saves it to a specified directory, 
+    Fetches a tgz file from a given URL, saves it to a specified directory, 
     and optionally extracts a specific file from it.
 
     This function downloads a .tgz file from the specified URL and saves it to 
@@ -1808,7 +2005,8 @@ def fetch_tgz_locally(
     rename_outfile: Optional[str] = None
     ) -> str:
     """
-    Fetches and optionally renames a file from a tar archive with progress reporting.
+    Fetches and optionally renames a file from a tar archive with progress
+    reporting.
     
     Parameters
     ----------
@@ -2934,7 +3132,7 @@ def load_model(
 
     return loaded_data
      
-def bi_selector (d, /,  features =None, return_frames = False,
+def bi_selector (d,  features =None, return_frames = False,
                  parse_features:bool=... ):
     """ Auto-differentiates the numerical from categorical attributes.
     
@@ -3259,7 +3457,7 @@ def build_data_preprocessor(
     custom_transformers: Optional[List[Tuple[str, TransformerMixin]]] = None,
     label_encoding: Union[str, TransformerMixin] = 'LabelEncoder', 
     scaler: Union[str, TransformerMixin] = 'StandardScaler', 
-    missing_values: Union[int, float, str, np.nan, None] = np.nan, 
+    missing_values: Union[int, float, str, None] = np.nan, 
     impute_strategy: str = 'median', 
     feature_interaction: bool = False,
     dimension_reduction: Optional[Union[str, TransformerMixin]] = None,
@@ -3430,7 +3628,7 @@ def _execute_transformation(
     
     return pipeline
 
-def _transform_target(y, label_encoding:BaseEstimator|TransformerMixin ):
+def _transform_target(y, label_encoding:Union [BaseEstimator, TransformerMixin] ):
     if label_encoding == 'LabelEncoder':
         encoder = LabelEncoder()
         return encoder.fit_transform(y)
@@ -3936,7 +4134,7 @@ def soft_scaler(
         feature_range=feature_range, clip=clip, **kwargs)
 
     if input_is_dataframe:
-        num_features = X.select_dtypes(include=['number']).columns
+        num_features = X.select_dtypes(['number']).columns
         X_scaled_numeric = _scale_numeric_features(X, scaler, num_features)
         X_scaled = _concat_scaled_numeric_with_categorical(
             X_scaled_numeric, X, cat_features)
@@ -3973,7 +4171,7 @@ def _concat_scaled_numeric_with_categorical(X_scaled_numeric, X, cat_features):
     Concatenates scaled numerical features with original categorical features.
     """
     X_scaled = pd.concat([pd.DataFrame(X_scaled_numeric, index=X.index, 
-                        columns=X.select_dtypes(include=['number']).columns),
+                        columns=X.select_dtypes(['number']).columns),
                           X[cat_features]], axis=1)
     return X_scaled[X.columns]  # Maintain original column order
 
@@ -4034,7 +4232,7 @@ def display_feature_contributions(
 
     # Extract feature importances
     importances = model.feature_importances_
-
+    
     # Optionally, display the feature importances using the chosen visualization package
     feature_names = model.feature_names_in_ if hasattr(
             model, 'feature_names_in_') else [f'feature_{i}' for i in range(X.shape[1])]
@@ -4058,7 +4256,6 @@ def display_feature_contributions(
 
     # Map feature names to their importances
     feature_importance_dict = dict(zip(feature_names, importances))
-    
     summary = ReportFactory(title="Feature Contributions Table",).add_mixed_types(
         feature_importance_dict)
     

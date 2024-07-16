@@ -12,29 +12,43 @@ jobs:
     - name: Set up Conda
       uses: conda-incubator/setup-miniconda@v2
       with:
-        activate-environment: base
+        activate-environment: gofast-0.1.0
         environment-file: environment.yml
         python-version: '3.10'
-        auto-activate-base: true
+        auto-activate-base: false
+        
+    - name: Set PYTHONPATH
+      run: |
+        echo "Setting PYTHONPATH"
+        echo "PYTHONPATH=$PYTHONPATH:$(pwd)/gofast" >> $GITHUB_ENV
+
+    - name: Install dependencies
+      run: |
+        python -m pip install "numpy<2" cython
+
+    - name: Compile Cython modules
+      run: |
+        find . -name "*.pyx" -exec cythonize -i {} \;
 
     - name: Install gofast package
       run: |
         python -m pip install .
+
     - name: Configure Conda 
       run: |
         echo "Configuring conda..."
         conda config --set channel_priority strict
         conda config --set solver classic 
+        
     - name: Lint with flake8
       run: |
-        # conda install flake8 -y
         python -m pip install flake8 
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: Test with pytest
       run: |
-        pip install pytest
+        python -m pip install pytest
         pytest
 
     - name: Debugging Information
@@ -44,4 +58,3 @@ jobs:
         echo "PATH=$PATH"
         conda info
         conda list
-

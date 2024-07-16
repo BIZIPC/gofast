@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 # BSD-3-Clause License
+#   Author: LKouadio <etanoyau@gmail.com>
 # Copyright (c) 2024 gofast developers.
 # All rights reserved.
+"""
+`validator` module provides a comprehensive set of functions and warnings
+ for validating and ensuring the integrity of data. This includes 
+utilities for checking data consistency, validating machine learning targets, 
+ensuring proper data types, and handling various validation scenarios.
+"""
 
 from functools import wraps
 from typing import Any, Callable, Optional, Union
@@ -24,6 +31,70 @@ from inspect import signature, Parameter, isclass
 from ._array_api import get_namespace, _asarray_with_order
 FLOAT_DTYPES = (np.float64, np.float32, np.float16)
 
+__all__=[
+     'DataConversionWarning',
+     'PositiveSpectrumWarning',
+     'array_to_frame',
+     'array_to_frame2',
+     'assert_all_finite',
+     'assert_xy_in',
+     'build_data_if',
+     'build_data_if2',
+     'check_X_y',
+     'check_array',
+     'check_classification_targets',
+     'check_consistency_size',
+     'check_consistent_length',
+     'check_epsilon',
+     'check_is_fitted',
+     'check_is_fitted2',
+     'check_memory',
+     'check_mixed_data_types',
+     'check_random_state',
+     'check_scalar',
+     'check_symmetric',
+     'check_y',
+     'contains_nested_objects',
+     'convert_array_to_pandas',
+     'ensure_2d',
+     'ensure_non_negative',
+     'filter_valid_kwargs',
+     'get_estimator_name',
+     'handle_zero_division',
+     'has_fit_parameter',
+     'has_required_attributes',
+     'is_binary_class',
+     'is_categorical',
+     'is_frame',
+     'is_installed',
+     'is_keras_model',
+     'is_normalized',
+     'is_square_matrix',
+     'is_time_series',
+     'is_valid_policies',
+     'normalize_array',
+     'parameter_validator',
+     'to_dtype_str',
+     'validate_and_adjust_ranges',
+     'validate_comparison_data',
+     'validate_data_types',
+     'validate_dates',
+     'validate_distribution',
+     'validate_dtype_selector',
+     'validate_fit_weights',
+     'validate_keras_model',
+     'validate_length_range',
+     'validate_multiclass_target',
+     'validate_multioutput',
+     'validate_nan_policy',
+     'validate_numeric', 
+     'validate_positive_integer',
+     'validate_sample_weights',
+     'validate_scores',
+     'validate_square_matrix',
+     'validate_weights',
+     'validate_yy'
+ ]
 
 def filter_valid_kwargs(callable_obj, kwargs):
     """
@@ -237,7 +308,7 @@ def _is_probability_distribution(y, mode='strict'):
         raise ValueError(f"Invalid validation mode: '{mode}'. Valid modes"
                          " are 'strict', 'soft', or 'passthrough'.")
 
-def validate_square_matrix(data, /, align=False, align_mode="auto", message=''):
+def validate_square_matrix(data, align=False, align_mode="auto", message=''):
     """
     Validate that the input data forms a square matrix and optionally aligns its 
     indices and columns if specified.
@@ -851,7 +922,7 @@ def handle_zero_division(
 
     return y_true_processed
 
-def validate_comparison_data(df, /,  alignment="auto"):
+def validate_comparison_data(df,  alignment="auto"):
     """
     Validates a DataFrame to ensure it is a square matrix and that the index 
     and column names match. Optionally aligns the index names to the column 
@@ -1626,7 +1697,7 @@ def validate_fit_weights(y, sample_weight=None, weighted_y=False):
     
     return sample_weight
 
-def is_valid_policies(nan_policy, /, allowed_policies=None):
+def is_valid_policies(nan_policy, allowed_policies=None):
     """
     Validates the `nan_policy` or any policy argument to ensure it is one
     of the acceptable options (`allowed_policies`). 
@@ -2202,7 +2273,7 @@ def validate_yy(
 
     return y_true, y_pred
 
-def check_mixed_data_types(data, /) -> bool:
+def check_mixed_data_types(data ) -> bool:
     """
     Checks if the given data (DataFrame or numpy array) contains both numerical 
     and categorical columns.
@@ -2713,7 +2784,7 @@ def is_installed(module: str ) -> bool:
     module_spec = importlib.util.find_spec(module)
     return module_spec is not None
 
-def is_time_series(data, /, time_col, check_time_interval=False ):
+def is_time_series(data, time_col, check_time_interval=False ):
     """
     Check if the provided DataFrame is time series data.
 
@@ -2934,6 +3005,157 @@ def assert_xy_in (
         
     return ( np.array(x), np.array (y) ) if asarray else (x, y )  
 
+def validate_numeric(
+    value, 
+    convert_to='float', 
+    allow_negative=True, 
+    min_value=None, 
+    max_value=None, 
+    check_mode='soft'
+    ):
+    """
+    Validates if a given value is numeric. It can accept numeric strings 
+    and numpy arrays of single values. Optionally converts the value to 
+    either float or integer.
+
+    Parameters
+    ----------
+    value : Any
+        The value to be validated as numeric. This can be of any type 
+        but is expected to be convertible to a numeric type. Accepted 
+        types include numeric strings (e.g., `"42"`), single-element 
+        numpy arrays (e.g., `np.array([3.14])`), integers, and floats.
+    convert_to : str, optional
+        The type to convert the validated numeric value to. Options are 
+        ``'float'`` or ``'int'``. Defaults to ``'float'``. 
+        - If ``'float'``, the value will be converted to a floating-point number.
+        - If ``'int'``, the value will be converted to an integer.
+    allow_negative : bool, optional
+        Whether to allow negative values. Defaults to ``True``. 
+        - If ``True``, negative values are allowed.
+        - If ``False``, negative values will raise a `ValueError`.
+    min_value : float or int, optional
+        The minimum value allowed. If `None`, no minimum value check 
+        is applied. Defaults to ``None``.
+    max_value : float or int, optional
+        The maximum value allowed. If `None`, no maximum value check 
+        is applied. Defaults to ``None``.
+    check_mode : str, optional
+        The mode of checking the value. Options are ``'soft'`` or ``'strict'``. 
+        Defaults to ``'soft'``. 
+        - If ``'soft'``, iterables containing a single value are accepted 
+          and the single value is validated.
+        - If ``'strict'``, only non-iterable numeric values are accepted.
+
+    Returns
+    -------
+    float or int
+        The validated and optionally converted numeric value. The type 
+        of the return value is determined by the `convert_to` parameter.
+
+    Raises
+    ------
+    ValueError
+        If the value is not numeric or does not meet the specified criteria.
+
+    Notes
+    -----
+    The function performs several checks and transformations:
+    1. If the value is a numpy array with a single element, it extracts 
+       the element.
+    2. If the value is a numeric string, it attempts to convert it to 
+       a float.
+    3. If `check_mode` is ``'soft'`` and the value is an iterable with 
+       a single element, it extracts and validates the element.
+    4. It validates whether the value is numeric.
+    5. It converts the value to the specified type (`float` or `int`).
+    6. It checks if negative values are allowed.
+    7. It checks if the value is within the specified `min_value` and 
+       `max_value` range.
+
+    The mathematical formulation for the validation can be expressed as:
+
+    .. math::
+        y = 
+        \begin{cases} 
+        x & \text{if } x \in \mathbb{R} \\
+        \text{convert_to}(x) & \text{if } x \in \text{numeric\_string} \\
+        \text{single\_element}(x) & \text{if } x \in \text{numpy\_array} \\
+        \end{cases}
+
+    Where:
+    - :math:`x` is the input value
+    - :math:`y` is the output value after validation and conversion
+
+    Examples
+    --------
+    >>> from gofast.tools.validator import validate_numeric
+    >>> validate_numeric("42", convert_to='int')
+    42
+    >>> validate_numeric(np.array([3.14]), convert_to='float')
+    3.14
+    >>> validate_numeric([123], check_mode='soft')
+    123.0
+    >>> validate_numeric([123], check_mode='strict')
+    Traceback (most recent call last):
+        ...
+    ValueError: Value '[123]' is not a numeric type.
+    >>> validate_numeric("-123.45", allow_negative=False)
+    Traceback (most recent call last):
+        ...
+    ValueError: Negative values are not allowed: -123.45
+
+    See Also
+    --------
+    numpy.array : Numpy arrays, which can be validated by this function.
+
+    References
+    ----------
+    .. [1] "NumPy Documentation", https://numpy.org/doc/stable/
+    """
+    # Check if the value is a numpy array with a single element
+    if isinstance(value, np.ndarray):
+        if value.size != 1:
+            raise ValueError("Numpy array must contain exactly one element.")
+        value = value.item()
+    
+    # If check_mode is 'soft', handle single-element iterables
+    if check_mode == 'soft' and isinstance(
+            value, (list, tuple, set)) and len(value) == 1:
+        value = next(iter(value))
+    
+    # Check if the value is a numeric string
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            raise ValueError(f"Value '{value}' is not a valid numeric string.")
+    
+    # Check if the value is numeric
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"Value '{value}' is not a numeric type.")
+
+    # Convert the value to the desired type
+    if convert_to == 'int':
+        value = int(value)
+    else:
+        value = float(value)
+
+    # Check if negative values are allowed
+    if not allow_negative and value < 0:
+        raise ValueError(f"Negative values are not allowed: {value}")
+
+    # Check if the value is within the specified range
+    if min_value is not None and value < min_value:
+        raise ValueError(
+            f"Value {value} is less than the minimum allowed value {min_value}.")
+    if max_value is not None and value > max_value:
+        raise ValueError(
+            f"Value {value} is greater than the maximum allowed value {max_value}.")
+
+    return value
+
+
 def _validate_input(ignore: str, x, y, _is_arraylike_1d):
     """
     Validates that x and y are one-dimensional array-like structures based
@@ -2968,7 +3190,7 @@ def _validate_input(ignore: str, x, y, _is_arraylike_1d):
             raise ValueError("Expected both 'x' and 'y' to be one-dimensional "
                              "array-like structures.")
 
-def _is_numeric_dtype (o, / , to_array =False ): 
+def _is_numeric_dtype (o, to_array =False ): 
     """ Determine whether the argument has a numeric datatype, when
     converted to a NumPy array.
 
@@ -2997,7 +3219,7 @@ def _is_numeric_dtype (o, / , to_array =False ):
             if ( hasattr(o, 'columns') or hasattr (o, 'name'))
             else o.dtype.kind ) in _NUMERIC_KINDS 
         
-def _check_consistency_size (ar1, ar2 , /  , error ='raise') :
+def _check_consistency_size (ar1, ar2 ,  error ='raise') :
     """ Check consistency of two arrays and raises error if both sizes 
     are differents. 
     Returns 'False' if sizes are not consistent and error is set to 'ignore'.
@@ -3018,7 +3240,7 @@ def check_consistency_size ( *arrays ):
             % [int(l) for l in lengths]
         )
         
-def _is_buildin (o, /, mode ='soft'): 
+def _is_buildin (o,  mode ='soft'): 
     """ Returns 'True' wether the module is a Python buidling function. 
     
     If  `mode` is ``strict`` only assert the specific predifined-functions 
@@ -3039,7 +3261,7 @@ def _is_buildin (o, /, mode ='soft'):
              ) if mode=='strict' else type (o).__module__== 'builtins' 
 
 
-def get_estimator_name (estimator , /): 
+def get_estimator_name (estimator ): 
     """ Get the estimator name whatever it is an instanciated object or not  
     
     :param estimator: callable or instanciated object,
@@ -3073,7 +3295,7 @@ def _is_cross_validated (estimator ):
         estimator , 'best_params_')
 
 
-def _check_array_in(obj, /, arr_name):
+def _check_array_in(obj,  arr_name):
     """Returns the array from the array name attribute. Note that the singleton 
     array is not admitted. 
     
@@ -3174,7 +3396,7 @@ def _deprecate_positional_args(func=None, *, version="1.3"):
 
     return _inner_deprecate_positional_args
 
-def to_dtype_str (arr, /, return_values = False ): 
+def to_dtype_str (arr, return_values = False ): 
     """ Convert numeric or object dtype to string dtype. 
     
     This will avoid a particular TypeError when an array is filled by np.nan 
@@ -3932,7 +4154,7 @@ def convert_array_to_pandas(X, *, to_frame=False, columns=None, input_name='X'):
 
     return X, columns
  
-def is_frame (arr, /, df_only =False, raise_exception: bool=False,
+def is_frame (arr, df_only =False, raise_exception: bool=False,
               objname=None  ): 
     """ Return bool wether array is a frame ( pd.Series or pd.DataFrame )
     
@@ -4406,6 +4628,8 @@ def check_y(y,
     allow_nan= False, 
     ):
     """
+    Validates the target array `y`, ensuring it is suitable for classification 
+    or regression tasks based on its content and the specified strategy.
     
     Parameters 
     -----------
@@ -4594,15 +4818,15 @@ def build_data_if(
             )
     return data  # Return original data if conditions are not met
 
-def build_data_if2 (
-    data: dict|np.ndarray| pd.DataFrame, /, 
-    columns =None,  
+def build_data_if2(
+    data: Union[dict, np.ndarray, pd.DataFrame], 
+    columns=None,  
     to_frame=True,  
-    input_name ='data', 
+    input_name='data', 
     force=False, 
     **kws
-    ): 
-    """ Contruct data from dict or array if necessary informations are given
+    ):
+    """ Contruct data from dict or array if necessary informations are given.
     
     Paramaters 
     -------------
@@ -4820,7 +5044,9 @@ def array_to_frame2(
     
 def _check_y_1d(y, *, warn=False, input_name ='y'):
     """Ravel column or 1d numpy array, else raises an error.
-    and Isolated part of check_X_y dedicated to y validation
+    
+    and Isolated part of check_X_y dedicated to y validation.
+    
     Parameters
     ----------
     y : array-like

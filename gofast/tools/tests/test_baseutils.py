@@ -115,13 +115,14 @@ def test_extract_target_dataframe():
         'feature1': [1, 2, 3],
         'target': ['A', 'B', 'C']
     })
-    target, modified_df = extract_target(df, 'target')
+    target, modified_df = extract_target(df, 'target', return_y_X=True)
     assert len(target) == len(['A', 'B', 'C'])
     assert 'target' not in modified_df.columns
 
 def test_extract_target_array():
     arr = np.array([[1, 2, 'A'], [3, 4, 'B'], [5, 6, 'C']])
-    target, modified_arr = extract_target(arr, 2,  columns=['feature1', 'feature2', 'target'])
+    target, modified_arr = extract_target(arr, 2,  columns=['feature1', 'feature2', 'target'], 
+                                          return_y_X= True )
     assert np.array_equal(np.squeeze (target), np.array(['A', 'B', 'C'])) # for consistency
     assert modified_arr.shape == (3, 2)  # Ensure target column was removed
 

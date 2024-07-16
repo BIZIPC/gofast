@@ -59,6 +59,8 @@ from sklearn.metrics import mean_squared_error
 from ..exceptions import NotFittedError
 from ..tools.funcutils import ensure_pkg
 
+__all__= ["GeoIntelligentSystem"]
+
 class GeoIntelligentSystem:
     """
     A GeoIntelligentSystem class designed for analyzing and interacting with 

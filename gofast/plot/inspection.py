@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `inspection` module offers a range of visualization tools for inspecting
+and understanding machine learning models. It includes functions for
+plotting learning inspections, projection plots, heatmaps, 
+sunburst charts, Sankey diagrams, Euler diagrams, Venn diagrams, and more, 
+enhancing model interpretability and analysis.
+"""
 
 from __future__ import annotations 
 import os 
@@ -40,13 +47,13 @@ __all__=[
     'create_upset_plot',
     'plot_venn_diagram',
     'create_matrix_representation',
-    'woodland_plot', 
+    'plot_woodland', 
     'plot_l_curve', 
     ]
 
 
 @Dataify(auto_columns=True, prefix="feature_")  
-def woodland_plot(
+def plot_woodland(
     data: DataFrame,*,
     quadrant: str="upper_left",
     compute_corr: bool=False,
@@ -55,7 +62,7 @@ def woodland_plot(
     fig_size: Tuple [int, int]=(11, 9),
     fmt: str=".2f",
     linewidths: float=.5,
-    xrot: int=45,
+    xrot: int=90,
     yrot: int=0,
     cmap: Optional[str]=None,
     cbar: bool=True,
@@ -96,7 +103,7 @@ def woodland_plot(
         The width of the lines that will divide each cell in the heatmap. 
         Default is 0.5.
     xrot : float, optional
-        Rotation angle in degrees for x-axis labels. Default is 45.
+        Rotation angle in degrees for x-axis labels. Default is 90.
     yrot : float, optional
         Rotation angle in degrees for y-axis labels. Default is 0.
     cmap : str or Colormap, optional
@@ -139,9 +146,9 @@ def woodland_plot(
     --------
     >>> import numpy as np
     >>> import pandas as pd
-    >>> from gofast.plot.inspection import woodland_plot
+    >>> from gofast.plot.inspection import plot_woodland
     >>> df = pd.DataFrame(np.random.rand(10, 10), columns=list('ABCDEFGHIJ'))
-    >>> woodland_plot(df, compute_corr=True, quadrant='upper_left', 
+    >>> plot_woodland(df, compute_corr=True, quadrant='upper_left', 
     ...                  cbar=True, cmap='coolwarm')
 
     See Also

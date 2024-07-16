@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+`coreutils` module provides a diverse set of utility functions and tools for
+data manipulation, validation, formatting, and processing. 
+"""
 
-from __future__ import annotations, print_function 
+from __future__ import print_function 
 import os 
 import re 
 import sys
@@ -38,14 +42,106 @@ import matplotlib.colors as mcolors
 
 from .._gofastlog import gofastlog
 from ..api.types import Union, Series,Tuple,Dict,Optional,Iterable, Any, Set
-from ..api.types import _T,_Sub, _F, ArrayLike,List, DataFrame, NDArray, Text  
+from ..api.types import _T,_Sub, _F, ArrayLike,List, DataFrame, NDArray, Text 
 from ._dependency import import_optional_dependency
 from ..compat.scipy import ensure_scipy_compatibility 
 from ..compat.scipy import check_scipy_interpolate, optimize_minimize
 
 _logger = gofastlog.get_gofast_logger(__name__)
 
- 
+__all__=[
+     'add_noises_to',
+     'adjust_to_samples',
+     'assert_ratio',
+     'check_dimensionality',
+     'check_uniform_type',
+     'cleaner',
+     'colors_to_names',
+     'cpath',
+     'decompose_colormap',
+     'denormalize',
+     'display_infos',
+     'download_progress_hook',
+     'exist_features',
+     'extract_coordinates',
+     'features_in',
+     'fetch_json_data_from_url',
+     'fill_nan_in',
+     'find_by_regex',
+     'find_close_position',
+     'find_features_in',
+     'format_to_datetime',
+     'generate_alpha_values',
+     'generate_mpl_styles',
+     'generic_getattr',
+     'get_colors_and_alphas',
+     'get_confidence_ratio',
+     'get_installation_name',
+     'get_params',
+     'get_valid_key',
+     'get_valid_kwargs',
+     'get_xy_coordinates',
+     'hex_to_rgb',
+     'interpol_scipy',
+     'is_classification_task',
+     'is_depth_in',
+     'is_in_if',
+     'is_installing',
+     'is_iterable',
+     'is_module_installed',
+     'ismissing',
+     'load_serialized_data',
+     'make_ids',
+     'move_cfile',
+     'nan_to_na', 
+     'normalize_string',
+     'numstr2dms',
+     'pair_data',
+     'parallelize_jobs',
+     'parse_attrs',
+     'parse_csv',
+     'parse_json',
+     'parse_md_data',
+     'parse_yaml',
+     'process_and_extract_data',
+     'projection_validator',
+     'random_sampling',
+     'random_selector',
+     'random_state_validator',
+     'read_from_excelsheets',
+     'read_main',
+     'read_worksheets',
+     'rename_files',
+#     'repeat_item_insertion',
+     'replace_data',
+     'resample_data',
+     'reshape',
+     'sanitize_frame_cols',
+     'sanitize_unicode_string',
+     'save_job',
+     'savepath_',
+     'serialize_data',
+     'smart_label_classifier',
+     'split_train_test',
+     'split_train_test_by_id',
+     'squeeze_specific_dim',
+     'store_or_write_hdf5',
+     'str2columns',
+     'test_set_check_id',
+     'to_hdf5',
+     'to_numeric_dtypes',
+     'to_series_if',
+     'type_of_target',
+     'unpack_list_of_dicts',
+     'url_checker',
+     'validate_feature',
+     'validate_ratio',
+     'validate_url',
+     'validate_url_by_validators',
+     'wrap_infos',
+     'zip_extractor'
+ ] 
+
 def format_to_datetime(data, date_col, verbose=0, **dt_kws):
     """
     Reformats a specified column in a DataFrame to Pandas datetime format.
@@ -336,7 +432,7 @@ def is_classification_task(
 
     return True
 
-def fancy_printer(result, /, report_name='Data Quality Check Report'):
+def fancy_printer(result, report_name='Data Quality Check Report'):
     """ 
     This _fancy_print function within the check_data_quality function 
     iterates over the results dictionary and prints each category 
@@ -568,7 +664,7 @@ def to_numeric_dtypes(
     return (df, nf, cf) if return_feature_types else df 
 
 def listing_items_format ( 
-        lst, /, begintext ='', endtext='' , bullet='-', 
+        lst,  begintext ='', endtext='' , bullet='-', 
         enum =True , lstyle=None , space =3 , inline =False, verbose=True
         ): 
     """ Format list by enumerate them successively with carriage return
@@ -636,7 +732,8 @@ def listing_items_format (
     
     return None if verbose else out 
     
-def parse_attrs (attr, /, regex=None ): 
+    
+def parse_attrs (attr,  regex=None ): 
     """ Parse attributes using the regular expression.
     
     Remove all string non-alphanumeric and some operator indicators,  and 
@@ -752,12 +849,12 @@ def url_checker (url: str , install:bool = False,
         
     return isr 
 
-def shrunkformat (
-    text: str | Iterable[Any], 
-    chunksize: int =7 ,
-    insert_at: str = None, 
-    sep =None, 
-    ) : 
+def shrunkformat(
+    text: Union[str, Iterable[Any]], 
+    chunksize: int = 7,
+    insert_at: Optional[str] = None, 
+    sep: Optional[str] = None, 
+) -> None:
     """ Format class and add ellipsis when classes are greater than maxview 
     
     :param text: str - a text to shrunk and format. Can also be an iterable
@@ -940,8 +1037,8 @@ def is_installing (
 
 def smart_strobj_recognition(
         name: str  ,
-        container: List | Tuple | Dict[Any, Any ],
-        stripitems: str | List | Tuple = '_', 
+        container: Union [List , Tuple , Dict[Any, Any ]],
+        stripitems: Union [str , List , Tuple] = '_', 
         deep: bool = False,  
 ) -> str : 
     """ Find the likelihood word in the whole containers and 
@@ -1105,7 +1202,7 @@ def repr_callable_obj(obj: _F  , skip = None ):
 def accept_types (
         *objtypes: list , 
         format: bool = False
-        ) -> List[str] | str : 
+        ) -> Union [List[str] , str] : 
     """ List the type format that can be accepted by a function. 
     
     :param objtypes: List of object types.
@@ -1386,14 +1483,14 @@ def interpol_scipy(
         _logger.error(f"An unexpected error occurred during interpolation: {e}")
         return None
     
-def _remove_str_word (char, word_to_remove, deep_remove=False):
+def _remove_str_word (ch, word_to_remove, deep_remove=False):
     """
     Small funnction to remove a word present on  astring character 
     whatever the number of times it will repeated.
     
     Parameters
     ----------
-        * char : str
+        * ch : str
                 may the the str phrases or sentences . main items.
         * word_to_remove : str
                 specific word to remove.
@@ -1415,7 +1512,7 @@ def _remove_str_word (char, word_to_remove, deep_remove=False):
     >>> print(ss)
     
     """
-    if type(char) is not str : char =str(char)
+    if type(ch) is not str : char =str(ch)
     if type(word_to_remove) is not str : word_to_remove=str(word_to_remove)
     
     if deep_remove == True :
@@ -1735,8 +1832,8 @@ def read_main (csv_fn , pf , delimiter =':',
     
 
 def _isin (
-        arr: ArrayLike | List [float] ,
-        subarr: _Sub [ArrayLike] |_Sub[List[float]] | float, 
+        arr: Union [ArrayLike, List [float]] ,
+        subarr:Union[ _Sub [ArrayLike] , _Sub[List[float]] ,float], 
         return_mask:bool=False, 
 ) -> bool : 
     """ Check whether the subset array `subcz` is in  `cz` array. 
@@ -2023,7 +2120,7 @@ def save_job(
     buffer_callback = None,   
     **job_kws
     ): 
-    """ Quick save your job using 'joblib' or persistent Python pickle module
+    """ Quick save your job using 'joblib' or persistent Python pickle module.
     
     Parameters 
     -----------
@@ -3386,7 +3483,7 @@ def print_cmsg(cfile:str, todo:str='load', config:str='YAML') -> str:
 
 
 def random_state_validator(seed):
-    """Turn seed into a np.random.RandomState instance.
+    """Turn seed into a Numpy-Random-RandomState instance.
     
     Parameters
     ----------
@@ -3412,8 +3509,8 @@ def random_state_validator(seed):
     )
 
 def is_iterable (
-        y, /, exclude_string= False, transform = False , parse_string =False, 
-)->bool | list: 
+        y, exclude_string= False, transform = False , parse_string =False, 
+)->Union [bool , list]: 
     """ Asserts iterable object and returns boolean or transform object into
      an iterable.
     
@@ -3468,7 +3565,7 @@ def is_iterable (
     return ( y if isiter else [ y ] )  if transform else isiter 
 
     
-def str2columns (text, /, regex=None , pattern = None): 
+def str2columns (text,  regex=None , pattern = None): 
     """Split text from the non-alphanumeric markers using regular expression. 
     
     Remove all string non-alphanumeric and some operator indicators,  and 
@@ -3519,10 +3616,11 @@ def str2columns (text, /, regex=None , pattern = None):
     return text 
        
 def sanitize_frame_cols(
-        d, /, func:_F = None , regex=None, pattern:str = None, 
+        d,  func:_F = None , regex=None, pattern:str = None, 
         fill_pattern:str =None, inplace:bool =False 
         ):
-    """ Remove an indesirable characters and returns new columns 
+    """ Remove an indesirable characters to the dataframe and returns 
+    new columns. 
     
     Use regular expression for columns sanitizing 
     
@@ -3608,7 +3706,7 @@ def sanitize_frame_cols(
 
     return d 
 
-def to_hdf5(d, /, fn, objname =None, close =True,  **hdf5_kws): 
+def to_hdf5(d, fn, objname =None, close =True,  **hdf5_kws): 
     """
     Store a frame data in hierachical data format 5 (HDF5) 
     
@@ -3708,7 +3806,7 @@ def to_hdf5(d, /, fn, objname =None, close =True,  **hdf5_kws):
     return store 
     
 
-def find_by_regex (o , /, pattern,  func = re.match, **kws ):
+def find_by_regex (o , pattern,  func = re.match, **kws ):
     """ Find pattern in object whatever an "iterable" or not. 
     
     when we talk about iterable, a string value is not included.
@@ -3785,7 +3883,7 @@ def find_by_regex (o , /, pattern,  func = re.match, **kws ):
         om = None 
     return  om 
     
-def is_in_if (o: iter, /, items: str | iter, error = 'raise', 
+def is_in_if (o: iter,  items: Union [str , iter], error = 'raise', 
                return_diff =False, return_intersect = False): 
     """ Raise error if item is not  found in the iterable object 'o' 
     
@@ -4068,69 +4166,9 @@ def is_depth_in (X, name, columns = None, error= 'ignore'):
         
     return  X , depth     
     
-    
-def count_func (path , verbose = 0 ): 
-    """ Count function and method using 'ast' modules 
-    
-    Parameters
-    -----------
-    path: str, Path-like object,    
-        Path to the python module file 
-    verbose: int, default=0 
-        Different to 0 outputs the counting details. 
-        
-    Returns
-    -----------
-    cobj or None: Returns the counter object from module `ast` or nothing if 
-        `verbose` is ``False``. 
-        
-    """
-    
-    cobj ={}
-    import_optional_dependency('ast')
-    import ast 
-    class CountFunc (ast.NodeVisitor): 
-        func_count=0 
-        # def visit_FunctionDef(self, node): 
-        #     self.func_count +=1 
-        # def visit_Lambda(self, node): 
-        #     self.func_count +=1 
-        def visit_ClassDef(self, node): 
-            self.func_count +=1 
-        # def visit_Module(self, node): 
-        #     self.func_count +=1 
-        # def visit_Call(self, node): 
-        #     self.func_count +=1 
-     
-    if os.path.isdir (path): 
-        pyfiles = [ os.path.join (path , f) 
-                   for f in os.listdir (path) if f.endswith ('.py') ] 
-    elif os.path.isfile (path) : 
-        pyfiles = [ path ] 
-    else : 
-        raise TypeError (f"Expects a path-like object, got {path!r}") 
-        
-    val=0
-    
-    if verbose : 
-        print("module = {:^12}".format(os.path.dirname (pyfiles[0])))
-    for mod in pyfiles : 
-
-        p=ast.parse (open(mod, encoding='utf-8').read())
-        f= CountFunc()
-        f.visit(p)
-        cobj[os.path.basename (mod)]= f.func_count 
-        val += f.func_count 
-        if verbose: 
-            print("### {:^7}{:<17} ={:>7}".format (' ', os.path.basename (mod), 
-                                              f.func_count ))
-            
-    print(">>>Total = {:>24}".format(val )) if verbose else print() 
- 
-    return cobj if not verbose else None 
-
 def smart_label_classifier (
-        arr: ArrayLike, /, values: float | List[float]= None , labels =None, 
+        arr: ArrayLike,  values: Union [float, List[float]]= None ,
+        labels: Union [int, str, List[str]] =None, 
         order ='soft', func: _F=None, raise_warn=True): 
     """ map smartly the numeric array into a class labels from a map function 
     or a given fixed values. 
@@ -4308,7 +4346,7 @@ def _assert_labels_from_values (ar, values , labels , d={},
     
     return labels, d 
 
-def _smart_mapper (k, /,  kr , return_dict_map =False ) :
+def _smart_mapper (k,   kr , return_dict_map =False ) :
     """ Default  mapping using dict to validate the continue  value 'k' 
     :param k: float, 
         continue value to be framed between `kr`
@@ -4345,7 +4383,7 @@ def _smart_mapper (k, /,  kr , return_dict_map =False ) :
     for v, value in d.items () :
         if value: return v if not math.isnan (v) else np.nan 
         
-def hex_to_rgb (c, /): 
+def hex_to_rgb (c): 
     """ Convert colors Hexadecimal to RGB """
     c=c.lstrip('#')
     return tuple(int(c[i:i+2], 16) for i in (0, 2, 4)) 
@@ -4446,7 +4484,7 @@ def zip_extractor(
     return objnames 
 
 
-def _validate_name_in (name, /, defaults = '', expect_name= None, 
+def _validate_name_in (name, defaults = '', expect_name= None, 
                          exception = None , deep=False ): 
     """ Assert name in multiples given default names. 
     
@@ -4503,7 +4541,7 @@ def _validate_name_in (name, /, defaults = '', expect_name= None,
     return name 
 
 def get_confidence_ratio (
-        ar, /,
+        ar, 
         axis = 0, 
         invalid = 'NaN',
         mean=False, 
@@ -4588,9 +4626,10 @@ def get_confidence_ratio (
     return ratio 
     
 def assert_ratio(
-    v, /, bounds: List[float] = None , 
+    v,  bounds: List[float] = None , 
     exclude_value:float= None, 
-    in_percent:bool =False , name:str ='rate' 
+    in_percent:bool =False , 
+    name:str ='rate' 
     ): 
     """ Assert rate value between a specific range. 
     
@@ -4739,19 +4778,20 @@ def validate_ratio(
 
     if bounds:
         if not (bounds[0] <= value <= bounds[1]):
-            raise ValueError(
-                f"{param_name} must be between {bounds[0]} and {bounds[1]}, got: {value}")
+            raise ValueError(f"{param_name} must be between {bounds[0]}"
+                             f" and {bounds[1]}, got: {value}")
     
     if exclude is not None and value == exclude:
         raise ValueError(f"{param_name} cannot be {exclude}")
 
     if to_percent and value > 1:
-        raise ValueError(f"{param_name} converted to percent must not exceed 1, got: {value}")
+        raise ValueError(f"{param_name} converted to percent must"
+                         f" not exceed 1, got: {value}")
 
     return value
 
 def exist_features (df, features, error='raise', name="Feature"): 
-    """Control whether the features exist or not  
+    """Control whether the features exist or not.  
     
     :param df: a dataframe for features selections 
     :param features: list of features to select. Lits of features must be in the 
@@ -4795,7 +4835,7 @@ def exist_features (df, features, error='raise', name="Feature"):
 
 
 def random_selector (
-        arr:ArrayLike, / , value: float | ArrayLike, 
+        arr:ArrayLike, value: Union [float, ArrayLike], 
         seed: int = None, shuffle =False ): 
     """Randomly select the number of values in array. 
     
@@ -4881,16 +4921,15 @@ def random_selector (
 
     return arr
 
-def cleaner (
-    data: DataFrame|NDArray,
-    / , 
-    columns:List[str]= None,
-    inplace:bool = False, 
-    labels: List[int|str] =None, 
-    func : _F= None, 
-    mode:str ='clean', 
+def cleaner(
+    data: Union[DataFrame, NDArray],
+    columns: List[str] = None,
+    inplace: bool = False,
+    labels: List[Union[int, str]] = None,
+    func: _F = None,
+    mode: str = 'clean',
     **kws
-    )->DataFrame | NDArray | None : 
+) -> Union[DataFrame, NDArray, None]:
     """ Sanitize data or columns by dropping specified labels 
     from rows or columns. 
     
@@ -4971,18 +5010,18 @@ def cleaner (
     data = to_numeric_dtypes(data )
     return np.array ( data ) if objtype =='ar' else data 
  
-def rename_files (
-    src_files:str | List[str], /, 
-    dst_files:str | List[str], 
-    basename:Optional[str]=None, 
-    extension:Optional[str] =None , 
-    how:str ='py', 
-    prefix:bool =True, 
-    keep_copy:bool=True, 
-    trailer:str='_', 
-    sortby: re |_F=None, 
-    **kws 
-    ): 
+def rename_files(
+    src_files: Union[str, List[str]], 
+    dst_files: Union[str, List[str]], 
+    basename: Optional[str] = None, 
+    extension: Optional[str] = None, 
+    how: str = 'py', 
+    prefix: bool = True, 
+    keep_copy: bool = True, 
+    trailer: str = '_', 
+    sortby: Union[re.Pattern, _F] = None, 
+    **kws
+) -> None:
     """Rename files in directory.
 
     Parameters 
@@ -5098,9 +5137,9 @@ def rename_files (
             else : os.rename (f, nf , **kws )
             
             
-def get_xy_coordinates (d, / , as_frame = False, drop_xy = False, 
+def get_xy_coordinates (d, as_frame = False, drop_xy = False, 
                         raise_exception = True, verbose=0 ): 
-    """Check whether the coordinate values exist in the data
+    """Check whether the coordinate values x, y exist in the data.
     
     Parameters 
     ------------
@@ -5173,7 +5212,7 @@ def get_xy_coordinates (d, / , as_frame = False, drop_xy = False,
 
     """   
     
-    def get_value_in ( val, /, col , default): 
+    def get_value_in ( val,  col , default): 
         """ Get the value in the frame columns if `val` exists in """
         x = list( filter ( lambda x: x.find (val)>=0 , col)
                    )
@@ -5234,15 +5273,15 @@ def get_xy_coordinates (d, / , as_frame = False, drop_xy = False,
        
 
 def pair_data(
-    *d: List[DataFrame, ...],  
-    on:str | List[str] = None, 
-    parse_on:bool=False, 
-    mode: str='strict', 
-    coerce:bool = False, 
-    force:bool =False, 
+    *d: Union[DataFrame, List[DataFrame]],  
+    on: Union[str, List[str]] = None, 
+    parse_on: bool = False, 
+    mode: str = 'strict', 
+    coerce: bool = False, 
+    force: bool = False, 
     decimals: int = 7, 
-    raise_warn:bool =True 
-)-> DataFrame : 
+    raise_warn: bool = True 
+) -> DataFrame:
     """ Find indentical object in all data and concatenate them using merge 
      intersection (`cross`) strategy.
     
@@ -5502,8 +5541,8 @@ def read_worksheets(*data):
     return data, sheet_names      
  
 def key_checker (
-    keys: str , /,  
-    valid_keys:List[str, ...], 
+    keys: str ,   
+    valid_keys:List[str], 
     regex:re = None, 
     pattern:str = None , 
     deep_search:bool =...
@@ -5599,7 +5638,7 @@ def key_checker (
     return keys 
 
 def random_sampling (
-    d, / , 
+    d,  
     samples:int = None  , 
     replace:bool = False , 
     random_state:int = None, 
@@ -5774,15 +5813,15 @@ def make_obj_consistent_if (
     return item
     
 def replace_data(
-    X:ArrayLike| DataFrame, 
-    y: Optional[ArrayLike | Series] = None, 
+    X:Union [ArrayLike, DataFrame], 
+    y: Union [ArrayLike, Series] = None, 
     n: int = 1, 
     axis: int = 0, 
     reset_index: bool = False,
     include_original: bool = False,
     random_sample: bool = False,
     shuffle: bool = False
-) -> ArrayLike| DataFrame | Tuple[ArrayLike | DataFrame, ArrayLike| Series]:
+) -> Union [ ArrayLike, DataFrame , Tuple[ArrayLike , DataFrame, ArrayLike, Series]]:
     """
     Duplicates the data `n` times along a specified axis and applies various 
     optional transformations to augment the data suitability for further 
@@ -5879,7 +5918,7 @@ def replace_data(
         return concat_data(X), concat_data(y)
     return concat_data(X)
 
-def convert_value_in (v, /, unit ='m'): 
+def convert_value_in (v, unit ='m'): 
     """Convert value based on the reference unit.
     
     Parameters 
@@ -5934,7 +5973,7 @@ def convert_value_in (v, /, unit ='m'):
     
     return float ( v) * (c.get(unit) or 1e0) 
 
-def split_list(lst:List[Any, ...],/,  val:int, fill_value:Any=None ):
+def split_list(lst:List[Any],  val:int, fill_value:Optional[Any]=None ):
     """Module to extract a slice of elements from the list 
     
     Parameters 
@@ -5970,8 +6009,8 @@ def split_list(lst:List[Any, ...],/,  val:int, fill_value:Any=None ):
     return sl 
 
 def key_search (
-    keys: str, /, 
-    default_keys: Text | List[str], 
+    keys: str,  
+    default_keys: Union [Text , List[str]], 
     parse_keys: bool=True, 
     regex :re=None, 
     pattern :str=None, 
@@ -6085,68 +6124,70 @@ def key_search (
                        f" Expect {smart_format(dk_init, 'or')}")
     return None if len(valid_keys)==0 else valid_keys 
 
-def repeat_item_insertion(text, /, pos, item ='', fill_value=''): 
-    """ Insert character in  text according from it position. 
-    
-    Parameters
-    -----------
-    v: text
-       Text 
-    pos: int 
-      position where the item must be insert. 
-    item: str, 
-      Item to insert at each position. 
-    fill_value: str, 
-      Does nothing special; fill the the last position. 
-    Returns
-    --------
-    text: str, 
-      New construct object. 
-      
-    Examples
-    ----------
-    >>> from gofast.tools.coreutils import repeat_item_insertion
-    >>> repeat_item_insertion ( '0125356.45', pos=2, item=':' ) 
-    Out[65]: '01:25:35:6.45'
-    >>> repeat_item_insertion ( 'Function inserts car in text.', pos=10, item='TK' )
-    Out[69]: 'Function iTKnserts carTK in text.'
-    """
-    pos= _assert_all_types(pos, int, float, 
-                           objname=f'Position for {item} insertion')
-    # for consistency
-    lst = list( str(text)) 
-    # checher whether there is a decimal then remove it 
-    dec_part=[]
-    ent_part= lst
-    for i, it in enumerate ( lst)  :
-        if it =='.': 
-            ent_part, dec_part  = lst [:i],  lst[i:]
-            break 
-    # now split list
-    value = split_list(ent_part, val= pos , fill_value=fill_value) 
-    #value = split_list ( ent_part, 2)
-    #[[1, 2, 3], [4, 5, 6], [7, 8]]
-    join_lst= list (map ( lambda s : ''.join( s), value))
-    #[123, 456, 78]
-    #join with mark 
-    return f'{str(item)}'.join(join_lst) +''.join(dec_part)
-        
-def numstr2dms (
-    sdigit: str, /, 
-    sanitize: bool=True, 
-    func: _F=None, 
-    args: tuple=(),  
-    regex: re=None,   
-    pattern: str=None, 
-    return_values: bool=..., 
+# def repeat_item_insertion(text: str, pos: Union[int, float], item: Optional[str] = None,  fill_value: Optional[Any] = None) -> str: 
+#     """ Insert character in text according to its position. 
+#     
+#     Parameters
+#     ----------
+#     text: str
+#        Text 
+#     pos: Union[int, float]
+#       Position where the item must be inserted. 
+#     item: Optional[str], default None
+#       Item to insert at each position. 
+#    fill_value: Optional[Any], default None
+#       Does nothing special; fill the last position. 
+#     Returns
+#     --------
+#     text: str
+#       New construct object. 
+#       
+#     Examples
+#     ----------
+#     >>> repeat_item_insertion('0125356.45', pos=2, item=':')
+#     '01:25:35:6.45'
+#     >>> repeat_item_insertion('Function inserts car in text.', pos=10, item='TK')
+#     'Function iTKnserts carTK in text.'
+#     """
+#     if item is None:
+#         item = ''
+#    # For consistency
+#    lst = list(str(text))
+#    # Check whether there is a decimal then remove it 
+#    dec_part = []
+#    ent_part = lst
+#    for i, it in enumerate(lst):
+#        if it == '.': 
+#            ent_part, dec_part = lst[:i], lst[i:]
+#            break
+#    # Now split list
+#    if fill_value is None:
+#        fill_value = ''
+#    
+#    value = split_list(ent_part, val=pos, fill_value=fill_value)
+#    # Join with mark
+#    join_lst = [''.join(s) for s in value]
+#    # Use empty string instead of None in the join operation
+#    result = str(item).join(join_lst) + ''.join(dec_part)
+#    return result
+
+
+def numstr2dms(
+    sdigit: str,  
+    sanitize: bool = True, 
+    func: callable = lambda x, *args, **kws: x, 
+    args: tuple = (),  
+    regex: re.Pattern = re.compile(r'[_#&@!+,;:"\'\s-]\s*', flags=re.IGNORECASE),   
+    pattern: str = '[_#&@!+,;:"\'\s-]\s*', 
+    return_values: bool = False, 
     **kws
-    ): 
+) -> Union[str, Tuple[float, float, float]]: 
     """ Convert numerical digit string to DD:MM:SS
     
-    Note that the any string digit for Minutes and seconds must be composed
-    of two values i.e the function accepts at least six digits, otherwise an 
-    error occurs. For instance the value between [0-9] must be prefixed by 0 
-    beforehand. Here is an example for designating 1degree-1min-1seconds::
+    Note that any string digit for Minutes and seconds must be composed
+    of two values i.e., the function accepts at least six digits, otherwise an 
+    error occurs. For instance, the value between [0-9] must be prefixed by 0 
+    beforehand. Here is an example for designating 1 degree-1 min-1 seconds::
         
         sdigit= 1'1'1" --> 01'01'01 or 010101
         
@@ -6157,83 +6198,81 @@ def numstr2dms (
     sdigit: str, 
       Digit string composing of unique values. 
     func: Callable, 
-      Function uses to parse digit. Function must return a string values. 
-      Any other values should be convert to str 
+      Function uses to parse digit. Function must return string values. 
+      Any other values should be converted to str.
       
     args: tuple
       Function `func` positional arguments 
       
     regex: `re` object,  
-        Regular expresion object. Regex is important to specify the kind
-        of data to parse. the default is:: 
+        Regular expression object. Regex is important to specify the kind
+        of data to parse. The default is:: 
             
             >>> import re 
-            >>> re.compile (r'[_#&@!+,;:"\'\s-]\s*', flags=re.IGNORECASE) 
+            >>> re.compile(r'[_#&@!+,;:"\'\s-]\s*', flags=re.IGNORECASE) 
             
     pattern: str, default = '[_#&@!+,;:"\'\s-]\s*'
-      Specific pattern for sanitizing sdigit. For instance remove undesirable 
+      Specific pattern for sanitizing sdigit. For instance, remove undesirable 
       non-character. 
       
-    sanitize:bool=default=True 
-       Remove undesirable character using the default argument of `pattern`
+    sanitize: bool, default=True 
+       Remove undesirable characters using the default argument of `pattern`
        parameter. 
        
     return_values: bool, default=False, 
-       return the DD:MM:SS into a tuple of (DD,MM,SS)
+       Return the DD:MM:SS into a tuple of (DD, MM, SS).
     
     Returns 
     -------
     sdigit/tuple: str, tuple 
-      DD:MM:SS or tuple of ( DD, MM, SS) 
+      DD:MM:SS or tuple of (DD, MM, SS)
       
     Examples
     --------
-    >>> from gofast.tools.coreutils import numstr2dms
-    >>> numstr2dms ("1134132.08")
-    Out[17]: '113:41:32.08
-    >>> numstr2dms ("13'41'32.08")
-    Out[18]: '13:41:32.08'
-    >>> numstr2dms ("11:34:13:2.08", return_values=True)
-    Out[19]: (113.0, 41.0, 32.08)
-            
+    >>> numstr2dms("1134132.08")
+    '113:41:32.08'
+    >>> numstr2dms("13'41'32.08")
+    '13:41:32.08'
+    >>> numstr2dms("11:34:13:2.08", return_values=True)
+    (113.0, 41.0, 32.08)
     """
-    # remove any character from the string digit
-    if return_values is ...:return_values=False 
-    sdigit= str(sdigit)
+    # Remove any character from the string digit
+    sdigit = str(sdigit)
     
     if sanitize: 
-        pattern = pattern or '[_#&@!+,;:"\'\s-]\s*'
-        sdigit = re.sub(pattern , "", str(sdigit), flags=re.IGNORECASE)
+        sdigit = re.sub(pattern, "", sdigit, flags=re.IGNORECASE)
         
-    try : float (sdigit)
-    except: raise ValueError ("Wrong value. Expects a string-digit or digit."
-                              f" Got {sdigit!r}")
-    if callable (func): 
-        sdigit= func (sdigit, *args, **kws )
+    try:
+        float(sdigit)
+    except ValueError:
+        raise ValueError(f"Wrong value. Expects a string-digit or digit. Got {sdigit!r}")
+
+    if callable(func): 
+        sdigit = func(sdigit, *args, **kws)
         
     # In the case there is'
-    decimal ='0'
-    # remove decimal
-    sdigit_list  = str(sdigit).split(".")
+    decimal = '0'
+    # Remove decimal
+    sdigit_list = sdigit.split(".")
     
-    if len(sdigit_list)==2: 
-        sdigit, decimal =sdigit_list
+    if len(sdigit_list) == 2: 
+        sdigit, decimal = sdigit_list
         
     if len(sdigit) < 6: 
-        raise ValueError(f"DMS expects at list six digits(DD:MM:SS)."
-                         f" Got {sdigit!r}")
+        raise ValueError(f"DMS expects at least six digits (DD:MM:SS). Got {sdigit!r}")
         
-    sec , sdigit = sdigit[-2:] , sdigit [:-2]
-    mm , sdigit = sdigit[-2:], sdigit [:-2]
-    deg = sdigit # the remain part 
-    # conca second ecimal 
-    sec +=f".{decimal}" 
+    sec, sdigit = sdigit[-2:], sdigit[:-2]
+    mm, sdigit = sdigit[-2:], sdigit[:-2]
+    deg = sdigit  # The remaining part
+    # Concatenate second decimal 
+    sec += f".{decimal}" 
     
-    return tuple (map ( float, [deg, mm, sec]) ) if return_values \
-        else ':'.join([deg, mm, sec]) 
+    return tuple(map(float, [deg, mm, sec])) if return_values \
+        else ':'.join([deg, mm, sec])
+
 
 def store_or_write_hdf5 (
-    d, /, 
+    d,  
     key:str= None, 
     mode:str='a',  
     kind: str=None, 
@@ -6241,13 +6280,13 @@ def store_or_write_hdf5 (
     encoding:str="utf8", 
     csv_sep: str=",",
     index: bool=..., 
-    columns: str |List[Any, ...]=None, 
+    columns:Union [str, List[Any]]=None, 
     sanitize_columns:bool=...,  
     func: _F= None, 
     args: tuple=(), 
-    applyto: str|List[Any, ...]=None, 
+    applyto: Union [str, List[Any]]=None, 
     **func_kwds, 
-    )->None|DataFrame: 
+    )->Union [None, DataFrame]: 
     """ Store data to hdf5 or write data to csv file. 
     
     Note that by default, the data is not store nor write and 
@@ -6508,57 +6547,351 @@ def type_of_target(y):
 
     return 'unknown'
 
-def add_noises_to(data, /, noise=.1, seed =None, gaussian_noise=False ):
+
+def add_noises_to(
+    data,  
+    noise=0.1, 
+    seed=None, 
+    gaussian_noise=False,
+    cat_missing_value=pd.NA
+    ):
     """
-    Adds NaN values to a pandas DataFrame.
+    Adds NaN or specified missing values to a pandas DataFrame.
 
     Parameters
     ----------
-    dataframe : pandas.DataFrame
-        The DataFrame to which NaN values will be added.
-    noise : float, default='10%'
-        The percentage of values to be replaced with NaN in each column. 
-        This must be a number between 0 and 1. Default is 0.1 (10%).
-    seed: int, array-like, BitGenerator, np.random.RandomState, \
-        np.random.Generator, optional
-       If int, array-like, or BitGenerator, seed for random number generator. 
-       If np.random.RandomState or np.random.Generator, use as given.
+    data : pandas.DataFrame
+        The DataFrame to which NaN values or specified missing 
+        values will be added.
+
+    noise : float, default=0.1
+        The percentage of values to be replaced with NaN or the 
+        specified missing value in each column. This must be a 
+        number between 0 and 1. Default is 0.1 (10%).
+
+        .. math:: \text{noise} = \frac{\text{number of replaced values}}{\text{total values in column}}
+
+    seed : int, array-like, BitGenerator, np.random.RandomState, np.random.Generator, optional
+        Seed for random number generator to ensure reproducibility. 
+        If `seed` is an int, array-like, or BitGenerator, it will be 
+        used to seed the random number generator. If `seed` is a 
+        np.random.RandomState or np.random.Generator, it will be used 
+        as given.
+
     gaussian_noise : bool, default=False
-        If True, adds Gaussian noise to the data. Otherwise,
-        replaces values with NaN.
+        If `True`, adds Gaussian noise to the data. Otherwise, replaces 
+        values with NaN or the specified missing value.
+
+    cat_missing_value : scalar, default=pd.NA
+        The value to use for missing data in categorical columns. By 
+        default, `pd.NA` is used.
+
     Returns
     -------
     pandas.DataFrame
-        A DataFrame with NaN values added.
+        A DataFrame with NaN or specified missing values added.
+
+    Notes
+    -----
+    The function modifies the DataFrame by either adding Gaussian noise 
+    to numerical columns or replacing a percentage of values in each 
+    column with NaN or a specified missing value.
+
+    The Gaussian noise is added according to the formula:
+
+    .. math:: \text{new_value} = \text{original_value} + \mathcal{N}(0, \text{noise})
+
+    where :math:`\mathcal{N}(0, \text{noise})` represents a normal 
+    distribution with mean 0 and standard deviation equal to `noise`.
 
     Examples
     --------
     >>> from gofast.tools.coreutils import add_noises_to
+    >>> import pandas as pd
     >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': ['x', 'y', 'z']})
-    >>> new_df = add_nan_to_dataframe(df, noises=0.2)
+    >>> new_df = add_noises_to(df, noise=0.2)
+    >>> new_df
+         A     B
+    0  1.0  <NA>
+    1  NaN     y
+    2  3.0  <NA>
+
     >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
     >>> new_df = add_noises_to(df, noise=0.1, gaussian_noise=True)
+    >>> new_df
+              A         B
+    0  1.063292  3.986400
+    1  2.103962  4.984292
+    2  2.856601  6.017380
+
+    See Also
+    --------
+    pandas.DataFrame : Two-dimensional, size-mutable, potentially 
+        heterogeneous tabular data.
+    numpy.random.normal : Draw random samples from a normal 
+        (Gaussian) distribution.
+
+    References
+    ----------
+    .. [1] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. 
+           (2020). Array programming with NumPy. Nature, 585(7825), 
+           357-362.
     """
+    
+    is_frame = isinstance (data, pd.DataFrame ) 
+    if not is_frame: 
+        data = pd.DataFrame(data ) 
+        
     np.random.seed(seed)
     if noise is None: 
         return data 
-    noise = assert_ratio(noise)
+    noise, gaussian_noise  = _parse_gaussian_noise (noise )
+
     if gaussian_noise:
-        # Add Gaussian noise to the data
-        noise_data = data.apply(lambda x: x + np.random.normal(
-            0, noise, size=x.shape))
+        # Add Gaussian noise to numerical columns only
+        def add_gaussian_noise(column):
+            if pd.api.types.is_numeric_dtype(column):
+                return column + np.random.normal(0, noise, size=column.shape)
+            return column
+        
+        noise_data = data.apply(add_gaussian_noise)
+        
+        if not is_frame: 
+            noise_data = np.asarray(noise_data)
         return noise_data
     else:
-        # Replace values with NaN
+        # Replace values with NaN or specified missing value
         df_with_nan = data.copy()
         nan_count_per_column = int(noise * len(df_with_nan))
 
         for column in df_with_nan.columns:
-            nan_indices = random.sample(range(len(df_with_nan)),
-                                        nan_count_per_column)
-            df_with_nan.loc[nan_indices, column] = np.nan
-
+            nan_indices = random.sample(range(len(df_with_nan)), nan_count_per_column)
+            if pd.api.types.is_numeric_dtype(df_with_nan[column]):
+                df_with_nan.loc[nan_indices, column] = np.nan
+            else:
+                df_with_nan.loc[nan_indices, column] = cat_missing_value
+                
+        if not is_frame: 
+            df_with_nan = df_with_nan.values 
+            
         return df_with_nan
+
+def _parse_gaussian_noise(noise):
+    """
+    Parses the noise parameter to determine if Gaussian noise should be used
+    and extracts the noise level if specified.
+
+    Parameters
+    ----------
+    noise : str, float, or None
+        The noise parameter to be parsed. Can be a string specifying Gaussian
+        noise with an optional noise level, a float, or None.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - float: The noise level.
+        - bool: Whether Gaussian noise should be used.
+
+    Examples
+    --------
+    >>> from gofast.tools.coreutils import _parse_gaussian_noise
+    >>> _parse_gaussian_noise('0.1gaussian')
+    (0.1, True)
+    >>> _parse_gaussian_noise('gaussian0.1')
+    (0.1, True)
+    >>> _parse_gaussian_noise('gaussian_0.1')
+    (0.1, True)
+    >>> _parse_gaussian_noise('gaussian10%')
+    (0.1, True)
+    >>> _parse_gaussian_noise('gaussian 10 %')
+    (0.1, True)
+    >>> _parse_gaussian_noise(0.05)
+    (0.05, False)
+    >>> _parse_gaussian_noise(None)
+    (0.1, False)
+    >>> _parse_gaussian_noise('invalid')
+    Traceback (most recent call last):
+        ...
+    ValueError: Invalid noise value: invalid
+    """
+    gaussian_noise = False
+    default_noise = 0.1
+
+    if isinstance(noise, str):
+        orig_noise = noise 
+        noise = noise.lower()
+        gaussian_keywords = ["gaussian", "gauss"]
+
+        if any(keyword in noise for keyword in gaussian_keywords):
+            gaussian_noise = True
+            noise = re.sub(r'[^\d.%]', '', noise)  # Remove non-numeric and non-'%' characters
+            noise = re.sub(r'%', '', noise)  # Remove '%' if present
+
+            try:
+                noise_level = float(noise) / 100 if '%' in orig_noise else float(noise)
+                noise = noise_level if noise_level else default_noise
+            except ValueError:
+                noise = default_noise
+
+        else:
+            try:
+                noise = float(noise)
+            except ValueError:
+                raise ValueError(f"Invalid noise value: {noise}")
+    elif noise is None:
+        noise = default_noise
+    
+    noise = validate_noise (noise ) 
+    
+    return noise, gaussian_noise
+
+
+def nan_to_na(
+    data, 
+    cat_missing_value=pd.NA, 
+    nan_spec=np.nan
+    ):
+    """
+    Converts specified NaN values in categorical columns of a pandas 
+    DataFrame or Series to `pd.NA` or another specified missing value.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame or pandas.Series
+        The input DataFrame or Series in which specified NaN values in 
+        categorical columns will be converted.
+        
+    cat_missing_value : scalar, default=pd.NA
+        The value to use for missing data in categorical columns. By 
+        default, `pd.NA` is used. This ensures that categorical columns 
+        do not contain `np.nan` values, which can cause type 
+        inconsistencies.
+
+    nan_spec : scalar, default=np.nan
+        The value that is treated as NaN in the input data. By default, 
+        `np.nan` is used. This allows flexibility in specifying what is 
+        considered as NaN.
+
+    Returns
+    -------
+    pandas.DataFrame or pandas.Series
+        The DataFrame or Series with specified NaN values in categorical 
+        columns converted to the specified missing value.
+
+    Notes
+    -----
+    This function ensures consistency in the representation of missing 
+    values in categorical columns, avoiding issues that arise from the 
+    presence of specified NaN values in such columns.
+
+    The conversion follows the logic:
+    
+    .. math:: 
+        \text{If column is categorical and contains `nan_spec`} 
+        \rightarrow \text{Replace `nan_spec` with `cat_missing_value`}
+
+    Examples
+    --------
+    >>> from gofast.tools.coreutils import nan_to_na
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> df = pd.DataFrame({'A': [1.0, 2.0, np.nan], 'B': ['x', np.nan, 'z']})
+    >>> df['B'] = df['B'].astype('category')
+    >>> df = nan_to_na(df)
+    >>> df
+         A     B
+    0  1.0     x
+    1  2.0  <NA>
+    2  NaN     z
+
+    See Also
+    --------
+    pandas.DataFrame : Two-dimensional, size-mutable, potentially 
+        heterogeneous tabular data.
+    pandas.Series : One-dimensional ndarray with axis labels.
+    numpy.nan : IEEE 754 floating point representation of Not a Number 
+        (NaN).
+
+    References
+    ----------
+    .. [1] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. 
+           (2020). Array programming with NumPy. Nature, 585(7825), 
+           357-362.
+
+    """
+    if not isinstance (data, (pd.Series, pd.DataFrame)): 
+        raise ValueError("Input must be a pandas DataFrame or Series."
+                         f" Got {type(data).__name__!r} instead.")
+        
+    def has_nan_values(series, nan_spec):
+        """Check if nan_spec exists in the series."""
+        return series.isin([nan_spec]).any()
+    
+    if isinstance(data, pd.Series):
+        if has_nan_values(data, nan_spec):
+            if pd.api.types.is_categorical_dtype(data):
+                return data.replace({nan_spec: cat_missing_value})
+        return data
+    
+    elif isinstance(data, pd.DataFrame):
+        df_copy = data.copy()
+        for column in df_copy.columns:
+            if has_nan_values(df_copy[column], nan_spec):
+                if pd.api.types.is_categorical_dtype(df_copy[column]):
+                    df_copy[column] = df_copy[column].replace({nan_spec: cat_missing_value})
+        return df_copy
+
+def validate_noise(noise):
+    """
+    Validates the `noise` parameter and returns either the noise value
+    as a float or the string 'gaussian'.
+
+    Parameters
+    ----------
+    noise : str or float or None
+        The noise parameter to be validated. It can be the string
+        'gaussian', a float value, or None.
+
+    Returns
+    -------
+    float or str
+        The validated noise value as a float or the string 'gaussian'.
+
+    Raises
+    ------
+    ValueError
+        If the `noise` parameter is a string other than 'gaussian' or
+        cannot be converted to a float.
+
+    Examples
+    --------
+    >>> validate_noise('gaussian')
+    'gaussian'
+    >>> validate_noise(0.1)
+    0.1
+    >>> validate_noise(None)
+    None
+    >>> validate_noise('0.2')
+    0.2
+
+    """
+    if isinstance(noise, str):
+        if noise.lower() == 'gaussian':
+            return 'gaussian'
+        else:
+            try:
+                noise = float(noise)
+            except ValueError:
+                raise ValueError("The `noise` parameter accepts the string"
+                                 " 'gaussian' or a float value.")
+    elif noise is not None:
+        noise = validate_ratio(noise, bounds=(0, 1), param_name='noise' )
+        # try:
+        # except ValueError:
+        #     raise ValueError("The `noise` parameter must be convertible to a float.")
+    return noise
 
 def fancier_repr_formatter(obj, max_attrs=7):
     """
@@ -6713,7 +7046,7 @@ def validate_url(url: str) -> bool:
 
 def validate_url_by_validators(url: str):
     """
-    Check if the provided string is a valid URL using `validators` packages
+    Check if the provided string is a valid URL using `validators` packages.
 
     Parameters
     ----------
@@ -7085,7 +7418,7 @@ def format_and_print_dict(data_dict, front_space=4):
 
 
 def fill_nan_in(
-        data: DataFrame, /, method: str = 'constant', 
+        data: DataFrame,  method: str = 'constant', 
         value: Optional[Union[int, float, str]] = 0) -> DataFrame:
     """
     Fills NaN values in a Pandas DataFrame using various methods.
@@ -7585,7 +7918,7 @@ def _process_dataset(dataset, columns):
     else:
         raise ValueError("Dataset must be a pandas.DataFrame or numpy.ndarray.")
 
-def validate_feature(data: Union[DataFrame, Series], /, features: List[str],
+def validate_feature(data: Union[DataFrame, Series],  features: List[str],
                      verbose: str = 'raise') -> bool:
     """
     Validate the existence of specified features in a DataFrame or Series.
@@ -7675,7 +8008,7 @@ def find_features_in(
     features: List[str] = None,
     parse_features: bool = False,
     return_frames: bool = False,
-) -> Tuple[List[str] | DataFrame, List[str] | DataFrame]:
+) -> Tuple[Union[List[str], DataFrame], Union[List[str], DataFrame]]:
     """
     Retrieve the categorical or numerical features from the dataset.
 
@@ -7894,7 +8227,7 @@ def split_train_test_by_id(
     return train_set, test_set
 
 def parallelize_jobs(
-    function: _F[..., Any],
+    function: _F,
     tasks: Sequence[Dict[str, Any]] = (),
     n_jobs: Optional[int] = None,
     executor_type: str = 'process') -> list:
@@ -9146,7 +9479,7 @@ def check_uniform_type(
     allow_mismatch: bool = True,
     infer_types: bool = False,
     comparison_method: str = 'intersection',
-    custom_conversion_func: _F[[Any], Any] = None,
+    custom_conversion_func: _F[Any] = None,
     return_func: bool = False
 ) -> Union[bool, List[type], Tuple[Iterable[Any], List[type]], _F]:
     """
@@ -9202,7 +9535,7 @@ def check_uniform_type(
         - A tuple containing the converted values and their types if `convert_values`
           and `return_types` are both True.
         - a callable encapsulating the specified logic for deferred execution.
-
+        
     Examples
     --------
     >>> from gofast.tools.coreutils import check_uniform_type

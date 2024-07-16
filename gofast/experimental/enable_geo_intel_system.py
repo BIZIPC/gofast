@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Enables GeoIntelligentSystem
+#Created on Sat Feb  7 20:58:51 2024
+# @author: LKouadio <etanoyau@gmail.com>
+
+"""Enables GeoIntelligentSystem.
 
 GeoIntelligentSystem class and its methods are part of an experimental 
 API that is still under development. As such, they may undergo significant 
@@ -12,9 +15,7 @@ as an attribute of the impute module::
     >>> from gofast.experimental import enable_geo_intel_system  # noqa
     >>> # now we can import normally from geo.system
     >>> from gofast.geo  import GeoIntelligentSystem
-    
-Created on Sat Feb  7 20:58:51 2024
-@author: LKouadio <etanoyau@gmail.com>
+
 """
 
 from ..geo.system import GeoIntelligentSystem

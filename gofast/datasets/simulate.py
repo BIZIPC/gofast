@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+Provides functions for simulating synthetic datasets across various domains,
+including environment, energy, customer behavior, and more.
+"""
+
 import inspect 
 import pandas as pd
 import numpy as np
@@ -231,7 +236,8 @@ def simulate_landfill_capacity(
     return manage_data(
          data=landfill_df, as_frame=as_frame, return_X_y=return_X_y,
          target_names=target_name,
-         DESCR=dataset_descr, features_descr= features_descr, 
+         DESCR=dataset_descr, 
+         FDESCR= features_descr, 
          noise=noise_level, 
      )
     
@@ -416,7 +422,7 @@ def simulate_water_reserves(
     return manage_data(
         data=water_reserves_df, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name, noise=noise_level, seed=seed,
-        features_descr=features_descr,
+        FDESCR=features_descr,
         DESCR=dataset_descr,
     )
 
@@ -613,7 +619,7 @@ def simulate_world_mineral_reserves(
     return manage_data(
         data=mineral_reserves_df, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name if target_name else ['quantity'],
-        features_descr= features_descr,
+        FDESCR= features_descr,
         DESCR=dataset_descr, seed=seed,
     )
 
@@ -756,7 +762,8 @@ def simulate_energy_consumption(
     return manage_data(
          data=energy_data, as_frame=as_frame, return_X_y=return_X_y,
          target_names=target_name if target_name else ['energy_consumption_kwh'],
-         DESCR=dataset_descr, features_descr= features_descr, 
+         DESCR=dataset_descr, 
+         FDESCR= features_descr, 
          noise=noise_level, 
      )
 
@@ -879,7 +886,7 @@ def simulate_customer_churn(
     return manage_data(
          data=data, as_frame=as_frame, return_X_y=return_X_y,
          target_names=target_name if target_name else ['churn'],
-         DESCR=dataset_descr, features_descr=features_descr  
+         DESCR=dataset_descr, FDESCR=features_descr  
      )
 
 def simulate_predictive_maintenance(
@@ -1101,7 +1108,7 @@ def simulate_predictive_maintenance(
         data=df, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name if target_name else None,
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr, FDESCR=features_descr  
      )
 
 def simulate_real_estate_price(
@@ -1260,7 +1267,7 @@ def simulate_real_estate_price(
         data=df, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name if target_name else 'price',
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr, FDESCR=features_descr  
     )
 
 def simulate_sentiment_analysis(
@@ -1377,7 +1384,7 @@ def simulate_sentiment_analysis(
         data=data, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name if target_name else "sentiment",
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr, FDESCR=features_descr  
     )
 
 def simulate_weather_forecasting(
@@ -1528,7 +1535,8 @@ def simulate_weather_forecasting(
         data=weather_data, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name if target_name else "temperature_next_day",
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr,
+        FDESCR=features_descr  
     )
 
 
@@ -1718,7 +1726,8 @@ def simulate_default_loan(
         data=data, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name,
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr, 
+        FDESCR=features_descr  
     )
 
 def simulate_traffic_flow(
@@ -1896,7 +1905,8 @@ def simulate_traffic_flow(
         data=data, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name,
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr,
+        FDESCR=features_descr  
     )
 
 def simulate_medical_diagnosis(
@@ -2030,7 +2040,8 @@ def simulate_medical_diagnosis(
         data=df, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name if target_name else "diagnosis",
         seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr, 
+        FDESCR=features_descr  
     )
 
 def simulate_retail_sales(
@@ -2233,7 +2244,8 @@ def simulate_retail_sales(
     return manage_data(
         data=df, as_frame=as_frame, return_X_y=return_X_y,
         target_names=target_name, seed=seed,
-        DESCR=dataset_descr, features_descr=features_descr  
+        DESCR=dataset_descr, 
+        FDESCR=features_descr  
     )
         
         

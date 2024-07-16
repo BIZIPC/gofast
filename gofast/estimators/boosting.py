@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+#   License: BSD-3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
+"""
+`boosting` module provides advanced boosting models for machine learning
+for hybrid boosting approaches in classification and regression tasks.
+"""
 
 from __future__ import annotations 
 import numpy as np

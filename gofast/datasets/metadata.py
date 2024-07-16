@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+Defines metadata structures for simulations, including the Metadata
+class and descriptor.
+"""
 
 from ._globals import RESERVES_DESCR
 
@@ -890,6 +894,1270 @@ DESCR_METADATA={
         )
      }
 
+  }, 
+  "make_social_media_comments": {
+    "overview": (
+        "Generates a synthetic dataset of social media comments, including"
+        " features like comment text, timestamp, username, and number of likes."
+        " This function is designed to create realistic social media data"
+        " for tasks such as natural language processing, sentiment analysis,"
+        " and user behavior studies. The dataset can be customized with"
+        " parameters to control the number of samples, data format, and"
+        " inclusion of noise, providing a versatile tool for simulating"
+        " various social media scenarios. It also supports splitting the"
+        " dataset into training and testing sets, facilitating model"
+        " validation and evaluation. The generated data offers a robust"
+        " foundation for developing and testing algorithms aimed at"
+        " understanding and leveraging social media interactions."
+    ),
+    "features": {
+        "username": (
+            "The username of the commenter. This feature provides a unique"
+            " identifier for each comment and can be used to analyze user"
+            " behavior and engagement patterns."
+        ),
+        "comment": (
+            "The text of the comment. This feature is essential for natural"
+            " language processing tasks, sentiment analysis, and content"
+            " categorization. It represents the core data for understanding"
+            " user opinions and discussions."
+        ),
+        "timestamp": (
+            "The timestamp of the comment, indicating when it was posted."
+            " This feature is crucial for analyzing temporal patterns,"
+            " identifying trends over time, and understanding the timing"
+            " of user interactions."
+        ),
+        "likes": (
+            "The number of likes the comment received. This feature serves as"
+            " a measure of engagement and popularity, helping to identify"
+            " influential comments and users. It's useful for evaluating"
+            " the impact of content and user engagement strategies."
+        ),
+        "future_likes": (
+            "The target variable for predictive models, representing the"
+            " anticipated number of likes a comment will receive. Accurate"
+            " prediction of future likes can inform content optimization,"
+            " engagement strategies, and influence analysis."
+        )
+    }
+  }, 
+  "make_african_demo": {
+    "overview": (
+        "Generates a dataset for African demography from 1960 to the present,"
+        " simulating demographic data for specified African countries over a"
+        " given time period. This function creates realistic demographic data"
+        " including population size, birth rate, death rate, urbanization rate,"
+        " and GDP per capita for each country and year. The generated dataset"
+        " is suitable for simulation and testing purposes, providing a valuable"
+        " resource for demographic studies, economic analysis, and policy planning."
+        " It allows customization of the number of samples, data format, and"
+        " inclusion of noise, supporting diverse analytical scenarios. The dataset"
+        " can be split into training and testing sets, facilitating model"
+        " validation and evaluation in demographic and economic forecasting."
+    ),
+    "features": {
+        "country": (
+            "The name of the country. This feature provides the geographical"
+            " context for the demographic data, allowing for country-specific"
+            " analysis and comparisons."
+        ),
+        "year": (
+            "The year of the demographic data. This feature is essential for"
+            " temporal analysis, enabling the study of trends and changes in"
+            " demographic indicators over time."
+        ),
+        "population": (
+            "The population size of the country for the given year. This"
+            " feature is crucial for understanding the scale of demographic"
+            " phenomena and for calculating per capita metrics."
+        ),
+        "birth_rate": (
+            "The birth rate per 1000 people in the country for the given year."
+            " This feature is important for analyzing population growth and"
+            " fertility trends."
+        ),
+        "death_rate": (
+            "The death rate per 1000 people in the country for the given year."
+            " This feature is key to understanding mortality trends and public"
+            " health conditions."
+        ),
+        "urbanization_rate": (
+            "The percentage of the population living in urban areas for the"
+            " given year. This feature helps in studying urbanization trends"
+            " and their impact on economic and social structures."
+        ),
+        "gdp_per_capita": (
+            "The GDP per capita in USD for the country for the given year."
+            " This feature is vital for economic analysis, providing insights"
+            " into the economic well-being and development of the population."
+        )
+    }
+}, "make_agronomy_feedback": {
+    "overview": (
+        "Generates an agronomy dataset including information about crop cultivation"
+        " and pesticide usage. This function creates a DataFrame with data for multiple"
+        " farms over several years, providing details about the type of crop grown,"
+        " soil pH, temperature, rainfall, types and amounts of pesticides used, and"
+        " crop yield. The generated dataset is intended for simulation or testing"
+        " purposes only, offering a valuable resource for agricultural research,"
+        " environmental studies, and predictive modeling. The dataset can be"
+        " customized with parameters to control the number of samples, data format,"
+        " and inclusion of noise, supporting a wide range of analytical scenarios."
+        " It also supports splitting the dataset into training and testing sets,"
+        " facilitating model validation and evaluation in agronomic research and"
+        " precision agriculture."
+    ),
+    "features": {
+        "farm_id": (
+            "A unique identifier for each farm entry in the dataset. This feature"
+            " helps in distinguishing data from different farms, allowing for"
+            " farm-specific analysis and comparisons."
+        ),
+        "year": (
+            "The year for which the agronomic data is recorded. This feature is"
+            " essential for temporal analysis, enabling the study of trends and"
+            " changes in agricultural practices and outcomes over time."
+        ),
+        "crop": (
+            "The type of crop grown. This feature provides information on the"
+            " diversity of crops cultivated, supporting studies on crop performance,"
+            " crop rotation, and agricultural biodiversity."
+        ),
+        "soil_ph": (
+            "The pH value of the soil. This feature is crucial for understanding"
+            " soil health and its impact on crop growth, enabling the optimization"
+            " of soil conditions for better crop yields."
+        ),
+        "temperature": (
+            "The average annual temperature in Celsius. This feature helps in"
+            " analyzing the impact of climatic conditions on crop growth and"
+            " yield, supporting research on climate change and agriculture."
+        ),
+        "rainfall": (
+            "The annual rainfall in millimeters. This feature is important for"
+            " understanding the water availability for crops, aiding in irrigation"
+            " planning and drought impact studies."
+        ),
+        "pesticide_type": (
+            "The type of pesticide used. This feature provides information on"
+            " pest management practices, supporting studies on pesticide efficacy"
+            " and environmental impact."
+        ),
+        "pesticide_amount": (
+            "The amount of pesticide used in kilograms per hectare. This feature"
+            " helps in analyzing the relationship between pesticide usage and"
+            " crop yield, as well as assessing the environmental impact of"
+            " pesticide application."
+        ),
+        "crop_yield": (
+            "The crop yield in kilograms per hectare. This feature is the target"
+            " variable for predictive models, representing the productivity of"
+            " the agricultural practices and conditions. Accurate prediction"
+            " of crop yield is essential for food security, economic planning,"
+            " and sustainable agriculture."
+        )
+    }
+}, 
+    "make_mining_ops": {
+    "overview": (
+        "Generates a dataset for mining operations, simulating various aspects"
+        " of a mining site. The dataset includes geospatial coordinates for"
+        " drilling, types and concentrations of ore, details of drilling and"
+        " blasting operations, information about mining equipment, and daily"
+        " production figures. This synthetic data is intended for simulation"
+        " or testing purposes, providing a realistic but simplified representation"
+        " of mining activities. The data helps in analyzing the spatial"
+        " distribution of resources, evaluating operational efficiency, and"
+        " planning extraction strategies. Users can customize the number of"
+        " samples, data format, and inclusion of noise, supporting diverse"
+        " analytical scenarios. The dataset can also be split into training and"
+        " testing sets, facilitating model validation and evaluation in mining"
+        " operations research and optimization."
+    ),
+    "features": {
+        "easting": (
+            "Represents the eastward measurement (in meters) in a geospatial"
+            " coordinate system. It is often used in conjunction with northing"
+            " to pinpoint locations in a mining area. This feature is crucial"
+            " for spatial analysis and planning of drilling and extraction"
+            " activities."
+        ),
+        "northing": (
+            "Represents the northward measurement (in meters) in the geospatial"
+            " coordinate system. Together with easting, it provides precise"
+            " locations for drilling and other mining activities, aiding in"
+            " spatial planning and resource allocation."
+        ),
+        "depth": (
+            "The depth (in meters) at which the mining or drilling operation"
+            " is taking place. This feature is vital for understanding the"
+            " vertical distribution of resources and planning the depth of"
+            " drilling operations."
+        ),
+        "ore_type": (
+            "The type of ore being mined or surveyed. Different ore types (e.g.,"
+            " Type1, Type2, Type3) might have different mineral compositions"
+            " and economic values. This feature is essential for resource"
+            " classification and economic valuation."
+        ),
+        "ore_concentration": (
+            "The percentage concentration of the ore in a given sample. Higher"
+            " concentrations often indicate more valuable mining sites. This"
+            " feature is crucial for assessing the quality of the ore and"
+            " determining the feasibility of mining operations."
+        ),
+        "drill_diameter": (
+            "The diameter of the drill bit used in drilling operations, measured"
+            " in millimeters. This affects the size of the drill hole and is"
+            " selected based on the mining requirements. This feature is important"
+            " for planning the drilling process and ensuring operational efficiency."
+        ),
+        "blast_hole_depth": (
+            "The depth of the blast holes used in blasting operations, measured"
+            " in meters. This depth is a crucial factor in determining the"
+            " effectiveness of blasting. It helps in planning the blasting"
+            " operations to achieve optimal fragmentation and minimize waste."
+        ),
+        "explosive_type": (
+            "The type of explosive material used in blasting. Different explosives"
+            " (e.g., Explosive1, Explosive2, Explosive3) have varying strengths"
+            " and are chosen based on the blasting requirements. This feature"
+            " is important for ensuring the safety and effectiveness of blasting."
+        ),
+        "explosive_amount": (
+            "The amount of explosive used per blast, measured in kilograms. This"
+            " quantity is critical for ensuring the blast is effective yet safe."
+            " It helps in planning the blasting operations to achieve desired"
+            " fragmentation with minimal environmental impact."
+        ),
+        "equipment_type": (
+            "The type of equipment being used in the mining operation (e.g.,"
+            " Excavator, Drill, Loader, Truck). Different equipment is used"
+            " for different phases of mining. This feature helps in analyzing"
+            " the utilization and efficiency of various mining equipment."
+        ),
+        "equipment_age": (
+            "The age of the equipment being used, in years. Older equipment might"
+            " be less efficient or more prone to breakdowns. This feature is"
+            " important for maintenance planning and evaluating the impact of"
+            " equipment age on operational efficiency."
+        ),
+        "daily_production": (
+            "The amount of material (in tonnes) produced by the mining operation"
+            " each day. This is a direct measure of mining productivity and is"
+            " crucial for assessing the performance and profitability of the"
+            " mining operation."
+        )
+    }
+}, 
+    "make_sounding": {
+    "overview": (
+        "Generates a complex dataset for geophysical sounding, typically used"
+        " in Electrical Resistivity Tomography (ERT) or seismic surveys. This"
+        " function creates a DataFrame with data for multiple survey points,"
+        " each consisting of a specified number of subsurface layers. For each"
+        " layer, the function simulates key geophysical properties such as"
+        " layer depth, electrical resistivity, and seismic wave velocity. The"
+        " dataset is ideal for simulations or testing algorithms related to"
+        " geophysical sounding analysis. It provides a realistic yet simplified"
+        " representation of subsurface properties, aiding in the development"
+        " and validation of geophysical models and interpretation techniques."
+    ),
+    "features": {
+        "survey_point_id": (
+            "A unique identifier for each survey point. This feature helps"
+            " distinguish data from different survey locations, allowing for"
+            " point-specific analysis and comparisons."
+        ),
+        "layer_depth": (
+            "The depth of each subsurface layer in meters. This feature is"
+            " crucial for understanding the vertical distribution of geophysical"
+            " properties and is essential for constructing subsurface models."
+        ),
+        "resistivity": (
+            "The electrical resistivity of each layer in ohm-meters. This key"
+            " parameter is used in ERT surveys to characterize subsurface"
+            " materials. Higher resistivity values typically indicate less"
+            " conductive materials such as rock, while lower values suggest"
+            " more conductive materials like water-saturated soil."
+        ),
+        "seismic_velocity": (
+            "The seismic wave velocity through each layer in meters per second."
+            " This parameter is often measured in seismic refraction surveys to"
+            " determine the mechanical properties of subsurface materials. Faster"
+            " velocities generally indicate denser, more rigid materials."
+        )
+    }
+}, 
+    "make_medical_diagnosis": {
+    "overview": (
+        "Generates a comprehensive medical dataset with a diverse set of features,"
+        " including demographic information, vital signs, laboratory test results,"
+        " medical history, lifestyle factors, and more. This function creates a"
+        " DataFrame with data for multiple patients, simulating a wide range of"
+        " medical scenarios. The generated data is intended for simulation or"
+        " testing purposes only, providing a realistic yet simplified representation"
+        " of patient health data. In real-world scenarios, medical datasets are"
+        " subject to strict privacy regulations and must be handled with care."
+        " This dataset can be used to develop and test algorithms for medical"
+        " diagnosis, predictive modeling, and health informatics research."
+    ),
+    "features": {
+        "age": (
+            "The age of the patient in years. This feature is crucial for"
+            " understanding age-related health trends and risk factors."
+        ),
+        "gender": (
+            "The gender of the patient (Male or Female). Gender-specific analysis"
+            " can reveal differences in health conditions and treatment responses."
+        ),
+        "ethnicity": (
+            "The ethnicity of the patient. This feature helps in studying"
+            " health disparities and the impact of genetic and cultural factors"
+            " on health."
+        ),
+        "weight": (
+            "The weight of the patient in kilograms. Weight is an important"
+            " indicator of health and is used to calculate BMI and assess"
+            " nutritional status."
+        ),
+        "height": (
+            "The height of the patient in centimeters. Combined with weight,"
+            " height is used to calculate BMI, which is a key indicator of"
+            " overall health."
+        ),
+        "systolic": (
+            "The systolic blood pressure of the patient in mmHg. High systolic"
+            " blood pressure is a major risk factor for cardiovascular diseases."
+        ),
+        "diastolic": (
+            "The diastolic blood pressure of the patient in mmHg. Both systolic"
+            " and diastolic blood pressure values are important for diagnosing"
+            " hypertension."
+        ),
+        "heart_rate": (
+            "The heart rate of the patient in beats per minute. Heart rate is a"
+            " vital sign that indicates the heart's health and function."
+        ),
+        "temperature": (
+            "The body temperature of the patient in Celsius. Abnormal temperatures"
+            " can indicate infections or other medical conditions."
+        ),
+        "blood_sugar": (
+            "The blood sugar level of the patient in mg/dL. Blood sugar levels"
+            " are crucial for diagnosing and managing diabetes."
+        ),
+        "cholesterol": (
+            "The cholesterol level of the patient in mg/dL. High cholesterol"
+            " levels are a risk factor for cardiovascular diseases."
+        ),
+        "hemoglobin": (
+            "The hemoglobin level of the patient in g/dL. Hemoglobin is essential"
+            " for oxygen transport in the blood, and its levels can indicate"
+            " anemia or other blood disorders."
+        ),
+        "history_of_diabetes": (
+            "A binary flag indicating whether the patient has a history of"
+            " diabetes (1) or not (0). This feature helps in understanding"
+            " the patient's medical background and risk factors."
+        ),
+        "history_of_hypertension": (
+            "A binary flag indicating whether the patient has a history of"
+            " hypertension (1) or not (0). Hypertension is a common and serious"
+            " health condition that needs to be monitored."
+        ),
+        "history_of_heart_disease": (
+            "A binary flag indicating whether the patient has a history of"
+            " heart disease (1) or not (0). This information is crucial for"
+            " cardiovascular risk assessment."
+        ),
+        "respiratory_rate": (
+            "The respiratory rate of the patient in breaths per minute. Respiratory"
+            " rate is a vital sign that indicates respiratory function."
+        ),
+        "oxygen_saturation": (
+            "The oxygen saturation level of the patient in percentage. It measures"
+            " the efficiency of oxygen transport in the blood."
+        ),
+        "pain_score": (
+            "A subjective pain score provided by the patient on a scale from 0 to 10."
+            " Pain scores help in assessing the patient's discomfort and need for pain management."
+        ),
+        "alt_levels": (
+            "Alanine aminotransferase (ALT) levels in U/L. ALT is an enzyme found"
+            " in the liver and is a marker of liver function."
+        ),
+        "creatinine_levels": (
+            "Creatinine levels in mg/dL. Creatinine is a waste product measured"
+            " to assess kidney function."
+        ),
+        "wbc_count": (
+            "White blood cell (WBC) count in x10^3/uL. WBC count is a key indicator"
+            " of the immune system's health."
+        ),
+        "bmi": (
+            "Body Mass Index (BMI) calculated from height and weight. BMI is used"
+            " to classify underweight, normal weight, overweight, and obesity."
+        ),
+        "daily_caloric_intake": (
+            "The estimated daily caloric intake of the patient. This information"
+            " is useful for assessing nutritional status and dietary habits."
+        ),
+        "dietary_restrictions": (
+            "A binary flag indicating whether the patient has dietary restrictions (1)"
+            " or not (0). Dietary restrictions can be due to allergies, health conditions,"
+            " or personal choices."
+        ),
+        "physical_activity_level": (
+            "The level of physical activity of the patient (sedentary, light,"
+            " moderate, high). Physical activity levels are important for"
+            " understanding lifestyle and its impact on health."
+        ),
+        "smoking_status": (
+            "A binary flag indicating whether the patient smokes (1) or not (0)."
+            " Smoking status is a major risk factor for various diseases."
+        ),
+        "alcohol_consumption": (
+            "A binary flag indicating whether the patient consumes alcohol (1) or not (0)."
+            " Alcohol consumption can impact liver function and overall health."
+        ),
+        "stress_level": (
+            "A subjective stress level reported by the patient on a scale from 0 to 10."
+            " Stress levels can affect both mental and physical health."
+        ),
+        "sleep_hours_per_night": (
+            "The average number of hours the patient sleeps per night. Adequate"
+            " sleep is essential for health and well-being."
+        ),
+        "mental_health_status": (
+            "A binary flag indicating whether the patient has a common mental health"
+            " condition (1) or not (0). This feature is important for assessing"
+            " overall health and treatment needs."
+        ),
+        "history_of_chronic_diseases": (
+            "A binary flag indicating whether the patient has a history of chronic"
+            " diseases (1) or not (0). Chronic diseases require long-term management."
+        ),
+        "number_of_surgeries": (
+            "The number of surgeries the patient has undergone. This information"
+            " is relevant for understanding the patient's medical history."
+        ),
+        "family_history_of_major_diseases": (
+            "A binary flag indicating whether there is a family history of major"
+            " diseases (1) or not (0). Family history is a significant risk factor."
+        ),
+        "number_of_current_medications": (
+            "The number of medications the patient is currently taking. This feature"
+            " helps in understanding the patient's ongoing treatments."
+        ),
+        "allergy_flags": (
+            "A binary flag indicating whether the patient has allergies (1) or not (0)."
+            " Allergies can affect treatment plans and lifestyle."
+        ),
+        "employment_status": (
+            "A binary flag indicating whether the patient is employed (1) or not (0)."
+            " Employment status can impact access to healthcare and stress levels."
+        ),
+        "living_situation": (
+            "The patient's living situation (alone, with family, in a care facility)."
+            " Living situation can affect health outcomes and support systems."
+        ),
+        "access_to_healthcare": (
+            "A binary flag indicating whether the patient has access to healthcare (1)"
+            " or not (0). Access to healthcare is crucial for disease prevention and management."
+        ),
+        "flu_vaccine": (
+            "A binary flag indicating whether the patient received the flu vaccine (1)"
+            " or not (0). Vaccination status is important for understanding susceptibility to illnesses."
+        ),
+        "covid_19_vaccine": (
+            "A binary flag indicating whether the patient received the COVID-19 vaccine (1)"
+            " or not (0). This feature is relevant for assessing immunity and public health."
+        ),
+        "other_vaccines": (
+            "A binary flag indicating whether the patient received other vaccines (1)"
+            " or not (0). Vaccination status can impact overall health and disease prevention."
+        )
+    }
+}, 
+    "make_well_logging": {
+    "overview": (
+        "Generates a synthetic dataset for geophysical well logging, commonly used"
+        " in subsurface geological investigations. This function creates a DataFrame"
+        " that simulates typical well logging measurements taken at specified depth"
+        " intervals. The dataset includes key geophysical parameters such as gamma-ray,"
+        " resistivity, neutron porosity, and bulk density. These measurements are"
+        " essential for characterizing subsurface formations and are widely used in"
+        " the oil and gas industry, hydrogeology, and environmental studies. The"
+        " generated data is random and should be used for simulation or testing purposes"
+        " only. It provides a realistic yet simplified representation of well logging"
+        " data, supporting the development and validation of algorithms for geophysical"
+        " analysis and interpretation."
+    ),
+    "features": {
+        "depth": (
+            "The depth at which the measurements are taken, in meters. This feature"
+            " is crucial for understanding the vertical distribution of geophysical"
+            " properties and correlating them with subsurface formations."
+        ),
+        "gamma_ray": (
+            "The gamma-ray measurement in API units. Gamma-ray logs measure the natural"
+            " radioactivity of the formations and are used to distinguish between"
+            " shales and non-shales. High gamma-ray values typically indicate the presence"
+            " of shale, while lower values suggest cleaner formations like sandstones or"
+            " carbonates."
+        ),
+        "resistivity": (
+            "The resistivity measurement in ohm-meters. Resistivity logs measure the"
+            " electrical resistance of the formations and are used to identify the presence"
+            " of hydrocarbons, as water-bearing formations tend to have lower resistivity"
+            " compared to hydrocarbon-bearing formations."
+        ),
+        "neutron_porosity": (
+            "The neutron porosity measurement as a percentage. Neutron porosity logs"
+            " estimate the hydrogen content of the formations, which is related to their"
+            " porosity. High neutron porosity values indicate high porosity formations,"
+            " which are potential reservoirs for fluids."
+        ),
+        "density": (
+            "The bulk density measurement in grams per cubic centimeter (g/cm³). Density"
+            " logs provide information about the density of the formations, which helps in"
+            " determining their lithology and porosity. Lower density values indicate less"
+            " dense formations like sandstones, while higher values suggest denser formations"
+            " like limestones or dolomites."
+        )
+    }
+}, 
+    "make_ert": {
+    "overview": (
+        "Generates a synthetic dataset for electrical resistivity tomography (ERT),"
+        " simulating typical measurements used in geophysical surveys. The dataset"
+        " includes electrode positions, cable lengths, resistivity measurements, and"
+        " battery voltages depending on the specified equipment type. This function"
+        " supports different types of ERT equipment, such as 'SuperSting R8', 'Ministing"
+        " or Sting R1', and 'OhmMapper', each with its own characteristics reflected in"
+        " the generated data. The synthetic data is intended for simulation or testing"
+        " purposes, providing a realistic but simplified representation of ERT survey"
+        " data. It helps in developing and testing algorithms for geophysical analysis,"
+        " data interpretation, and subsurface characterization."
+    ),
+    "features": {
+        "electrode_position": (
+            "The position of the electrode in meters. Electrode positions are crucial"
+            " for mapping the subsurface resistivity distribution and are used in the"
+            " inversion process to create resistivity models."
+        ),
+        "cable_length": (
+            "The length of the cable connecting the electrodes, measured in meters."
+            " Cable lengths can vary based on the survey configuration and influence"
+            " the depth of investigation and resolution of the ERT survey."
+        ),
+        "resistivity": (
+            "The resistivity measurement in ohm-meters. This key parameter indicates"
+            " the subsurface material's ability to resist electrical current. Low resistivity"
+            " values typically indicate conductive materials such as clays or water-saturated"
+            " zones, while high resistivity values suggest resistive materials like bedrock."
+        ),
+        "battery_voltage": (
+            "The voltage of the battery used in the ERT equipment, measured in volts."
+            " This feature is relevant for equipment types that require a power source,"
+            " such as 'SuperSting R8' and 'Ministing or Sting R1'. Battery voltage can"
+            " affect the strength of the current injected into the ground and, consequently,"
+            " the quality of the resistivity measurements."
+        ),
+        "equipment_type": (
+            "The type of ERT equipment used for the survey. This feature indicates"
+            " the specific equipment model, such as 'SuperSting R8', 'Ministing or Sting R1',"
+            " or 'OhmMapper'. Different equipment types have unique characteristics and"
+            " operational parameters, which are reflected in the generated dataset."
+        )
+    }
+}, 
+    "make_tem": {
+    "overview": (
+        "Generates a synthetic dataset for Transient Electromagnetic (TEM) surveys,"
+        " simulating typical measurements used in geophysical exploration. The dataset"
+        " includes geospatial coordinates (latitude and longitude), time intervals after"
+        " the electromagnetic pulse, TEM measurements, and equipment types. This synthetic"
+        " data is intended for simulation or testing purposes, providing a realistic but"
+        " simplified representation of TEM survey data. It helps in developing and testing"
+        " algorithms for geophysical analysis, data interpretation, and subsurface"
+        " characterization. The equipment type parameter allows you to specify the type of"
+        " TEM equipment, and the generated dataset reflects characteristics that might be"
+        " associated with that equipment."
+    ),
+    "features": {
+        "latitude": (
+            "The latitude of the survey location in degrees. This feature is crucial for"
+            " mapping the geospatial distribution of the TEM measurements and correlating"
+            " them with geological formations."
+        ),
+        "longitude": (
+            "The longitude of the survey location in degrees. Together with latitude, it"
+            " provides the precise geospatial coordinates of the survey points, essential"
+            " for spatial analysis and mapping."
+        ),
+        "time": (
+            "The time interval in milliseconds after the electromagnetic pulse. This"
+            " feature is critical for TEM surveys as it determines the decay of the induced"
+            " electromagnetic field, which is used to infer subsurface conductivity."
+        ),
+        "tem_measurement": (
+            "The TEM measurement in arbitrary units. This key parameter represents the"
+            " response of the subsurface to the transient electromagnetic field, providing"
+            " information about subsurface conductivity structures."
+        ),
+        "equipment_type": (
+            "The type of TEM equipment used for the survey. This feature indicates the"
+            " specific equipment model, such as 'Stratagem EH5-Geometric', 'IRIS Remote"
+            " Field Probes', 'Phoenix Atlas RTM System', or 'Zonge GDP 24-bit Receiver'."
+            " Different equipment types have unique characteristics and operational"
+            " parameters, which are reflected in the generated dataset."
+        )
+    }
+}, 
+    "make_erp": {
+    "overview": (
+        "Generates a synthetic dataset for geophysical analysis with features including"
+        " easting, northing, longitude, latitude, positions, step, and resistivity values."
+        " This function simulates geospatial data typically used in geophysical surveys,"
+        " providing a realistic yet simplified representation for testing and simulation"
+        " purposes. The dataset includes random values for resistivity within a specified"
+        " range, along with sequential survey data such as positions and steps. The easting"
+        " and northing values are derived from the latitude and longitude values for simplicity."
+        " This synthetic data helps in developing and testing algorithms for geospatial"
+        " analysis, subsurface mapping, and resistivity surveys."
+    ),
+    "features": {
+        "easting": (
+            "The easting coordinate in meters, derived from the longitude values."
+            " This feature represents the eastward distance in the coordinate system,"
+            " essential for geospatial mapping and analysis."
+        ),
+        "northing": (
+            "The northing coordinate in meters, derived from the latitude values."
+            " This feature represents the northward distance in the coordinate system,"
+            " crucial for spatial analysis and subsurface mapping."
+        ),
+        "longitude": (
+            "The longitude of the survey location in degrees. Longitude, together with"
+            " latitude, provides the geospatial coordinates of the survey points, essential"
+            " for accurate mapping and analysis of the survey area."
+        ),
+        "latitude": (
+            "The latitude of the survey location in degrees. Latitude is used along with"
+            " longitude to pinpoint the exact location of the survey points on the Earth's"
+            " surface, aiding in spatial correlation of resistivity measurements."
+        ),
+        "position": (
+            "A sequential position identifier for each survey point. This feature helps in"
+            " maintaining the order of the survey points, which is important for understanding"
+            " the progression of the survey and the spatial distribution of measurements."
+        ),
+        "step": (
+            "The step size between survey points, represented as an integer. Step sizes can"
+            " vary between survey points and are important for understanding the resolution"
+            " and coverage of the survey."
+        ),
+        "resistivity": (
+            "The resistivity measurement in ohm-meters. Resistivity is a key geophysical parameter"
+            " that indicates the subsurface material's ability to resist electrical current. Low"
+            " resistivity values typically indicate conductive materials like clays or water-saturated"
+            " zones, while high resistivity values suggest resistive materials like bedrock."
+        )
+    }
+}, 
+    
+    "make_elogging": {
+    "overview": (
+        "Generates a dataset of simulated logging data, commonly used for"
+        " monitoring and debugging applications. The dataset includes"
+        " timestamps, log levels, and log messages, providing a realistic"
+        " representation of logging events over a specified time period."
+        " This synthetic data is ideal for testing logging systems, analyzing"
+        " log patterns, and developing log management tools. Users can specify"
+        " the number of log entries, the date range, and the log levels to"
+        " tailor the dataset to their needs. The generated data helps in"
+        " understanding the distribution of log levels, identifying anomalies,"
+        " and testing log analysis algorithms."
+    ),
+    "features": {
+        "timestamp": (
+            "The timestamp of the log entry, indicating when the log event occurred."
+            " Timestamps are generated randomly within the specified date range,"
+            " providing a temporal context for the log entries. This feature is"
+            " essential for analyzing the time-based patterns and frequency of log events."
+        ),
+        "log_level": (
+            "The severity level of the log entry. Log levels are randomly selected"
+            " from a predefined list (e.g., 'INFO', 'DEBUG', 'WARNING', 'ERROR', 'CRITICAL')."
+            " Each log level indicates the importance and type of the log message, helping"
+            " in categorizing and prioritizing log entries for analysis and debugging."
+        ),
+        "message": (
+            "The log message associated with the log entry. Messages are generated"
+            " based on the log level, providing a description of the event. This feature"
+            " helps in understanding the context and content of the log entries, which"
+            " is crucial for debugging and monitoring purposes."
+        )
+    }
+}, 
+    
+    "make_gadget_sales": {
+    "overview": (
+        "Generates a dataset of gadget sales data, specifically targeting the period"
+        " immediately following the Christmas holiday. The dataset includes sales data"
+        " for various gadgets purchased by girls and boys, providing insights into"
+        " post-holiday shopping behavior. The generated data includes sales dates,"
+        " types of gadgets sold, gender of the purchasers, and the number of units sold."
+        " This synthetic data is useful for analyzing sales trends, customer preferences,"
+        " and inventory management strategies. It can be customized to fit different"
+        " date ranges and sample sizes, making it a versatile tool for retail analytics"
+        " and market research."
+    ),
+    "features": {
+        "sale_date": (
+            "The date when the gadget was sold. This feature provides temporal context"
+            " for sales data, allowing for the analysis of sales trends over the specified"
+            " period. The sales dates are randomly distributed within the given date range."
+        ),
+        "gadget": (
+            "The type of gadget sold. This feature includes categories such as 'Smartphone',"
+            " 'Tablet', 'Laptop', 'Smartwatch', and 'Headphones'. It helps in identifying"
+            " which types of gadgets were more popular among different genders and at different"
+            " times."
+        ),
+        "gender": (
+            "The gender of the purchaser, either 'Girl' or 'Boy'. This feature is essential"
+            " for understanding gender-specific purchasing behavior and preferences, which"
+            " can inform targeted marketing strategies."
+        ),
+        "units_sold": (
+            "The number of units sold in each transaction. This feature indicates the quantity"
+            " of gadgets purchased in a single sale, which is useful for inventory management"
+            " and understanding the scale of individual transactions."
+        )
+    }
+}, 
+   "make_retail_store": {
+    "overview": (
+        "Generates a synthetic dataset simulating customer data for a"
+        " retail store. The dataset includes a mix of numerical and"
+        " categorical features, such as age, income, shopping frequency,"
+        " last purchase amount, and preferred shopping category."
+        " Additionally, it includes a binary target variable indicating"
+        " whether the customer is likely to respond to a new marketing"
+        " campaign. This dataset captures a blend of linear and non-linear"
+        " relationships between the features and the target variable,"
+        " making it suitable for testing various machine learning algorithms,"
+        " particularly those used for classification tasks. This synthetic"
+        " data provides a realistic yet simplified representation of retail"
+        " customer behavior, useful for developing and evaluating predictive"
+        " models in marketing and retail analytics."
+    ),
+    "features": {
+        "age": (
+            "The age of the customer in years. This numerical feature helps"
+            " in understanding the demographic distribution of the customer"
+            " base and its impact on shopping behavior and responsiveness"
+            " to marketing campaigns."
+        ),
+        "income": (
+            "The annual income of the customer in USD. This numerical feature"
+            " is crucial for analyzing the economic status of customers, which"
+            " significantly influences their purchasing power and shopping"
+            " habits."
+        ),
+        "shopping_frequency": (
+            "The number of times the customer shops at the store per month."
+            " This numerical feature provides insights into customer loyalty"
+            " and engagement, which are key indicators of customer satisfaction"
+            " and retention."
+        ),
+        "last_purchase_amount": (
+            "The amount spent by the customer on their last purchase in USD."
+            " This numerical feature helps in understanding the spending"
+            " behavior of customers, which can vary based on their preferences"
+            " and financial capability."
+        ),
+        "preferred_category": (
+            "The preferred shopping category of the customer, represented"
+            " as a categorical feature. Possible values include 'Electronics',"
+            " 'Fashion', 'Home & Garden', 'Sports', and 'Health & Beauty'."
+            " This feature provides insights into customer preferences and"
+            " helps in segmenting the market based on product interest."
+        ),
+        "likely_to_respond": (
+            "A binary target variable indicating whether the customer is"
+            " likely to respond to a new marketing campaign (1) or not (0)."
+            " This feature is essential for predictive modeling tasks aimed"
+            " at identifying potential customers for targeted marketing"
+            " efforts."
+        )
+    }
+}, 
+   
+   "make_cc_factors": {
+    "overview": (
+        "Generates a synthetic dataset simulating various factors contributing"
+        " to climate change and their respective feedback mechanisms. The dataset"
+        " includes a range of features representing key drivers of climate change,"
+        " such as greenhouse gas emissions, deforestation, fossil fuel usage, and"
+        " more. Additionally, it includes a binary target variable indicating"
+        " whether the overall effect of these factors results in a positive or"
+        " negative climate feedback. This dataset is useful for exploring data"
+        " analysis, preprocessing, and machine learning techniques in the context"
+        " of environmental studies. It provides a realistic yet simplified"
+        " representation of the complex interplay of factors influencing climate"
+        " change, making it suitable for educational purposes, algorithm testing,"
+        " and model development."
+    ),
+    "features": {
+        "ghg": (
+            "Greenhouse Gas Emissions (CO2, Methane, Nitrous Oxide): This feature"
+            " represents the emission levels of key greenhouse gases, which are"
+            " primary contributors to global warming and climate change."
+        ),
+        "def_land": (
+            "Deforestation and Land Use Changes: This feature captures the extent"
+            " of deforestation and changes in land use, which can lead to increased"
+            " carbon emissions and loss of biodiversity."
+        ),
+        "fossil_fuels": (
+            "Burning of Fossil Fuels (Coal, Oil, Natural Gas): This feature"
+            " measures the consumption of fossil fuels, a major source of"
+            " carbon dioxide emissions and air pollution."
+        ),
+        "indust_proc": (
+            "Industrial Processes and Manufacturing: This feature represents"
+            " emissions and pollutants resulting from industrial activities and"
+            " manufacturing processes."
+        ),
+        "agri_livestock": (
+            "Agriculture and Livestock Farming (Methane from Cattle): This"
+            " feature accounts for methane emissions from livestock and other"
+            " agricultural activities, contributing to climate change."
+        ),
+        "transport": (
+            "Transportation (Road, Air, Maritime): This feature includes emissions"
+            " from various modes of transportation, which are significant sources"
+            " of greenhouse gases."
+        ),
+        "energy_prod": (
+            "Energy Production and Consumption: This feature captures the emissions"
+            " and environmental impact of energy production and consumption,"
+            " including renewable and non-renewable sources."
+        ),
+        "urban_infra": (
+            "Urbanization and Infrastructure Development: This feature measures"
+            " the impact of urbanization and infrastructure projects on the"
+            " environment, including increased emissions and habitat disruption."
+        ),
+        "waste_mgmt": (
+            "Waste Management and Landfills: This feature represents the emissions"
+            " and environmental impact of waste management practices and landfills."
+        ),
+        "melt_polar": (
+            "Melting of Polar Ice Caps and Glaciers: This feature captures the"
+            " extent of ice melt in polar regions, contributing to sea-level rise"
+            " and climate change."
+        ),
+        "chg_land_albedo": (
+            "Changes in Land Surface Albedo: This feature measures the changes in"
+            " the Earth's surface reflectivity due to land use changes, affecting"
+            " the planet's energy balance."
+        ),
+        "solar_irr": (
+            "Solar Irradiance and Variability: This feature represents the"
+            " variations in solar energy received by the Earth, influencing"
+            " climate patterns."
+        ),
+        "aerosols": (
+            "Aerosols and Particulate Matter in the Atmosphere: This feature"
+            " includes the concentration of aerosols and particulate matter,"
+            " which can impact climate by reflecting sunlight and modifying clouds."
+        ),
+        "ozone_depl": (
+            "Ozone Depletion in the Stratosphere: This feature measures the"
+            " reduction of ozone in the stratosphere, which can affect climate"
+            " and increase UV radiation reaching the Earth's surface."
+        ),
+        "chg_ocean_circ": (
+            "Changes in Ocean Circulation and Currents: This feature captures"
+            " alterations in ocean currents and circulation patterns, which can"
+            " influence global climate and weather systems."
+        ),
+        "ocean_acid": (
+            "Ocean Acidification due to CO2 Absorption: This feature measures"
+            " the acidification of oceans as they absorb increased levels of CO2,"
+            " affecting marine life and ecosystems."
+        ),
+        "permafrost": (
+            "Permafrost Thawing and Release of Methane: This feature represents"
+            " the thawing of permafrost regions and the subsequent release of"
+            " methane, a potent greenhouse gas."
+        ),
+        "chg_atm_water": (
+            "Changes in Atmospheric Water Vapor: This feature measures variations"
+            " in atmospheric water vapor, which can amplify climate change through"
+            " the greenhouse effect."
+        ),
+        "land_deg_soil_erosion": (
+            "Land Degradation and Soil Erosion: This feature captures the extent"
+            " of land degradation and soil erosion, which can reduce agricultural"
+            " productivity and contribute to climate change."
+        ),
+        "human_act_biodiv": (
+            "Human Activities Impacting Biodiversity: This feature measures the"
+            " impact of human activities on biodiversity, including habitat loss"
+            " and species extinction."
+        ),
+        "nat_disasters": (
+            "Natural Disasters (Floods, Hurricanes, Wildfires): This feature"
+            " includes the frequency and intensity of natural disasters, which"
+            " are influenced by and can further exacerbate climate change."
+        ),
+        "feedbacks": (
+            "Feedback Mechanisms (Positive/Negative Climate Feedbacks): This"
+            " binary target variable indicates whether the overall effect of the"
+            " factors results in positive (1) or negative (0) climate feedback."
+            " Positive feedbacks amplify climate change effects, while negative"
+            " feedbacks mitigate them."
+        )
+    }
+}, 
+   
+   "make_water_demand": {
+    "overview": (
+        "Generates a synthetic dataset simulating water demand needs across"
+        " various sectors and regions. The dataset includes features"
+        " representing agricultural, industrial, domestic, and municipal water"
+        " demands, among others. Additionally, it incorporates categorical"
+        " features such as ethnicity, economic status, region, and challenges"
+        " related to Sustainable Development Goal 6 (SDG6), which focuses on"
+        " clean water and sanitation. This dataset is valuable for exploring"
+        " data analysis, machine learning techniques, and water resource"
+        " management strategies in the context of environmental and social"
+        " studies. It provides a realistic yet simplified representation of"
+        " water demand and related factors, making it suitable for educational"
+        " purposes, algorithm testing, and model development."
+    ),
+    "features": {
+        "agri_demand": (
+            "Agricultural water demand, representing the amount of water"
+            " needed for crop irrigation and other agricultural activities."
+            " This numerical feature is crucial for understanding water usage"
+            " in the agricultural sector."
+        ),
+        "indus_demand": (
+            "Industrial water demand, capturing the water consumption by"
+            " various industries, such as manufacturing, chemical processing,"
+            " and mining. This feature helps in analyzing the water needs of"
+            " industrial activities."
+        ),
+        "domestic_demand": (
+            "Domestic water demand, indicating the water usage by households"
+            " for drinking, cooking, cleaning, and other domestic purposes."
+            " This feature is essential for understanding the water needs of"
+            " residential areas."
+        ),
+        "municipal_demand": (
+            "Municipal water demand, representing the water usage by cities"
+            " and towns for public services, such as firefighting, street"
+            " cleaning, and public parks. This feature helps in managing"
+            " urban water resources."
+        ),
+        "livestock_needs": (
+            "Water needs for livestock, including the water required for"
+            " drinking and maintaining healthy conditions for animals like"
+            " cattle, pigs, and poultry. This feature is important for"
+            " understanding the water demands of the livestock sector."
+        ),
+        "irrigation_req": (
+            "Irrigation requirements, capturing the amount of water needed"
+            " for irrigating crops in agricultural fields. This feature is"
+            " crucial for planning and managing agricultural water usage."
+        ),
+        "hydropower_gen": (
+            "Hydropower generation, representing the water used in generating"
+            " electricity through hydropower plants. This feature is important"
+            " for analyzing water usage in the energy sector."
+        ),
+        "aquaculture_usage": (
+            "Water usage in aquaculture, indicating the water required for"
+            " fish farming and other aquaculture activities. This feature"
+            " helps in understanding the water needs of the aquaculture"
+            " industry."
+        ),
+        "mining_consumption": (
+            "Water consumption in mining operations, capturing the water"
+            " used in mineral extraction and processing activities. This"
+            " feature is essential for analyzing water usage in the mining"
+            " sector."
+        ),
+        "thermal_plant_consumption": (
+            "Water consumption by thermal power plants, representing the"
+            " water used for cooling and other processes in thermal power"
+            " generation. This feature helps in understanding the water"
+            " demands of thermal power plants."
+        ),
+        "ecosystems": (
+            "Water needs for maintaining healthy ecosystems, including"
+            " rivers, lakes, wetlands, and forests. This feature is crucial"
+            " for preserving biodiversity and ecological balance."
+        ),
+        "forestry": (
+            "Water usage in forestry activities, capturing the water required"
+            " for maintaining forest health and productivity. This feature"
+            " helps in understanding the water needs of the forestry sector."
+        ),
+        "recreation": (
+            "Water usage for recreational purposes, such as swimming pools,"
+            " water parks, and golf courses. This feature is important for"
+            " analyzing the water demands of recreational activities."
+        ),
+        "urban_dev": (
+            "Water usage in urban development projects, representing the"
+            " water required for construction and maintenance of urban"
+            " infrastructure. This feature helps in managing water resources"
+            " in urban areas."
+        ),
+        "drinking": (
+            "Water demand for drinking purposes, indicating the amount of"
+            " water needed to meet the drinking water needs of the population."
+            " This feature is crucial for ensuring access to safe drinking"
+            " water."
+        ),
+        "sanitation": (
+            "Water demand for sanitation purposes, capturing the water"
+            " required for maintaining sanitation and hygiene in residential,"
+            " commercial, and public spaces. This feature is essential for"
+            " public health and hygiene."
+        ),
+        "food_processing": (
+            "Water usage in food processing industries, representing the"
+            " water required for processing and manufacturing food products."
+            " This feature helps in understanding the water needs of the food"
+            " processing sector."
+        ),
+        "textile_industry": (
+            "Water usage in the textile industry, capturing the water"
+            " required for dyeing, washing, and finishing textile products."
+            " This feature is important for analyzing water demands in the"
+            " textile sector."
+        ),
+        "paper_industry": (
+            "Water usage in the paper industry, indicating the water"
+            " required for producing paper and paper products. This feature"
+            " helps in understanding the water needs of the paper industry."
+        ),
+        "chemical_industry": (
+            "Water usage in the chemical industry, representing the water"
+            " required for chemical production and processing activities."
+            " This feature is crucial for analyzing water demands in the"
+            " chemical sector."
+        ),
+        "pharma_industry": (
+            "Water usage in the pharmaceutical industry, capturing the water"
+            " required for manufacturing pharmaceutical products. This feature"
+            " helps in understanding the water needs of the pharmaceutical"
+            " sector."
+        ),
+        "construction": (
+            "Water usage in construction activities, representing the water"
+            " required for building and infrastructure projects. This feature"
+            " helps in managing water resources in the construction sector."
+        ),
+        "energy_production": (
+            "Water usage in energy production, capturing the water required"
+            " for generating electricity from various sources, including"
+            " renewable and non-renewable energy. This feature is important"
+            " for analyzing water demands in the energy sector."
+        ),
+        "oil_refining": (
+            "Water usage in oil refining processes, representing the water"
+            " required for refining crude oil into various petroleum products."
+            " This feature helps in understanding the water needs of the oil"
+            " refining industry."
+        ),
+        "metals_production": (
+            "Water usage in metals production, capturing the water required"
+            " for extracting and processing metals. This feature is crucial"
+            " for analyzing water demands in the metals industry."
+        ),
+        "auto_manufacturing": (
+            "Water usage in automobile manufacturing, representing the water"
+            " required for producing vehicles and automotive components. This"
+            " feature helps in understanding the water needs of the automotive"
+            " sector."
+        ),
+        "electronics_manufacturing": (
+            "Water usage in electronics manufacturing, capturing the water"
+            " required for producing electronic devices and components. This"
+            " feature is important for analyzing water demands in the"
+            " electronics industry."
+        ),
+        "plastics_manufacturing": (
+            "Water usage in plastics manufacturing, representing the water"
+            " required for producing plastic products. This feature helps in"
+            " understanding the water needs of the plastics industry."
+        ),
+        "leather_industry": (
+            "Water usage in the leather industry, capturing the water required"
+            " for tanning and processing leather. This feature is crucial for"
+            " analyzing water demands in the leather sector."
+        ),
+        "beverage_industry": (
+            "Water usage in the beverage industry, representing the water"
+            " required for producing beverages, including soft drinks, juices,"
+            " and alcoholic drinks. This feature helps in understanding the"
+            " water needs of the beverage industry."
+        ),
+        "pulp_paper_industry": (
+            "Water usage in the pulp and paper industry, capturing the water"
+            " required for producing pulp and paper products. This feature is"
+            " important for analyzing water demands in the pulp and paper"
+            " sector."
+        ),
+        "sugar_industry": (
+            "Water usage in the sugar industry, representing the water"
+            " required for processing sugarcane and producing sugar products."
+            " This feature helps in understanding the water needs of the sugar"
+            " industry."
+        ),
+        "cement_industry": (
+            "Water usage in the cement industry, capturing the water required"
+            " for producing cement and related products. This feature is"
+            " crucial for analyzing water demands in the cement sector."
+        ),
+        "fertilizer_industry": (
+            "Water usage in the fertilizer industry, representing the water"
+            " required for producing fertilizers. This feature helps in"
+            " understanding the water needs of the fertilizer sector."
+        ),
+        "water_quality": (
+            "Water quality measures, including parameters like pH, turbidity,"
+            " and contamination levels. This feature is important for ensuring"
+            " safe and clean water supply."
+        ),
+        "ethnicity": (
+            "Ethnicity of the population, which can influence water usage"
+            " patterns based on cultural practices and traditions. This"
+            " categorical feature helps in understanding demographic impacts"
+            " on water demand."
+        ),
+        "economic_status": (
+            "Economic status of the population, representing income levels"
+            " and financial resources. This feature is crucial for analyzing"
+            " socio-economic impacts on water usage and access."
+        ),
+        "region": (
+            "Geographical region, indicating the area where the data is"
+            " collected. This categorical feature helps in understanding"
+            " regional variations in water demand and availability."
+        ),
+        "sdg6_challenge": (
+            "Challenges related to Sustainable Development Goal 6 (SDG6),"
+            " which focuses on clean water and sanitation. This categorical"
+            " feature includes issues like water scarcity, pollution, and"
+            " lack of access to clean water. It helps in analyzing the"
+            " challenges faced in achieving SDG6 targets."
+        )
+    }
+}, 
+   
+   "make_drill_ops": {
+    "overview": (
+        "Generates a synthetic dataset tailored for drilling operations, "
+        "specifically designed for deep mining and hydrogeological exploration. "
+        "This dataset includes a variety of hydrogeological parameters crucial "
+        "for understanding subsurface conditions and planning drilling activities. "
+        "The generated data simulates real-world conditions by incorporating "
+        "key variables such as porosity, permeability, hydraulic conductivity, "
+        "and more, providing a comprehensive view of the underground environment. "
+        "Each sample in the dataset represents a unique combination of these "
+        "parameters, mimicking the variability and complexity encountered in "
+        "actual drilling scenarios. The dataset can be used for training and "
+        "testing machine learning models, enabling predictive analyses that "
+        "inform operational decisions and improve efficiency. By utilizing this "
+        "data, engineers and scientists can develop models to predict outcomes "
+        "such as water ingress, pressure changes, and thermal gradients, "
+        "ultimately enhancing the safety and effectiveness of drilling operations. "
+        "The inclusion of noise and potential missing values further adds to the "
+        "realism, preparing models to handle imperfections in real data. This "
+        "synthetic data serves as a vital tool for educational purposes, research, "
+        "and operational planning in the fields of hydrogeology and mining."
+    ),
+    "features": {
+        "porosity": (
+            "Porosity (%): Represents the percentage of void spaces in the rock "
+            "or soil, indicating its ability to hold water. High porosity values "
+            "imply more space for fluid storage, which is crucial for understanding "
+            "water reserves and the potential for resource extraction."
+        ),
+        "permeability": (
+            "Permeability (Darcy or millidarcy): Measures the ability of the rock "
+            "or soil to transmit fluids. Higher permeability indicates easier fluid "
+            "flow, which is essential for evaluating the efficiency of resource "
+            "extraction and the movement of groundwater."
+        ),
+        "hydraulic_conductivity": (
+            "Hydraulic Conductivity (m/D): Describes the ease with which water can "
+            "move through pore spaces or fractures in the aquifer. It is a critical "
+            "parameter for modeling groundwater flow and designing extraction "
+            "systems."
+        ),
+        "transmissivity": (
+            "Transmissivity (m2/day): Represents the rate at which groundwater is "
+            "transmitted through a unit width of the aquifer under a unit hydraulic "
+            "gradient. It combines both the permeability and thickness of the "
+            "aquifer and is used in assessing the aquifer's capacity to supply "
+            "water."
+        ),
+        "storativity": (
+            "Storativity (dimensionless): Indicates the volume of water an aquifer "
+            "releases or stores per unit surface area per unit change in head. This "
+            "parameter is essential for understanding how an aquifer responds to "
+            "pumping and natural recharge."
+        ),
+        "specific_yield": (
+            "Specific Yield (%): The ratio of the volume of water that drains from "
+            "a saturated rock or soil to the total volume of the rock or soil. It is "
+            "used to estimate the amount of water that can be extracted from an "
+            "unconfined aquifer."
+        ),
+        "fracture_density_and_orientation": (
+            "Fracture Density and Orientation: Describes the number and arrangement "
+            "of fractures within the rock. High fracture density can significantly "
+            "affect permeability and fluid flow. This parameter is crucial for "
+            "assessing the structural integrity of the rock and planning drilling "
+            "operations."
+        ),
+        "water_table_depth": (
+            "Water Table Depth (m): The depth at which the ground becomes saturated "
+            "with water. Knowing the water table depth is essential for designing "
+            "wells and managing groundwater resources."
+        ),
+        "aquifer_pressure": (
+            "Aquifer Pressure (Pa or bar): The pressure within the aquifer, which "
+            "affects the flow of water and the stability of the surrounding rock. "
+            "Accurate pressure measurements are critical for ensuring safe drilling "
+            "operations and preventing blowouts."
+        ),
+        "water_quality_parameters": (
+            "Water Quality Parameters: Includes various measures such as salinity, "
+            "pH, and contaminants. Water quality is vital for determining the "
+            "suitability of water for different uses, such as drinking, irrigation, "
+            "or industrial processes."
+        ),
+        "temperature_gradients": (
+            "Temperature Gradients (°C): The rate of temperature change with depth. "
+            "Temperature gradients are important for geothermal energy exploration "
+            "and understanding the thermal properties of the subsurface environment."
+        )
+    }
   }
+
 }
 

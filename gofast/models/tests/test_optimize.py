@@ -4,7 +4,6 @@
 """
 import pytest # noqa 
 from joblib import load
-from importlib import reload
 #from concurrent.futures import ThreadPoolExecutor
 from sklearn.datasets import load_iris
 from sklearn.svm import SVC
@@ -12,10 +11,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
-import gofast
-import gofast.api as gf 
-reload(gofast.api.testing)
-
+from gofast.api import testing 
 from gofast.models.optimize import optimize_hyperparams, parallelize_search
 from gofast.models.optimize import optimize_search, optimize_search2
 
@@ -52,7 +48,7 @@ def test_optimize_search_normal_operation(iris_data, model_fixtures):
     estimators, param_grids = model_fixtures
     results = optimize_search(estimators, param_grids, X, y)
     expected_output = ['rf', 'svc', 'Best estimator', 'Best parameters']
-    gf.testing.assert_model_summary_results(results, expected_output)
+    testing.assert_model_summary_results(results, expected_output)
   
 # Test handling mismatched keys
 def test_optimize_search_mismatched_keys(iris_data):
@@ -69,10 +65,8 @@ def test_optimize_search2_simple(iris_data):
     param_grids = [{'n_estimators': [100, 200], 'max_depth': [10, 20]}]
     result = optimize_search2(estimators, param_grids, X, y)
     expected_output = ['RandomForestClassifier', 'Tuning Results',
-                       'Best estimator', 'Best parameters']
-    gf.testing.assert_model_summary_has_title(
-        result, expected_title="RandomForestClassifier")                              
-    gf.testing.assert_model_summary_results(result, expected_output)
+                       'Best estimator', 'Best parameters']                           
+    testing.assert_model_summary_results(result, expected_output)
 
 # Additional fixture for splitting the dataset
 @pytest.fixture

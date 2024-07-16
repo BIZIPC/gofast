@@ -3,8 +3,7 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """ 
-`GoFast`_ Type variables
-========================
+`GoFast`_ Type variables.
 
 The `GoFast` library employs specialized type variables to enhance the clarity 
 and precision of type hints throughout the package. These custom type hints 
@@ -203,7 +202,17 @@ __all__ = [
     "Array1D", 
     "TypedCallable", 
     "LambdaType", 
-    "NumPyFunction"
+    "NumPyFunction",
+    "_Tensor",
+    "_Dataset",
+    "_Loss",
+    "_Regularizer",
+    "_Optimizer",
+    "_Sequential", 
+    "_History",
+    "_Callback",
+    "_Model", 
+    "_Metric", 
     
 ]
 
@@ -470,7 +479,6 @@ class BeautifulSoupTag(Generic[_T]):
         Hello, world!
     """
     
-
 class Array1D(Generic[_T]):
     """
     A generic class for representing and manipulating one-dimensional arrays 
@@ -560,6 +568,285 @@ class Array1D(Generic[_T]):
             str: A string representation of the `Array1D` instance.
         """
         return f"Array1D({self.elements})"
+
+class _Tensor:
+    """
+    Represents a mathematical tensor, which could be used for operations
+    in a neural network.
+
+    Parameters
+    ----------
+    data : Any
+        The underlying data of the tensor, typically an array or a matrix.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> t = Tensor(np.array([1, 2, 3]))
+    >>> t.data
+    array([1, 2, 3])
+    """
+    def __init__(self, data: Any):
+        self.data = data
+
+class _Dataset:
+    """
+    Dataset class for handling batches of data for training or testing
+    a model.
+
+    Notes
+    -----
+    This class needs to be extended to implement custom loading and
+    batching mechanisms.
+
+    Examples
+    --------
+    >>> class SimpleDataset(Dataset):
+    ...     def __init__(self, data):
+    ...         self.data = data
+    ...     def __getitem__(self, index):
+    ...         return Tensor(self.data[index])
+    ...     def __len__(self):
+    ...         return len(self.data)
+    >>> ds = SimpleDataset([1, 2, 3])
+    >>> ds[0].data
+    1
+    """
+    def __getitem__(self, index: int) -> _Tensor:
+        raise NotImplementedError
+
+    def __len__(self) -> int:
+        raise NotImplementedError
+
+class _Loss:
+    """
+    Base class for loss functions.
+
+    Notes
+    -----
+    Implement specific loss functions by subclassing this class.
+
+    Examples
+    --------
+    >>> class MSE(Loss):
+    ...     def __call__(self, predictions, targets):
+    ...         return Tensor(((predictions.data - targets.data) ** 2).mean())
+    >>> loss = MSE()
+    >>> predictions = Tensor(np.array([2, 3]))
+    >>> targets = Tensor(np.array([1, 1]))
+    >>> loss(predictions, targets).data
+    2.5
+    """
+    def __call__(self, predictions: _Tensor, targets: _Tensor) -> _Tensor:
+        pass
+
+class _Regularizer:
+    """
+    Base class for regularization techniques.
+
+    Notes
+    -----
+    Regularizers add a penalty to the loss function, based on model complexity.
+
+    Examples
+    --------
+    >>> class L2(Regularizer):
+    ...     def __call__(self, parameter):
+    ...         return Tensor(0.01 * np.sum(parameter.data ** 2))
+    >>> reg = L2()
+    >>> parameter = Tensor(np.array([2, 3]))
+    >>> reg(parameter).data
+    0.13
+    """
+    def __call__(self, parameter: _Tensor) -> _Tensor:
+        pass
+
+class _Optimizer:
+    """
+    Base class for optimization algorithms used in training models.
+
+    Notes
+    -----
+    Optimizers adjust the parameters of the model in response to the
+    gradient calculated by the backward pass.
+
+    Examples
+    --------
+    >>> class SGD(Optimizer):
+    ...     def step(self, gradients):
+    ...         for grad in gradients:
+    ...             grad.data -= 0.01 * grad.data
+    >>> optimizer = SGD()
+    >>> grads = [Tensor(np.array([0.1, 0.2])), Tensor(np.array([0.3]))]
+    >>> optimizer.step(grads)
+    >>> grads[0].data
+    array([0.099, 0.198])
+    """
+    def step(self, gradients: List[_Tensor]) -> None:
+        pass
+
+class _History:
+    """
+    Class for recording and retrieving the training history, such as
+    loss over epochs.
+
+    Attributes
+    ----------
+    records : dict
+        A dictionary to store metric values by their names.
+
+    Examples
+    --------
+    >>> history = History()
+    >>> history.log('loss', 0.5)
+    >>> history.records['loss']
+    [0.5]
+    """
+    records: dict
+
+    def __init__(self):
+        self.records = {}
+
+    def log(self, metric: str, value: Any) -> None:
+        self.records.setdefault(metric, []).append(value)
+
+class _Callback:
+    """
+    Base class for creating callbacks to monitor and take actions during
+    training.
+
+    Notes
+    -----
+    Callbacks can be used to implement behaviors like early stopping,
+    learning rate adjustments, or model checkpointing during training.
+
+    Examples
+    --------
+    >>> class PrintEpochNumber(Callback):
+    ...     def on_epoch_end(self, epoch, logs):
+    ...         print(f'Epoch {epoch} ended')
+    >>> callback = PrintEpochNumber()
+    >>> callback.on_epoch_end(1, None)
+    Epoch 1 ended
+    """
+    def on_epoch_end(self, epoch: int, logs: Optional[_History]) -> None:
+        pass
+
+class _Model:
+    """
+    Class representing a machine learning model.
+
+    Parameters
+    ----------
+    layers : List[Any]
+        A list of layers within the model.
+
+    Examples
+    --------
+    >>> model = Model(layers=[Layer(), Layer()])
+    >>> input_tensor = Tensor(np.array([1, 2, 3]))
+    >>> output = model.forward(input_tensor)
+    >>> model.predict(input_tensor).data
+    array([output.data])
+
+    Notes
+    -----
+    This class should be extended with specific layer handling, forward,
+    and backward passes.
+    """
+    def __init__(self, layers: List[Any]):
+        self.layers = layers
+
+    def forward(self, input: _Tensor) -> _Tensor:
+        pass
+
+    def backward(self, loss_grad: _Tensor) -> None:
+        pass
+
+    def predict(self, input: _Tensor) -> _Tensor:
+        pass
+
+    def train(self, dataset: _Dataset, loss_fn: _Loss, optimizer: _Optimizer,
+              callbacks: List[_Callback] = []) -> _History:
+        pass
+
+class _Sequential: 
+    """ Base class for Sequential used to create  neural networks models."""
+    
+    def __init__( self, model: _Model ): 
+        self.model= model  
+    
+class _Metric:
+    """
+    Base class for metrics used to evaluate machine learning models.
+
+    Notes
+    -----
+    This class is intended as a foundation. Specific metrics should 
+    inherit from this class and implement the `update` and `compute` 
+    methods according to their specific metric calculations (e.g., accuracy,
+    precision, recall).
+
+    Examples
+    --------
+    >>> class Accuracy(Metric):
+    ...     def __init__(self):
+    ...         super().__init__('accuracy')
+    ...         self.correct = 0
+    ...         self.total = 0
+    ...     def update(self, predictions, targets):
+    ...         self.correct += (predictions == targets).sum()
+    ...         self.total += len(predictions)
+    ...     def compute(self):
+    ...         return self.correct / self.total if self.total > 0 else 0
+    >>> predictions = [1, 2, 3, 4]
+    >>> targets = [1, 2, 2, 4]
+    >>> acc = Accuracy()
+    >>> acc.update(predictions, targets)
+    >>> acc.compute()
+    0.75
+    """
+    def __init__(self, name: str):
+        """
+        Initializes the Metric with a given name.
+
+        Parameters
+        ----------
+        name : str
+            The name of the metric.
+        """
+        self.name: str = name
+        self.value: float = 0.0
+
+    def reset(self) -> None:
+        """
+        Resets the metric's calculated value to its initial state.
+        """
+        self.value = 0.0
+
+    def update(self, predictions: Any, targets: Any) -> None:
+        """
+        Updates the metric based on the provided predictions and targets.
+
+        Parameters
+        ----------
+        predictions : Any
+            The predictions made by the model, expected to be a list or array.
+        targets : Any
+            The actual target values, expected to be in the same format as predictions.
+        """
+        raise NotImplementedError("This method should be overridden by subclasses.")
+
+    def compute(self) -> float:
+        """
+        Computes the final value of the metric after all updates.
+
+        Returns
+        -------
+        float
+            The computed metric value.
+        """
+        raise NotImplementedError("This method should be overridden by subclasses.")
 
 
 if __name__ == '__main__':

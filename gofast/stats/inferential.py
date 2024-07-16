@@ -2,6 +2,10 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides a comprehensive suite of functions for conducting inferential 
+statistical tests, including hypothesis testing, model fitting, and 
+assumption checks."""
+
 from __future__ import annotations 
 import numpy as np
 from scipy import stats

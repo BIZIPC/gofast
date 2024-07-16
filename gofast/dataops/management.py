@@ -20,7 +20,7 @@ from ..api.property import  Config
 from ..api.types import Any,  List,  DataFrame, Optional, Dict, Union
 from ..api.types import BeautifulSoupTag , Tuple, ArrayLike, Callable
 from ..api.util import get_table_size 
-from ..decorators import Deprecated, Dataify
+from ..decorators import Deprecated, Dataify, EnsureFileExists 
 from ..exceptions import FileHandlingError 
 from ..tools.baseutils import save_or_load
 from ..tools.coreutils import is_iterable, ellipsis2false,smart_format, validate_url 
@@ -53,35 +53,53 @@ def handle_unique_identifiers(
     fig_size: Tuple[int, int] = (12, 8)
     ) -> DataFrame:
     """
-    Examines columns in the DataFrame and handles columns with a high proportion 
-    of unique values. These columns can be either dropped or transformed based 
-    on specified criteria, facilitating better data analysis and modeling 
-    performance by reducing the number of effectively useless features.
+    Examines columns in the DataFrame and handles columns with a high 
+    proportion of unique values. These columns can be either dropped or 
+    transformed based on specified criteria, facilitating better data 
+    analysis and modeling performance by reducing the number of 
+    effectively useless features.
 
     Parameters
     ----------
     data : pandas.DataFrame
         The DataFrame to process for unique identifier columns.
+
     threshold : float, optional
-        The proportion threshold above which a column is considered to have too 
-        many unique values (default is 0.95). If the proportion of unique values 
-        in a column exceeds this threshold, an action is taken based on the 
-        'action' parameter.
+        The proportion threshold above which a column is considered to have 
+        too many unique values (default is 0.95). If the proportion of unique 
+        values in a column exceeds this threshold, an action is taken based 
+        on the `action` parameter.
+
     action : str, optional
         The action to perform on columns exceeding the unique value threshold:
         - 'drop': Removes the column from the DataFrame.
-        - 'transform': Applies a function specified by 'transform_func' to the column.
+        - 'transform': Applies a function specified by `transform_func` to 
+          the column.
         Default is 'drop'.
+
     transform_func : Callable[[any], any], optional
-        A function to apply to columns where the 'action' is 'transform'. This function 
-        should take a single value and return a transformed value. If 'action' is 
-        'transform' and 'transform_func' is None, no transformation is applied.
+        A function to apply to columns where the `action` is 'transform'. This 
+        function should take a single value and return a transformed value. 
+        If `action` is 'transform' and `transform_func` is None, no 
+        transformation is applied.
+
+    view : bool, optional
+        If True, visualizes the distribution of unique values before and after 
+        modification (default is False).
+
+    cmap : str, optional
+        The colormap to use for visualization when `view` is True (default is 
+        'viridis').
+
+    fig_size : tuple of int, optional
+        The size of the figure to use for visualization when `view` is True 
+        (default is (12, 8)).
 
     Returns
     -------
     pandas.DataFrame
-        The DataFrame with columns modified according to the specified action and 
-        threshold.
+        The DataFrame with columns modified according to the specified action 
+        and threshold.
 
     Examples
     --------
@@ -94,25 +112,33 @@ def handle_unique_identifiers(
     ... })
     >>> processed_data = handle_unique_identifiers(data, action='drop')
     >>> print(processed_data.columns)
-    >>> processed_data = handle_unique_identifiers(df, action='drop', view=True)
+    >>> processed_data = handle_unique_identifiers(data, action='drop', view=True)
 
     >>> def cap_values(val):
     ...     return min(val, 100)  # Cap values at 100
     >>> processed_data = handle_unique_identifiers(data, action='transform', 
-    ...                                           transform_func=cap_values)
+    ...                                            transform_func=cap_values)
     >>> print(processed_data.head())
 
     Notes
     -----
-    Handling columns with a high proportion of unique values is essential in data 
-    preprocessing, especially when preparing data for machine learning models. 
-    High-cardinality features may lead to overfitting and generally provide little 
-    predictive power unless they can be meaningfully transformed.
+    Handling columns with a high proportion of unique values is essential in 
+    data preprocessing, especially when preparing data for machine learning 
+    models. High-cardinality features may lead to overfitting and generally 
+    provide little predictive power unless they can be meaningfully 
+    transformed.
 
     See Also
     --------
     pandas.DataFrame.nunique : Count distinct observations over requested axis.
     pandas.DataFrame.apply : Apply a function along an axis of the DataFrame.
+
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in 
+           Python. Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
     """
     action = parameter_validator('action', ["drop", "transform"])(action)
     if view:
@@ -172,75 +198,100 @@ def _visualize_unique_changes(unique_counts_before, unique_counts_after,
     plt.tight_layout()
     plt.show()
     
-
-def read_data (
-    f: str|pathlib.PurePath, 
-    sanitize: bool= ..., 
-    reset_index: bool=..., 
-    comments: str="#", 
-    delimiter: str=None, 
-    columns: List[str]=None,
-    npz_objkey: str= None, 
-    verbose: bool= ..., 
+@EnsureFileExists(action ='ignore')
+def read_data(
+    f: str | pathlib.PurePath, 
+    sanitize: bool = ..., 
+    reset_index: bool = ..., 
+    comments: str = "#", 
+    delimiter: str = None, 
+    columns: List[str] = None,
+    npz_objkey: str = None, 
+    verbose: bool = ..., 
     **read_kws
- ) -> DataFrame: 
-    """ Assert and read specific files and url allowed by the package
-    
-    Readable files are systematically convert to a data frame.  
-    
-    Parameters 
-    -----------
-    f: str, Path-like object 
-        File path or Pathlib object. Must contain a valid file name  and 
-        should be a readable file or url 
-        
-    sanitize: bool, default=False, 
-        Push a minimum sanitization of the data such as: 
-        - replace a non-alphabetic column items with a pattern '_' 
-        - cast data values to numeric if applicable 
-        - drop full NaN columns and rows in the data 
-           
-    reset_index: bool, default=False, 
+) -> DataFrame:
+    """
+    Read all specific files and URLs allowed by the package.
+
+    Readable files are systematically converted to a DataFrame.
+
+    Parameters
+    ----------
+    f : str, Path-like object
+        File path or Pathlib object. Must contain a valid file name and 
+        should be a readable file or URL.
+
+    sanitize : bool, default=False
+        Push a minimum sanitization of the data such as:
+        - Replace non-alphabetic column items with a pattern '_'
+        - Cast data values to numeric if applicable
+        - Drop full NaN columns and rows in the data
+
+    reset_index : bool, default=False
         Reset index if full NaN columns are dropped after sanitization. 
-        Apply minimum data sanitization after reading data. 
-     
-    comments: str or sequence of str or None, default='#'
-       The characters or list of characters used to indicate the start 
-       of a comment. None implies no comments. For backwards compatibility, 
-       byte strings will be decoded as 'latin1'. 
+        Apply minimum data sanitization after reading data.
 
-    delimiter: str, optional
-       The character used to separate the values. For backwards compatibility, 
-       byte strings will be decoded as 'latin1'. The default is whitespace.
+    comments : str or sequence of str or None, default='#'
+        The characters or list of characters used to indicate the start 
+        of a comment. None implies no comments. For backwards compatibility, 
+        byte strings will be decoded as 'latin1'.
 
-    npz_objkey: str, optional 
-       Dataset key to indentify array in multiples array storages in '.npz' 
-       format.  If key is not set during 'npz' storage, ``arr_0`` should 
-       be used.Capable to read text and numpy formats ('.npy' and '.npz') data. 
-       Note that when data is stored in compressed ".npz" format, provided the 
-        '.npz' object key  as argument of parameter `npz_objkey`. If None, 
-        only the first array should be read and ``npz_objkey='arr_0'``. 
-          
-    verbose: bool, default=0 
-       Outputs message for user guide. 
-       
-    read_kws: dict, 
-       Additional keywords arguments passed to pandas readable file keywords. 
-        
-    Returns 
+    delimiter : str, optional
+        The character used to separate the values. For backwards 
+        compatibility, byte strings will be decoded as 'latin1'. The default 
+        is whitespace.
+
+    columns : list of str, optional
+        List of column names to use. If the file has a header row, then 
+        you should explicitly pass ``header=0`` to override the column 
+        names.
+
+    npz_objkey : str, optional
+        Dataset key to identify array in multiple array storages in '.npz' 
+        format. If key is not set during 'npz' storage, ``arr_0`` should 
+        be used. Capable of reading text and numpy formats ('.npy' and 
+        '.npz') data. Note that when data is stored in compressed ".npz" 
+        format, provide the '.npz' object key as an argument of parameter 
+        `npz_objkey`. If None, only the first array should be read and 
+        ``npz_objkey='arr_0'``.
+
+    verbose : bool, default=0
+        Outputs message for user guide.
+
+    read_kws : dict
+        Additional keyword arguments passed to pandas readable file keywords.
+
+    Returns
     -------
-    f: :class:`pandas.DataFrame` 
-        A dataframe with head contents by default.  
-        
-    See Also 
-    ---------
-    np.loadtxt: 
-        load text file.  
-    np.load 
-       Load uncompressed or compressed numpy `.npy` and `.npz` formats. 
-    gofast.dataops.management.save_or_load: 
-        Save or load numpy arrays.
-       
+    DataFrame
+        A dataframe with head contents by default.
+
+    Notes
+    -----
+    This function reads various file formats and converts them into a 
+    pandas DataFrame. It supports sanitization of the data which includes 
+    replacing non-alphabetic column names, casting data to numeric types 
+    where applicable, and removing fully NaN columns and rows. The function 
+    also supports reading numpy arrays from '.npy' and '.npz' files.
+
+    Examples
+    --------
+    >>> from gofast.dataops.management import read_data
+    >>> df = read_data('data.csv', sanitize=True, reset_index=True)
+    >>> print(df.head())
+
+    See Also
+    --------
+    np.loadtxt : Load text file.
+    np.load : Load uncompressed or compressed numpy `.npy` and `.npz` formats.
+    gofast.dataops.management.save_or_load : Save or load numpy arrays.
+
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in 
+           Python. Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
     """
 
     def min_sanitizer ( d, /):
@@ -311,8 +362,8 @@ def read_data (
         f = min_sanitizer (f)
         
     return f 
-    
 
+@EnsureFileExists
 @ensure_pkg("requests")
 def request_data(
     url: str, 
@@ -418,7 +469,9 @@ def request_data(
     return response.text if as_text else ( 
         response.json () if as_json else response )
 
-@Deprecated("Deprecated function. Should be remove next release."
+
+@EnsureFileExists
+@Deprecated("Deprecated function. Should be removed next release. "
             "Use `gofast.tools.fetch_remote_data` instead.")
 def get_remote_data(
     remote_file: str, 
@@ -438,7 +491,7 @@ def get_remote_data(
         The local file system path where the downloaded file should be saved.
         If None, the file is saved in the current directory. Default is None.
     
-    raise_exception : bool, default True
+    raise_exception : bool, default=True
         If True, raises a ConnectionRefusedError when the connection fails.
         Otherwise, prints the error message.
 
@@ -457,8 +510,26 @@ def get_remote_data(
     >>> from gofast.dataops.management import get_remote_data
     >>> status = get_remote_data('https://example.com/file.csv', save_path='/local/path')
     >>> print(status)
-    """
+    
+    Notes
+    -----
+    This function attempts to download a file from a given URL. If the 
+    download is successful, the file can optionally be saved to a specified 
+    local path. If the `raise_exception` parameter is set to True, a 
+    `ConnectionRefusedError` is raised if the connection fails after three 
+    attempts. Otherwise, the error message is printed.
 
+    See Also
+    --------
+    gofast.tools.fetch_remote_data : Recommended replacement for this function.
+    
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in 
+           Python. Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
+    """
     connect_reason = (
         "ConnectionRefusedError: Failed to connect to the remote server. "
         "Possible reasons include:\n"
@@ -513,38 +584,45 @@ def get_remote_data(
             raise e
         return False
 
+@EnsureFileExists
 def handle_datasets_with_hdfstore(
     file_path: str, 
     datasets: Optional[Dict[str, DataFrame]] = None, 
-    operation: str = 'store') -> Union[None, Dict[str, DataFrame]]:
+    operation: str = 'store'
+) -> Union[None, Dict[str, DataFrame]]:
     """
     Handles storing or retrieving multiple Pandas DataFrames in an HDF5 
-    file using pd.HDFStore.
+    file using `pd.HDFStore`.
 
     Parameters
     ----------
     file_path : str
         Path to the HDF5 file where datasets will be stored or from which 
         datasets will be retrieved.
+    
     datasets : dict, optional
         A dictionary where keys are dataset names and values are the datasets
-        (Pandas DataFrames).
-        Required if operation is 'store'. Default is None.
+        (Pandas DataFrames). This parameter is required if `operation` is 
+        'store'. Default is None.
+    
     operation : str
-        The operation to perform - 'store' for storing datasets, 'retrieve' 
-        for retrieving datasets.
+        The operation to perform. Must be one of:
+        - 'store': Store datasets in the HDF5 file.
+        - 'retrieve': Retrieve datasets from the HDF5 file.
 
     Returns
     -------
     dict or None
-        If operation is 'retrieve', returns a dictionary where keys are dataset 
-        names and values are the datasets (Pandas DataFrames).
-        If operation is 'store', returns None.
+        - If `operation` is 'retrieve', returns a dictionary where keys are 
+          dataset names and values are the datasets (Pandas DataFrames).
+        - If `operation` is 'store', returns None.
 
     Raises
     ------
     ValueError
-        If an invalid operation is specified.
+        If an invalid operation is specified or if `datasets` is None when 
+        `operation` is 'store'.
+    
     OSError
         If the file cannot be opened or created.
 
@@ -554,13 +632,35 @@ def handle_datasets_with_hdfstore(
     >>> from gofast.dataops.management import handle_datasets_with_hdfstore
     
     Storing datasets:
-    >>> df1 = pd.DataFrame(np.random.rand(100, 10), columns=[f'col_{i}' for i in range(10)])
-    >>> df2 = pd.DataFrame(np.random.randint(0, 100, size=(200, 5)), columns=['A', 'B', 'C', 'D', 'E'])
-    >>> handle_datasets_with_hdfstore('my_datasets.h5', {'df1': df1, 'df2': df2}, operation='store')
+    >>> df1 = pd.DataFrame(np.random.rand(100, 10), 
+    ...                    columns=[f'col_{i}' for i in range(10)])
+    >>> df2 = pd.DataFrame(np.random.randint(0, 100, size=(200, 5)), 
+    ...                    columns=['A', 'B', 'C', 'D', 'E'])
+    >>> handle_datasets_with_hdfstore(
+    ...    'my_datasets.h5', {'df1': df1, 'df2': df2}, operation='store')
 
     Retrieving datasets:
-    >>> datasets = handle_datasets_with_hdfstore('my_datasets.h5', operation='retrieve')
+    >>> datasets = handle_datasets_with_hdfstore(
+    ...     'my_datasets.h5', operation='retrieve')
     >>> print(datasets.keys())
+
+    Notes
+    -----
+    This function utilizes `pd.HDFStore` to manage HDF5 files, allowing for 
+    efficient storage and retrieval of large datasets. The HDF5 format is 
+    particularly useful for storing heterogeneous data and provides a high 
+    level of compression and performance.
+
+    See Also
+    --------
+    pandas.HDFStore : Store hierarchical datasets in a file format.
+
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in 
+           Python. Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
     """
     if operation not in ['store', 'retrieve']:
         raise ValueError("Invalid operation. Please choose 'store' or 'retrieve'.")
@@ -579,7 +679,9 @@ def handle_datasets_with_hdfstore(
             for name in store.keys():
                 datasets_retrieved[name.strip('/')] = store[name]
         return datasets_retrieved
-    
+
+
+@EnsureFileExists
 def store_or_retrieve_data(
     file_path: str,
     datasets: Optional[Dict[str, Union[ArrayLike, DataFrame]]] = None,
@@ -593,10 +695,12 @@ def store_or_retrieve_data(
     ----------
     file_path : str
         Path to the HDF5 file for storing or retrieving datasets.
+
     datasets : dict, optional
         A dictionary with dataset names as keys and datasets 
-        (numpy arrays or Pandas DataFrames) as values.
-        Required if operation is 'store'.
+        (numpy arrays or Pandas DataFrames) as values. Required if 
+        operation is 'store'. Default is None.
+        
     operation : str
         The operation to perform - 'store' for storing datasets, 'retrieve' 
         for retrieving datasets.
@@ -611,11 +715,44 @@ def store_or_retrieve_data(
     ------
     ValueError
         If an invalid operation is specified or required parameters are missing.
+        
     TypeError
         If provided datasets are not in supported formats 
         (numpy arrays or pandas DataFrames).
-    """
 
+    Examples
+    --------
+    >>> import pandas as pd 
+    >>> import numpy as np
+    >>> from gofast.dataops.management import store_or_retrieve_data
+    
+    Storing datasets:
+    >>> df1 = pd.DataFrame(np.random.rand(100, 10), columns=[f'col_{i}' for i in range(10)])
+    >>> arr1 = np.random.rand(100, 10)
+    >>> store_or_retrieve_data('my_datasets.h5', {'df1': df1, 'arr1': arr1}, operation='store')
+
+    Retrieving datasets:
+    >>> datasets = store_or_retrieve_data('my_datasets.h5', operation='retrieve')
+    >>> print(datasets.keys())
+
+    Notes
+    -----
+    This function leverages `pd.HDFStore` to manage HDF5 files, enabling 
+    efficient storage and retrieval of large datasets. The HDF5 format 
+    is highly efficient for storing heterogeneous data and provides 
+    excellent compression and performance characteristics.
+
+    See Also
+    --------
+    pandas.HDFStore : Store hierarchical datasets in a file format.
+
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in 
+           Python. Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
+    """
     valid_operations = {'store', 'retrieve'}
     if operation not in valid_operations:
         raise ValueError(f"Invalid operation '{operation}'. "
@@ -636,6 +773,7 @@ def store_or_retrieve_data(
         elif operation == 'retrieve':
             return {name.replace ("/", ""): store[name] for name in store.keys()}
         
+@EnsureFileExists
 def base_storage(
     file_path: str,
     datasets: Optional[Dict[str, Union[ArrayLike, DataFrame]]] = None, 
@@ -650,10 +788,12 @@ def base_storage(
     file_path : str
         Path to the HDF5 file where datasets will be stored or from which 
         datasets will be retrieved.
+        
     datasets : dict, optional
         A dictionary where keys are dataset names and values are the 
         datasets (numpy arrays or Pandas DataFrames).
-        Required if operation is 'store'. 
+        Required if `operation` is 'store'. 
+     
     operation : str
         The operation to perform - 'store' for storing datasets, 'retrieve' 
         for retrieving datasets.
@@ -661,9 +801,9 @@ def base_storage(
     Returns
     -------
     dict or None
-        If operation is 'retrieve', returns a dictionary where keys are dataset
-        names and values are the datasets (numpy arrays or Pandas DataFrames).
-        If operation is 'store', returns None.
+        If `operation` is 'retrieve', returns a dictionary where keys are 
+        dataset names and values are the datasets (numpy arrays or Pandas 
+        DataFrames). If `operation` is 'store', returns None.
 
     Raises
     ------
@@ -675,15 +815,36 @@ def base_storage(
     Examples
     --------
     Storing datasets:
+    >>> import numpy as np
+    >>> import pandas as pd
+    >>> from gofast.dataops.management import base_storage
     >>> data1 = np.random.rand(100, 10)
     >>> df1 = pd.DataFrame(np.random.randint(0, 100, size=(200, 5)),
                            columns=['A', 'B', 'C', 'D', 'E'])
-    >>> store_data('my_datasets.h5', {'dataset1': data1, 'df1': df1},
-                              operation='store')
+    >>> base_storage('my_datasets.h5', {'dataset1': data1, 'df1': df1},
+                     operation='store')
 
     Retrieving datasets:
-    >>> datasets = store_data('my_datasets.h5', operation='retrieve')
+    >>> datasets = base_storage('my_datasets.h5', operation='retrieve')
     >>> print(datasets.keys())
+
+    Notes
+    -----
+    This function leverages HDF5 files for efficient storage and retrieval 
+    of large datasets. The HDF5 format supports both numpy arrays and pandas 
+    DataFrames, providing excellent performance and compression.
+
+    See Also
+    --------
+    pandas.HDFStore : Store hierarchical datasets in a file format.
+    h5py.File : Interface to HDF5 files.
+
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in 
+           Python. Proceedings of the 9th Python in Science Conference, 51-56.
+    .. [2] Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). 
+           Array programming with NumPy. Nature, 585(7825), 357-362.
     """
     if operation not in ['store', 'retrieve']:
         raise ValueError("Invalid operation. Please choose 'store' or 'retrieve'.")
@@ -713,16 +874,17 @@ def base_storage(
 
         return datasets_retrieved
 
+@EnsureFileExists
 def fetch_remote_data(
-    remote_file_url: str, 
+    file_url: str, /,  
     save_path: Optional[str] = None, 
     raise_exception: bool = True
- ) -> bool:
+) -> bool:
     """
     Download a file from a remote URL and optionally save it to a specified location.
 
     This function attempts to download a file from the given URL. If `save_path` is 
-    provided, it saves the file to that location, otherwise, it saves it in the 
+    provided, it saves the file to that location; otherwise, it saves it in the 
     current working directory. If the download fails, it can optionally raise an 
     exception or return False.
 
@@ -748,10 +910,31 @@ def fetch_remote_data(
 
     Examples
     --------
-    >>> status = get_remote_data('https://example.com/file.csv', save_path='/local/path')
+    >>> from gofast.dataops.management import fetch_remote_data
+    >>> status = fetch_remote_data('https://example.com/file.csv', save_path='/local/path')
     >>> print(status)
 
+    Notes
+    -----
+    This function uses `urllib.request` for downloading the file and `tqdm` for
+    displaying a progress bar. It handles errors gracefully by either raising an
+    exception or printing an error message based on the `raise_exception` parameter.
+
+    See Also
+    --------
+    urllib.request.urlopen : Open a network object denoted by a URL for reading.
+    tqdm : A fast, extensible progress bar for Python.
+
+    References
+    ----------
+    .. [1] Python Software Foundation. Python Language Reference, version 3.8. Available at 
+           https://www.python.org
+    .. [2] Urllib documentation. Available at 
+           https://docs.python.org/3/library/urllib.request.html
+    .. [3] Tqdm documentation. Available at 
+           https://tqdm.github.io/
     """
+
     def handle_download_error(e: Exception, message: str) -> None:
         """
         Handle download errors, either by raising an exception or printing 
@@ -788,14 +971,14 @@ def fetch_remote_data(
                 save_path, file_name))
 
     try:
-        file_name = os.path.basename(remote_file_url)
-        print(f"---> Fetching '{remote_file_url}'...")
+        file_name = os.path.basename(file_url)
+        print(f"---> Fetching '{file_url}'...")
 
         with tqdm(total=3, ascii=True, desc=f'Fetching {file_name}',
                   ncols=97) as progress_bar:
             for attempt in range(3):
                 try:
-                    response = urllib.request.urlopen(remote_file_url)
+                    response = urllib.request.urlopen(file_url)
                     data = response.read()
 
                     with open(file_name, 'wb') as file:
@@ -808,10 +991,10 @@ def fetch_remote_data(
                     if attempt == 2:
                         handle_download_error(
                             TimeoutError(), "Connection timed out while"
-                            f" downloading '{remote_file_url}'.")
+                            f" downloading '{file_url}'.")
                 except Exception as e:
                     handle_download_error(
-                        e, f"An error occurred while downloading '{remote_file_url}': {e}")
+                        e, f"An error occurred while downloading '{file_url}': {e}")
                 finally:
                     progress_bar.update(1)
 
@@ -819,20 +1002,26 @@ def fetch_remote_data(
             return False
 
     except Exception as e:
-        handle_download_error(e, f"An unexpected error occurred during the download: {e}")
+        handle_download_error(
+            e, f"An unexpected error occurred during the download: {e}")
         return False
 
+
+@EnsureFileExists
 @ensure_pkg("bs4", " Needs `BeautifulSoup` from `bs4` package" )
 @ensure_pkg("requests")
 def scrape_web_data(
-    url: str, 
-    element: str, 
+    url: str, element: str, 
     class_name: Optional[str] = None, 
     attributes: Optional[dict] = None, 
     parser: str = 'html.parser'
-    ) -> List[BeautifulSoupTag[str]]:
+) -> List[BeautifulSoupTag[str]]:
     """
     Scrape data from a web page using BeautifulSoup.
+
+    This function fetches the content of a web page and uses BeautifulSoup to 
+    parse the HTML and find all instances of a specified HTML element. The 
+    search can be further refined using class names and additional attributes.
 
     Parameters
     ----------
@@ -841,7 +1030,7 @@ def scrape_web_data(
     element : str
         The HTML element to search for.
     class_name : str, optional
-        The class attribute of the HTML element to narrow down the search.
+        The class attribute of the HTML element to narrow down the search. 
         Default is None.
     attributes : dict, optional
         Additional attributes of the HTML element to narrow down the search. 
@@ -853,6 +1042,11 @@ def scrape_web_data(
     -------
     list of bs4.element.Tag
         A list of BeautifulSoup Tag objects that match the search query.
+
+    Raises
+    ------
+    requests.exceptions.HTTPError
+        If the HTTP request to the URL fails.
 
     Examples
     --------
@@ -877,9 +1071,31 @@ def scrape_web_data(
     >>> # prints the text of each section with id 'featured-products'
     >>> for product in data:
     ...     print(product.text)  
+
+    Notes
+    -----
+    Web scraping involves fetching and parsing content from web pages. This 
+    function simplifies the process by providing an interface to search for 
+    specific HTML elements based on their tag, class, and other attributes. 
+    Ensure that web scraping is performed in accordance with the website's 
+    terms of service and robots.txt file.
+
+    See Also
+    --------
+    requests.get : Sends a GET request to the specified URL.
+    bs4.BeautifulSoup : Parses HTML content and provides methods for 
+                        searching the parse tree.
+
+    References
+    ----------
+    .. [1] BeautifulSoup Documentation. Available at 
+           https://www.crummy.com/software/BeautifulSoup/bs4/doc/
+    .. [2] Requests Documentation. Available at 
+           https://docs.python-requests.org/en/master/
     """
     import requests
     from bs4 import BeautifulSoup
+
     response = requests.get(url)
     if response.status_code == 200:
         html_content = response.text
@@ -894,14 +1110,19 @@ def scrape_web_data(
     else:
         response.raise_for_status()
 
-
+@EnsureFileExists
 def handle_datasets_in_h5(
     file_path: str,
     datasets: Optional[Dict[str, ArrayLike]] = None, 
     operation: str = 'store'
-    ) -> Union[None, Dict[str, ArrayLike]]:
+) -> Union[None, Dict[str, ArrayLike]]:
     """
     Handles storing or retrieving multiple datasets in an HDF5 file.
+
+    This function facilitates the storage and retrieval of multiple datasets,
+    specifically numpy arrays, in an HDF5 file. The operation can either 
+    store provided datasets into the specified HDF5 file or retrieve datasets 
+    from it.
 
     Parameters
     ----------
@@ -910,8 +1131,7 @@ def handle_datasets_in_h5(
         datasets will be retrieved.
     datasets : dict, optional
         A dictionary where keys are dataset names and values are the 
-        datasets (numpy arrays).
-        Required if operation is 'store'. Default is None.
+        datasets (numpy arrays). Required if operation is 'store'.
     operation : str
         The operation to perform - 'store' for storing datasets, 'retrieve' 
         for retrieving datasets.
@@ -920,8 +1140,8 @@ def handle_datasets_in_h5(
     -------
     dict or None
         If operation is 'retrieve', returns a dictionary where keys are dataset
-        names and values are the datasets (numpy arrays).
-        If operation is 'store', returns None.
+        names and values are the datasets (numpy arrays). If operation is 'store', 
+        returns None.
 
     Raises
     ------
@@ -933,6 +1153,8 @@ def handle_datasets_in_h5(
     Examples
     --------
     Storing datasets:
+    >>> import numpy as np
+    >>> from gofast.dataops.management import handle_datasets_in_h5
     >>> data1 = np.random.rand(100, 10)
     >>> data2 = np.random.rand(200, 5)
     >>> handle_datasets_in_h5('my_datasets.h5', 
@@ -941,6 +1163,23 @@ def handle_datasets_in_h5(
     Retrieving datasets:
     >>> datasets = handle_datasets_in_h5('my_datasets.h5', operation='retrieve')
     >>> print(datasets.keys())
+
+    Notes
+    -----
+    The HDF5 format is particularly suited for handling large datasets. This 
+    function simplifies the process of managing multiple datasets within a single 
+    HDF5 file. When storing data, each dataset is stored under its corresponding 
+    key. When retrieving data, the function returns a dictionary of datasets where 
+    keys are dataset names and values are numpy arrays.
+
+    See Also
+    --------
+    h5py.File : Open an HDF5 file.
+    numpy.ndarray : N-dimensional array object.
+
+    References
+    ----------
+    .. [1] Collette, A. (2013). Python and HDF5. O'Reilly Media, Inc.
     """
     if operation not in ['store', 'retrieve']:
         raise ValueError("Invalid operation. Please choose 'store' or 'retrieve'.")
@@ -958,9 +1197,8 @@ def handle_datasets_in_h5(
         with h5py.File(file_path, 'r') as h5file:
             for name in h5file.keys():
                 datasets_retrieved[name] = h5file[name][...]
-                
-        return datasets_retrieved
 
+        return datasets_retrieved
 
 if __name__=="__main__": 
     # Create a sample DataFrame

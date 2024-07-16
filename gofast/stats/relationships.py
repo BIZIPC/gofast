@@ -2,6 +2,9 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides functions for analyzing relationships between data sets, including 
+correlation, regression, and various clustering techniques."""
+
 from __future__ import annotations 
 import numpy as np
 import pandas as pd

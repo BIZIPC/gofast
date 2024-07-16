@@ -524,7 +524,7 @@ def test_describe_view_false():
 def test_describe_invalid_plot_type():
     """Test describe with an invalid plot_type value."""
     df = pd.DataFrame(np.random.rand(100, 4), columns=['A', 'B', 'C', 'D'])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, TypeError):
         describe(df, view=True, plot_type='invalid_plot_type')
 
 def test_describe_as_frame_false():

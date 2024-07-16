@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
-"""
-Time-Series Plots  
-"""
+
+"""Provides functionality for visualizing time series data, enabling clear 
+and informative graphical representations of trends, patterns, and anomalies."""
+
 
 import numpy as np 
 import matplotlib.pyplot as plt
@@ -18,6 +19,8 @@ from ..tools.baseutils import smart_rotation
 from ..tools.coreutils import format_to_datetime
 from ..tools.funcutils import ensure_pkg 
 from ..tools.validator import is_time_series, build_data_if 
+
+__all__=["TimeSeriesPlotter"]
 
 class TimeSeriesPlotter(BasePlot):
     """
@@ -2902,7 +2905,6 @@ class TimeSeriesPlotter(BasePlot):
         )
     
 TimeSeriesPlotter.__doc__+="""\
-    
 A comprehensive plotting tool designed for time series data analysis. 
 `TimeSeriesPlotter` provides a wide range of plotting methods to visualize 
 different aspects of time series data, from basic line plots to complex 

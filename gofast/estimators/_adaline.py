@@ -2,7 +2,9 @@
 
 from abc import ABCMeta, abstractmethod
 import numpy as np 
+
 from sklearn.base import BaseEstimator
+from sklearn.utils._param_validation import Interval, StrOptions, Real, Integral
 
 class BaseAdalineStochastic(BaseEstimator, metaclass=ABCMeta):
     """
@@ -141,6 +143,20 @@ class BaseAdalineStochastic(BaseEstimator, metaclass=ABCMeta):
            Journal of Machine Learning Research, 12, 2825-2830.
     """
 
+    _parameter_constraints: dict ={
+            "eta0": [Interval(Real, 0., 1., closed="neither")],
+            "max_iter": [Interval(Integral, 1, None, closed="left")],
+            "early_stopping": [bool],
+            "validation_fraction": [Interval(Real, 0., 1., closed="neither")],
+            "tol": [Interval(Real, 0, None, closed="neither")],
+            "warm_start": [bool],
+            "learning_rate": [StrOptions({"constant", "adaptive"})],
+            "eta0_decay": [Interval(Real, 0., 1., closed="neither")],
+            "shuffle": [bool],
+            "random_state": [Integral, None],
+            "verbose": [bool]
+        }
+    
     @abstractmethod
     def __init__(
         self, 

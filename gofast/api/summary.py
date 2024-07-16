@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+The `summary` module offers a comprehensive suite of tools for
+generating and formatting summaries and reports, ensuring clear and consistent
+ presentation of analytical results.
+"""
+
 import copy
 import warnings 
 import numpy as np
@@ -15,6 +21,30 @@ from .util import to_snake_case, get_table_size
 from .util import format_value, df_to_custom_dict, format_text, to_camel_case  
 from .util import find_maximum_table_width, format_df, format_correlations
 from .util import beautify_dict 
+
+__all__=[
+     'ModelSummary',
+     'ReportFactory',
+     'ResultSummary',
+     'Summary',
+     'calculate_maximum_length',
+     'detect_structure_type',
+     'ensure_list_with_defaults',
+     'extract_model_name_and_dict',
+     'get_max_col_lengths',
+     'get_table_width',
+     'key_dataframe_format',
+     'key_formatter_format',
+     'normalize_table_widths',
+     'prepare_cv_results_dataframe',
+     'standardize_keys',
+     'summarize_inline_model_results',
+     'summarize_inline_table',
+     'summarize_model_results',
+     'summarize_optimized_results',
+     'summarize_tables',
+     'uniform_dfs_formatter'
+     ]
 
 class ResultSummary:
     """
@@ -792,8 +822,11 @@ class Summary(FlexDict):
         return self
     
     def add_data_corr(
-            self, df, min_corr=0.5, high_corr=0.8, use_symbols=False, 
-            hide_diag=True, **kwargs):
+            self, df, min_corr=0.5,
+            high_corr=0.8,
+            use_symbols=False, 
+            hide_diag=True, 
+            **kwargs):
         """
         Computes and stores a formatted correlation matrix for a DataFrame's numeric
         columns within the class instance. This method leverages formatting options
@@ -862,10 +895,13 @@ class Summary(FlexDict):
         custom formatting as specified by the user.
         """
         self.summary_report = format_correlations(
-            df, min_corr=min_corr, high_corr=high_corr, use_symbols= use_symbols, 
-                            hide_diag= hide_diag,
-                            title = self.title or 'Correlation Table', 
-                            **kwargs)
+            df, min_corr=min_corr, 
+            high_corr=high_corr, 
+            use_symbols= use_symbols, 
+            hide_diag= hide_diag,
+            title = self.title or 'Correlation Table', 
+            **kwargs
+            )
         
         return self 
     
@@ -1813,6 +1849,7 @@ def format_report(report_data, report_title=None, max_table_width= 70, **kws ):
         if not isinstance_(value, (pd.DataFrame, DataFrameFormatter, 
                                    DescriptionFormatter, MultiFrameFormatter) 
                            ):
+            #XXX TODO
             # Formatting non-DataFrame values with key alignment
             report_lines.append(format_text(
                 formatted_value, 

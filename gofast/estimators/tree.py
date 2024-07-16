@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+`tree` module provides tree-based models for machine learning.
+"""
 
 from __future__ import annotations
 from numbers import Integral, Real
@@ -13,7 +16,6 @@ from sklearn.utils._param_validation import Interval, StrOptions
 from ._tree import  BaseDTB, BaseWeightedTree 
 from ..tools.validator import check_array 
 from ..tools.validator import check_is_fitted
-
 
 __all__=[ "DTBRegressor", "DTBClassifier", 
          "WeightedTreeClassifier", "WeightedTreeRegressor",]

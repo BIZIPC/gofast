@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+`base` module includes foundational estimators for machine learning tasks.
+It provides the `StandardEstimator` as well as simple models like
+`DecisionStumpRegressor` and `DecisionStumpClassifier` 
+for regression and classification respectively.
+"""
 
 import inspect 
 from collections import defaultdict 
@@ -16,7 +22,7 @@ from ..tools.validator import check_is_fitted, validate_fit_weights
 __all__=["StandardEstimator", "DecisionStumpRegressor", "DecisionStumpClassifier"]
 
 class StandardEstimator:
-    """Base class for all classes in gofast for parameters retrievals
+    """Base class for all classes in gofast for parameters retrievals.
 
     Notes
     -----

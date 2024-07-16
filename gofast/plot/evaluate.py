@@ -3,9 +3,9 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-:mod:`~gofast.plot.evaluate ` is a set of plot templates for visualising and 
-inspecting the learning models.  It gives a quick depiction for users for 
-models visualization and evaluation with : :class:`~gofast.plot.EvalPlotter`
+`evaluate ` is a set of plot templates for visualising and inspecting
+the learning models.  It gives a quick depiction for users for 
+models visualization and evaluation with : :class:`~gofast.plot.EvalPlotter`.
 """
 from __future__ import annotations 
 import re

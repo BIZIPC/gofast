@@ -351,7 +351,7 @@ def load_dyspnea(
     >>> X, y = load_dyspnea (return_X_y=True )
 
     """
-    from ..tools.dataops import transform_dates 
+    from ..dataops.preprocessing import transform_dates 
     from ._globals import DYSPNEA_DICT, DYSPNEA_LABELS_DESCR
     
     key = get_valid_key(key, "pp", {
@@ -1328,7 +1328,7 @@ def _get_subsidence_data (
       DataFrame and list of features and targets. 
    
     """
-    from ..tools.dataops import read_data
+    from ..dataops.management import read_data
     columns =['easting',
              'northing',
              'longitude',

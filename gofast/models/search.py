@@ -2,6 +2,10 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides a set of classes for model selection and hyperparameter tuning, 
+including tools for cross-validation and automated search strategies to 
+optimize model performance."""
+
 from __future__ import annotations 
 
 import inspect
@@ -681,7 +685,12 @@ class PerformanceTuning(BaseClass):
         return self
 
     def _cv_performance_data_base(self, X, y): 
+        
         if self.estimators is None: 
+            if self.param_grids is not None: 
+                # check whether estimators are gives as tuple ( estim, params )
+                self.estimators, self.param_grids = align_estimators_with_params(
+                    self.param_grids)
             raise ValueError("Estimators cannot be None for base tuning.")
             
         performance_data, results_mean = self._run_cross_validator(X, y)
@@ -2197,7 +2206,7 @@ class BaseEvaluation (BaseClass):
             )
         return 1 
   
-BaseEvaluation.__doc__="""\"""
+BaseEvaluation.__doc__="""\
 Base class for evaluating machine learning models using cross-validation and
 pipeline transformations.
 

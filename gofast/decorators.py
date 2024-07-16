@@ -2,10 +2,7 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio~@Daniel03 <etanoyau@gmail.com>
 """
-decorators
-=============
-
-This module provides a collection of decorators designed to enhance and simplify 
+Provides a collection of decorators designed to enhance and simplify 
 common programming tasks in Python. These decorators offer functionality ranging 
 from suppressing output and sanitizing docstrings to appending documentation and 
 managing feature importance plots. Each decorator is crafted to be reusable and 
@@ -60,6 +57,33 @@ from ._gofastlog import gofastlog
 _logger = gofastlog.get_gofast_logger(__name__)
 
 __docformat__='restructuredtext'
+
+__all__= [
+    'AppendDocFrom',
+    'AppendDocReferences',
+    'AppendDocSection',
+    'CheckGDALData',
+    'DataTransformer',
+    'Dataify',
+    'Deprecated',
+    'DynamicMethod',
+    'ExportData',
+    'Extract1dArrayOrSeries',
+    'NumpyDocstring',
+    'NumpyDocstringFormatter',
+    'PlotFeatureImportance',
+    'PlotPrediction',
+    'RedirectToNew',
+    'SignalFutureChange',
+    'SmartProcessor',
+    'SuppressOutput',
+    'Temp2D',
+    'available_if',
+    'example_function',
+    'isdf',
+    'sanitize_docstring',
+    'EnsureFileExists',
+  ]
 
 class SmartProcessor:
     """
@@ -2991,8 +3015,221 @@ class Dataify:
             else:
                 raise ValueError(f"Error converting data to DataFrame: {e}")
         
-        return df   
+        return df  
     
+class EnsureFileExists:
+    """
+    Class decorator to ensure a file or URL exists before calling the 
+    decorated function.
+
+    This decorator checks if the specified file or URL exists before executing  
+    the decorated function. If the file does not exist, it raises a
+    FileNotFoundError. If the URL does not exist, it raises a ConnectionError. 
+    The decorator can be configured to print verbose messages during the check.
+    It also handles other data types based on the specified action.
+
+    Parameters
+    ----------
+    file_param : int or str, optional
+        The index of the parameter that specifies the file path or URL or 
+        the name of the keyword argument (default is 0). If an integer is 
+        provided, it refers to the position of the argument in the function 
+        call. If a string is provided, it refers to the keyword argument name.
+    verbose : bool, optional
+        If True, prints messages indicating the file or URL check status 
+        (default is False).
+    action : str, optional
+        Action to take if the parameter is not a file or URL. Options are 
+        'ignore', 'warn', or 'raise' (default is 'raise').
+
+    Examples
+    --------
+    Basic usage with verbose output:
+    
+    >>> from gofast.decorators import EnsureFileExists
+    >>> @EnsureFileExists(verbose=True)
+    ... def process_data(file_path: str):
+    ...     print(f"Processing data from {file_path}")
+    >>> process_data("example_file.txt")
+
+    Basic usage without parentheses:
+    
+    >>> from gofast.decorators import EnsureFileExists
+    >>> @EnsureFileExists
+    ... def process_data(file_path: str):
+    ...     print(f"Processing data from {file_path}")
+    >>> process_data("example_file.txt")
+
+    Checking URL existence:
+    
+    >>> from gofast.decorators import EnsureFileExists
+    >>> @EnsureFileExists(file_param='url', verbose=True)
+    ... def fetch_data(url: str):
+    ...     print(f"Fetching data from {url}")
+    >>> fetch_data("https://example.com/data.csv")
+    
+    Notes
+    -----
+    This decorator is particularly useful for functions that require a file path 
+    or URL as an argument and need to ensure the file or URL exists before 
+    proceeding with further operations. It helps in avoiding runtime errors 
+    due to missing files or unreachable URLs.
+    
+    See Also
+    --------
+    os.path.isfile : Checks if a given path is an existing regular file.
+    requests.head : Sends a HEAD request to a URL to check its existence.
+    
+    References
+    ----------
+    .. [1] McKinney, W. (2010). Data Structures for Statistical Computing in Python. 
+           Proceedings of the 9th Python in Science Conference, 51-56.
+    
+    """
+    def __init__(
+            self, file_param: Union[int, str] = 0, 
+            verbose: bool = False, 
+            action: str = 'raise'
+            ):
+        self.file_param = file_param
+        self.verbose = verbose
+        self.action = action
+
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> any:
+            # Determine the file path or URL from args or kwargs
+            file_path_or_url = None
+            if isinstance(self.file_param, int):
+                if len(args) > self.file_param:
+                    file_path_or_url = args[self.file_param]
+            elif isinstance(self.file_param, str):
+                file_path_or_url = kwargs.get(self.file_param)
+    
+            if self.verbose:
+                print(f"Checking if path or URL exists: {file_path_or_url}")
+    
+            # Check if the file path or URL exists
+            if file_path_or_url is None:
+                self.handle_action(f"File or URL not specified: {file_path_or_url}")
+            elif isinstance(file_path_or_url, str):
+                if file_path_or_url.startswith(('http://', 'https://')):
+                    if not self.url_exists(file_path_or_url):
+                        self.handle_action(f"URL not reachable: {file_path_or_url}")
+                    elif self.verbose:
+                        print(f"URL exists: {file_path_or_url}")
+                else:
+                    if not os.path.isfile(file_path_or_url):
+                        self.handle_action(f"File not found: {file_path_or_url}")
+                    elif self.verbose:
+                        print(f"File exists: {file_path_or_url}")
+            else:
+                if self.action == 'ignore':
+                    if self.verbose:
+                        print(f"Ignoring non-file, non-URL argument: {file_path_or_url}")
+                elif self.action == 'warn':
+                    warnings.warn(f"Non-file, non-URL argument provided: {file_path_or_url}")
+                else:
+                    raise TypeError(f"Invalid file or URL argument: {file_path_or_url}")
+    
+            return func(*args, **kwargs)
+    
+        return wrapper
+
+    def handle_action(self, message: str):
+        """
+        Handle the action based on the specified action parameter.
+
+        Parameters
+        ----------
+        message : str
+            The message to display or include in the raised exception.
+        """
+        if self.action == 'ignore':
+            if self.verbose:
+                print(f"Ignoring: {message}")
+        elif self.action == 'warn':
+            warnings.warn(message)
+        elif self.action == 'raise':
+            raise FileNotFoundError(message)
+        else:
+            raise ValueError(f"Invalid action: {self.action}")
+
+    @staticmethod
+    def url_exists(url: str) -> bool:
+        """
+        Check if a URL exists.
+
+        Parameters
+        ----------
+        url : str
+            The URL to check.
+
+        Returns
+        -------
+        bool
+            True if the URL exists, False otherwise.
+        """
+        import requests
+        try:
+            response = requests.head(url, allow_redirects=True)
+            return response.status_code == 200
+        except requests.RequestException:
+            return False
+
+    @classmethod
+    def ensure_file_exists(
+        cls, func: Optional[Callable] = None, *, 
+        file_param: Union[int, str] = 0, 
+        verbose: bool = False, 
+        action: str = 'raise'):
+        """
+        Class method to allow the decorator to be used without parentheses.
+
+        This method enables the decorator to be applied directly without 
+        parentheses, by using the first positional argument as the file or URL 
+        to check. It also allows setting the `file_param`, `verbose`, and `action`
+        parameters when called with parentheses.
+
+        Parameters
+        ----------
+        func : Callable, optional
+            The function to be decorated.
+        file_param : int or str, optional
+            The index of the parameter that specifies the file path or URL 
+            or the name of the keyword argument (default is 0).
+        verbose : bool, optional
+            If True, prints messages indicating the file or URL check status 
+            (default is False).
+        action : str, optional
+            Action to take if the parameter is not a file or URL. 
+            Options are 'ignore', 'warn', or 'raise' (default is 'raise').
+
+        Returns
+        -------
+        Callable
+            The decorated function with file or URL existence check.
+
+        Examples
+        --------
+        >>> from gofast.decorators import EnsureFileExists
+        >>> @EnsureFileExists(verbose=True)
+        ... def process_data(file_path: str):
+        ...     print(f"Processing data from {file_path}")
+        >>> process_data("example_file.txt")
+
+        >>> from gofast.decorators import EnsureFileExists
+        >>> @EnsureFileExists
+        ... def process_data(file_path: str):
+        ...     print(f"Processing data from {file_path}")
+        >>> process_data("example_file.txt")
+        """
+        if func is not None:
+            return cls(file_param, verbose, action)(func)
+        return cls(file_param, verbose, action)
+
+# Allow decorator to be used without parentheses
+EnsureFileExists = EnsureFileExists.ensure_file_exists
 
 @NumpyDocstringFormatter(include_sections=['Parameters', 'Returns'], validate_with_sphinx=True)
 def example_function(param1, param2=None):

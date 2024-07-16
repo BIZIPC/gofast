@@ -2,9 +2,11 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio
 """
-Base IO code for managing all the datasets 
-Created on Thu Oct 13 14:26:47 2022
+Base IO functions for managing all the datasets.
+Provides functions for loading, retrieving, and managing dataset files, 
+including CSV and text files, as well as dataset descriptions.
 """
+
 import os 
 import csv 
 import shutil 
@@ -18,11 +20,19 @@ from ..tools.baseutils import is_readable
 from ..tools.coreutils import random_state_validator, is_iterable
 from ..tools.coreutils import exist_features
 
+__all__=[
+    'csv_data_loader',
+    'description_loader',
+    'get_data',
+    'remove_data',
+    'text_files_loader'
+ ]
+
 DMODULE = "gofast.datasets.data" ; DESCR = "gofast.datasets.descr"
 
 # create a namedtuple for remote data and url 
 RemoteMetadata = namedtuple("RemoteMetadata", ["file", "url", "checksum"])
-RemoteDataURL ='https://raw.githubusercontent.com/WEgeophysics/gofast/master/gofast/datasets/data/'
+RemoteDataURL ='https://raw.githubusercontent.com/earthai-tech/gofast/master/gofast/datasets/data/'
 
 def get_data(data =None) -> str: 
     if data is None:

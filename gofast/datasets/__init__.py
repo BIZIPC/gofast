@@ -20,7 +20,7 @@ from ._data_loader import (
     load_forensic, load_jrs_bet, load_dyspnea, load_statlog, load_hydro_metrics
 )
 # Data generation functions
-from .generate import (
+from .make import (
    make_elogging, make_erp, make_ert, make_gadget_sales, make_drill_ops, 
    make_medical_diagnosis, make_mining_ops, make_retail_store,
    make_tem, make_well_logging, make_sounding, make_african_demo,

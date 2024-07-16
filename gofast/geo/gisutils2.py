@@ -1,29 +1,45 @@
+# -*- coding: utf-8 -*-
+#   Licence:BSD 3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
 
+"""Provides utilities for geographic information system (GIS) operations, 
+including coordinate transformations, EPSG code handling, UTM zone conversions, 
+and validation of geographic data."""
 
 import numpy as np
-
 from .._gofastlog import gofastlog
-from ..decorators import (
-    deprecated ,
-    CheckGDALData, 
-    # gdal_data_check
-    )
-from ..exceptions import ( 
-    GISError
-    )
-  
+from ..decorators import Deprecated ,CheckGDALData # noqa
+
+from ..exceptions import GISError # noqa
 try : 
-    from ._set_gdal import HAS_GDAL, EPSG_DICT, NEW_GDAL 
+    from ._set_gdal import HAS_GDAL, EPSG_DICT, NEW_GDAL # noqa
     if HAS_GDAL:
         from osgeo import osr
-        from osgeo.ogr import OGRERR_NONE
+        from osgeo.ogr import OGRERR_NONE # noqa
     else:
-        import pyproj
+        import pyproj # noqa
 except :
     HAS_GDAL =False
     pass 
 
 _logger = gofastlog.get_gofast_logger(__name__)
+
+
+__all__= [
+    'adjust_time_component',
+     'assert_lat_lon_values',
+     'assert_xy_coordinate_system',
+     'convert_lat_lon_to_utm',
+     'convert_position_float2str',
+     'convert_position_str2float',
+     'convert_position_str2float2',
+     'convert_utm_to_lat_lon',
+     'get_utm_string_from_sr',
+     'get_utm_zone_2',
+     'll_to_utm',
+     'utm_to_ll',
+     'validate_elevation'
+ ]
 
 _deg2rad = np.pi / 180.0
 _rad2deg = 180.0 / np.pi
@@ -84,6 +100,7 @@ epsg_dict = {
     32618: ['+proj=utm +zone=18 +ellps=WGS84 +datum=WGS84 +units=m +no_defs', 18],
     32619: ['+proj=utm +zone=19 +ellps=WGS84 +datum=WGS84 +units=m +no_defs', 19]
 }
+
 
 def ll_to_utm(reference_ellipsoid, lat, lon):
     """
@@ -876,7 +893,7 @@ def validate_elevation(elevation):
         _logger.warning(f"{elevation} is not a number, setting elevation to 0.0")
         return 0.0
     
-@deprecated("NATO UTM zone is used in other parts of gofast; this function "
+@Deprecated("NATO UTM zone is used in other parts of gofast; this function "
             "is for Standard UTM")
 def get_utm_string_from_sr(spatialreference):
     """

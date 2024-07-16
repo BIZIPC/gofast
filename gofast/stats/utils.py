@@ -2,7 +2,10 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 
-from __future__ import annotations 
+"""Provides utility functions to support statistical analyses, including 
+dataset preprocessing for repeated measures ANOVA."""
+
+
 from itertools import product
 import numpy as np
 import pandas as pd
