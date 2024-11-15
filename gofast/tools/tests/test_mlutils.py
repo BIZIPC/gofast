@@ -28,18 +28,22 @@ from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
 
 from gofast.datasets.load import load_bagoue, load_hlogs 
-from gofast.tools.coreutils import find_features_in, smart_label_classifier, cleaner 
-from gofast.tools.mlutils import fetch_tgz_from_url, evaluate_model  
+from gofast.tools.coreutils import find_features_in
+from gofast.tools.datautils import cleaner
+from gofast.tools.ioutils import fetch_tgz_from_url, load_csv, serialize_data 
+from gofast.tools.ioutils import deserialize_data 
+from gofast.tools.mlutils import smart_label_classifier, evaluate_model  
 from gofast.tools.mlutils import get_global_score, get_correlated_features    
 from gofast.tools.mlutils import soft_encoder, resampling, bin_counting 
 from gofast.tools.mlutils import soft_imputer, soft_scaler, select_feature_importances 
 from gofast.tools.mlutils import make_pipe, build_data_preprocessor 
-from gofast.tools.mlutils import  load_model, bi_selector
-from gofast.tools.mlutils import stats_from_prediction, fetch_model, load_csv 
-from gofast.tools.mlutils import discretize_categories, stratify_categories, serialize_data # 
-from gofast.tools.mlutils import deserialize_data, soft_data_split 
+from gofast.tools.mlutils import load_model, bi_selector
+from gofast.tools.mlutils import stats_from_prediction, fetch_model
+from gofast.tools.mlutils import discretize_categories, stratify_categories 
+
+from gofast.tools.mlutils import soft_data_split, smart_split # 
 from gofast.tools.mlutils import laplace_smoothing, laplace_smoothing_categorical 
-from gofast.tools.mlutils import laplace_smoothing_word, handle_imbalance, smart_split # 
+from gofast.tools.mlutils import laplace_smoothing_word, handle_imbalance
 
 DOWNLOAD_FILE='https://raw.githubusercontent.com/earthai-tech/gofast/main/gofast/datasets/data/bagoue.csv'
 with resources.path ('gofast.datasets.data', "bagoue.csv") as csv_f : 

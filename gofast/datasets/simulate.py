@@ -6,38 +6,1410 @@ Provides functions for simulating synthetic datasets across various domains,
 including environment, energy, customer behavior, and more.
 """
 
-import inspect 
-import pandas as pd
+import datetime
+import inspect
+import warnings 
 import numpy as np
+import pandas as pd
 
-from ..tools.coreutils import is_iterable, unpack_list_of_dicts  
-from ..tools.validator import validate_dates, validate_positive_integer 
-from ..tools.validator import validate_distribution, validate_length_range
-from .util import validate_region, adjust_parameters_to_fit_samples 
-from .util import find_mineral_distributions, find_countries_by_minerals
-from .util import extract_minerals_from_regions, build_distributions_from
-from .util import check_distributions, select_location_for_mineral, manage_data
-from .util import generate_ore_infos, build_reserve_details_by_country
-from .util import get_last_day_of_current_month, adjust_households_and_days
-from .util import validate_noise_level, validate_loan_parameters 
-from .util import select_diagnostic_options, fetch_simulation_metadata 
+from ..tools.coreutils import is_iterable, unpack_list_of_dicts
+from ..tools.validator import (
+    validate_dates,
+    validate_distribution,
+    validate_length_range,
+    validate_positive_integer
+)
+from .util import (
+    adjust_households_and_days,
+    adjust_parameters_to_fit_samples,
+    build_distributions_from,
+    build_reserve_details_by_country,
+    check_distributions,
+    extract_minerals_from_regions,
+    fetch_simulation_metadata,
+    find_countries_by_minerals,
+    find_mineral_distributions,
+    generate_custom_id,
+    generate_ore_infos,
+    get_country_by,
+    get_last_day_of_current_month,
+    manage_data,
+    select_diagnostic_options,
+    select_location_for_mineral,
+    validate_loan_parameters,
+    validate_noise_level,
+    validate_region
+)
 
-__all__= [
+__all__ = [
     "simulate_landfill_capacity",
-    "simulate_water_reserves", 
-    "simulate_world_mineral_reserves", 
+    "simulate_water_reserves",
+    "simulate_world_mineral_reserves",
     "simulate_energy_consumption",
-    "simulate_customer_churn",  
+    "simulate_customer_churn",
     "simulate_predictive_maintenance",
-    "simulate_real_estate_price", 
-    "simulate_sentiment_analysis", 
-    "simulate_weather_forecasting", 
+    "simulate_real_estate_price",
+    "simulate_sentiment_analysis",
+    "simulate_weather_forecasting",
     "simulate_default_loan",
     "simulate_traffic_flow",
     "simulate_medical_diagnosis",
-    "simulate_retail_sales"
-    ]
+    "simulate_retail_sales",
+    "simulate_transactions",
+    "simulate_stock_prices",
+    "simulate_patient_data",
+    "simulate_weather_data",
+    "simulate_climate_data",
+    "simulate_clinical_trials",
+    "simulate_telecom_data"
+]
 
+def simulate_telecom_data(
+    *, n_timepoints=1000, 
+    end_time=10,  
+    noise_level=0.1, 
+    nonlinear_distortion=True, 
+    interference_level=0.05, 
+    attenuation=0.8,  
+    amplitude_base=2.0,  
+    amplitude_variation=0.5,  
+    frequency_base=5.0,  
+    frequency_variation=0.5,  
+    phase_shift_base=np.pi / 4,  
+    n_samples=None,  
+    as_frame=False, 
+    return_X_y=False, 
+    target_name=None, 
+    seed=None, 
+):
+    """
+    Generate a synthetic telecommunications dataset with realistic linear and 
+    nonlinear distortions and features commonly observed in real-world 
+    telecommunications for dynamic system modeling.
+
+    Parameters
+    ----------
+    n_timepoints : int, default=1000
+        Number of time points (or observations) in the dataset, representing 
+        discrete points along the time axis within the duration specified by 
+        `end_time`.
+
+    end_time : float, default=10
+        The total duration of the simulation in seconds. Defines the range of 
+        the time variable from 0 to `end_time`, with `n_timepoints` samples.
+
+    noise_level : float, default=0.1
+        Standard deviation of the Gaussian noise added to the signal, simulating 
+        transmission noise. Must be a non-negative value.
+
+    nonlinear_distortion : bool, default=True
+        Whether to apply a nonlinear distortion (tanh) to the signal after 
+        linear attenuation. Set to `True` for more realistic signal saturation 
+        effects.
+
+    interference_level : float, default=0.05
+        Level of interference added to the signal, simulating external 
+        disturbances, such as cross-channel interference.
+
+    attenuation : float, default=0.8
+        Linear attenuation factor applied to the input signal before adding 
+        nonlinear distortions or noise. Higher values preserve signal strength.
+
+    amplitude_base : float, default=2.0
+        Base amplitude of the signal, representing the mean level of signal 
+        strength across the simulation period.
+
+    amplitude_variation : float, default=0.5
+        Variation factor applied to the amplitude, creating a sinusoidal 
+        fluctuation over time, simulating real-world changes in signal strength.
+
+    frequency_base : float, default=5.0
+        Base frequency of the signal in Hertz (Hz), representing the average 
+        frequency during the transmission period.
+
+    frequency_variation : float, default=0.5
+        Variation factor applied to the frequency, creating a sinusoidal 
+        fluctuation over time and simulating real-world frequency modulation.
+
+    phase_shift_base : float, default=np.pi / 4
+        Base phase shift applied to the signal, representing a fixed offset in 
+        the phase to simulate signal alignment or initial phase differences.
+
+    n_samples : int, optional
+        For API consistency only. If provided, a warning is issued indicating 
+        that `n_samples` should equal `n_timepoints`.
+
+    as_frame : bool, default=False
+        If `True`, returns the dataset as a DataFrame; if `False`, returns as a 
+        dictionary or other format, based on additional arguments.
+
+    return_X_y : bool, default=False
+        If `True`, returns feature data `X` and target `y` separately.
+
+    target_name : str, optional
+        Names of target variables. Defaults to `["received_quality"]`.
+
+    seed : int, optional
+        Random seed for reproducibility. Ensures consistent noise generation.
+
+    Returns
+    -------
+    dataset : pd.DataFrame or tuple of (X, y)
+        The telecommunications dataset with columns representing features and 
+        target variables, structured based on specified return type.
+
+    Concept
+    -------
+    This simulation models telecommunications signal transmission by applying 
+    both linear and nonlinear transformations to an input signal. It captures 
+    the dynamic behavior of signals over time through several key transformations:
+    
+    - **Amplitude and Frequency Modulation**:
+      The amplitude and frequency of the signal are modulated over time:
+
+      .. math::
+          \\text{Amplitude} = A_{\\text{base}} + A_{\\text{var}} \\cdot \\sin(0.5t)
+
+      .. math::
+          \\text{Frequency} = f_{\\text{base}} + f_{\\text{var}} \\cdot \\cos(0.3t)
+
+    - **Linear Attenuation and Nonlinear Distortion**:
+      Linear attenuation is applied, followed by optional nonlinear distortion:
+
+      .. math::
+          \\text{Output} = \\text{attenuation} \\times \\text{input\_signal}
+
+      .. math::
+          \\text{Distorted Output} = \\tanh(\\text{Output})
+
+    - **Noise and Interference Addition**:
+      Gaussian noise and high-frequency interference simulate transmission 
+      disturbances.
+
+    - **Signal-to-Noise Ratio (SNR)**:
+      SNR is calculated to represent the signal clarity in dB:
+
+      .. math::
+          \\text{SNR} = 10 \\cdot \\log_{10} \\left( \\frac{\\text{Amplitude}^2}{\\text{noise\_level + interference\_level}} \\right)
+
+    Notes
+    -----
+    This dataset is suitable for tasks like predicting received signal quality, 
+    analyzing distortion effects, and testing models designed for dynamic and 
+    time-series systems in telecommunications.
+
+    Examples
+    --------
+    >>> from gofast.datasets.simulate import simulate_telecom_data
+    >>> data = simulate_telecom_data(n_timepoints=1500, end_time=20)
+    >>> data.head()
+
+    See Also
+    --------
+    manage_data : Organizes data for return based on provided options.
+
+    References
+    ----------
+    .. [1] Proakis, J. G., & Salehi, M. (2007). Digital Communications. 
+           McGraw-Hill.
+    .. [2] Haykin, S., & Van Veen, B. (2002). Signals and Systems. Wiley.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+    
+    if n_samples is not None:
+        warnings.warn(
+            "`n_samples` is provided for API consistency only and should equal "
+            "`n_timepoints`. Please use `n_timepoints` directly to specify the "
+            "number of time points in the dataset. Setting `n_timepoints`"
+            " to match `n_samples`."
+        )
+        n_timepoints = n_samples
+
+    # validate the parameters  
+    end_time = validate_positive_integer(end_time, "end_time")
+    n_timepoints = validate_positive_integer(n_timepoints, "n_timepoints")
+    
+    # Time variable in seconds based on specified end_time
+    time = np.linspace(0, end_time, n_timepoints)  
+    
+    # Core signal properties with adjustable amplitude and frequency
+    amplitude = amplitude_base + amplitude_variation * np.sin(0.5 * time)
+    frequency = frequency_base + frequency_variation * np.cos(0.3 * time)
+    # Phase incorporating frequency shifts
+    phase = np.cumsum(frequency * (2 * np.pi / n_timepoints)) 
+    # Modulated input signal with amplitude and phase
+    input_signal = amplitude * np.sin(phase)  
+
+    # Linear transmission component with adjustable attenuation
+    linear_output = attenuation * input_signal  # Apply specified linear attenuation
+
+    # Optional nonlinear distortion (e.g., saturation effect)
+    if nonlinear_distortion:
+        distorted_output = np.tanh(linear_output)  # Nonlinear distortion using tanh
+    else:
+        distorted_output = linear_output
+
+    # validate noise level 
+    noise_level = validate_noise_level(noise_level, default_value= 0.1) 
+    # Gaussian noise to simulate transmission noise
+    noise = np.random.normal(0, noise_level, n_timepoints)
+    noisy_output = distorted_output + noise
+
+    # Additional realistic telecommunications features
+    #   SNR including interference
+    snr = 10 * np.log10(amplitude ** 2 / (noise_level + interference_level)) 
+    bandwidth = 0.5 + 0.2 * np.sin(0.1 * time)  # Bandwidth variation over time
+    # Phase shift based on base shift
+    phase_shift = np.unwrap(np.angle(np.sin(phase + phase_shift_base)))  
+
+    # Simulate interference, e.g., from neighboring channels
+    # High-frequency interference
+    interference = interference_level * np.sin(5 * time)  
+    noisy_output += interference
+
+    # Data rate (simulated as varying rate due to network congestion)
+    # Varying data rate
+    data_rate = 100 + 10 * np.sin(0.2 * time) - 5 * np.cos(0.1 * time) 
+    
+    # Target variable: Received Quality
+    # Combines all distortions to simulate received quality degradation
+    received_quality = noisy_output * (
+        1 - 0.03 * np.sin(0.3 * time) - 0.01 * interference)
+
+    # Create a DataFrame for the dataset
+    dataset = pd.DataFrame({
+        "time": time,
+        "amplitude": amplitude,
+        "frequency": frequency,
+        "snr": snr,
+        "bandwidth": bandwidth,
+        "phase_shift": phase_shift,
+        "interference": interference,
+        "data_rate": data_rate,
+        "input_signal": input_signal,
+        "output_signal": noisy_output,
+        "received_quality": received_quality
+    })
+
+    target_name = target_name or ["received_quality"]
+
+    return manage_data(
+        data=dataset, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
+
+def simulate_stock_prices(
+    *, n_companies=10, 
+    start_date="2024-01-01", 
+    end_date="2024-12-31", 
+    as_frame=False, 
+    n_samples=None, 
+    return_X_y=False, 
+    target_name=None, 
+    noise_level=None, 
+    seed=None
+):
+    """
+    Simulates stock price data for multiple companies over a specified time 
+    period.
+    
+    Parameters
+    ----------
+    n_companies : int, optional
+        Number of unique companies for which data will be generated. Each 
+        company will have entries for each day within the specified date range,
+        creating a comprehensive dataset across time. Default is 10.
+        
+    start_date : str, optional
+        The start date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        The function will generate data from this date to `end_date`, inclusive.
+        Default is ``"2024-01-01"``.
+        
+    end_date : str, optional
+        The end date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        Default is ``"2024-12-31"``.
+    
+    as_frame : bool, optional
+        Determines the format of the returned dataset. If `True`, the dataset
+        is returned as a pandas DataFrame. If `False`, the dataset is returned 
+        in a Bunch object or as arrays, based on the `return_X_y` parameter.
+        Default is `False`.
+        
+    n_samples : int or None, optional
+        Specifies the target number of total samples to generate in the dataset. 
+        This parameter allows for dynamic adjustment of the `n_companies` parameter 
+        to match the desired number of samples, considering the number of days 
+        between `start_date` and `end_date`. Default is `None`.
+    
+    return_X_y : bool, optional
+        If `True`, the function returns a tuple `(X, y)` where `X` is the array
+        of feature values and `y` is the array of targets. This is useful 
+        for directly feeding data into machine learning models. If `False`, 
+        returns a Bunch object containing the dataset, targets, and 
+        additional information. This parameter is ignored if `as_frame` is 
+        `True`. Default is `False`.
+        
+    target_name : str or None, optional
+        Specifies the name of the target variable to be included in the 
+        output. By default (`None`), the function uses ``"price"`` as 
+        the target variable.
+    
+    noise_level : float or None, optional
+        Adds Gaussian noise with standard deviation equal to `noise_level` to the 
+        stock prices to simulate market volatility. If `None`, no noise is added.
+        Default is `None`.
+        
+    seed : int or None, optional
+        Seed for the random number generator to ensure reproducibility of 
+        the dataset. If `None`, the random number generator is initialized
+        without a fixed seed. Setting a seed is useful when conducting 
+        experiments that require consistent results. Default is `None`.
+    
+    Returns
+    -------
+    Depending on the combination of `as_frame` and `return_X_y` parameters, 
+    the function can return a pandas DataFrame, a tuple of `(X, y)` arrays, or 
+    a Bunch object encapsulating the dataset, targets, and additional 
+    metadata.
+    
+    Notes
+    -----
+    The simulated dataset is generated using pseudo-random numbers to model 
+    stock price dynamics, influenced by daily market fluctuations. The stock
+    prices are generated using a geometric Brownian motion model, given by:
+    
+    .. math::
+        S_t = S_{t-1} \exp\left( (\mu - 0.5 \sigma^2) \Delta t + \sigma \sqrt{\Delta t} \epsilon_t \right)
+    
+    where :math:`S_t` is the stock price at time `t`, :math:`\mu` is the drift,
+    :math:`\sigma` is the volatility, :math:`\Delta t` is the time increment,
+    and :math:`\epsilon_t` is a random sample from a standard normal distribution.
+    
+    Examples
+    --------
+    >>> from gofast.compat.pandas import simulate_stock_prices
+    >>> data_obj = simulate_stock_prices(n_samples=10)
+    >>> X, y = simulate_stock_prices(return_X_y=True)
+    
+    See Also
+    --------
+    simulate.simulate_world_mineral_reserves : 
+        The primary data structure used to simulate world mineral reserves.
+    sklearn.utils.Bunch : 
+        Used to package the dataset when arrays are returned.
+    
+    References
+    ----------
+    .. [1] Hull, J. C. (2017). Options, Futures, and Other Derivatives. Pearson.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+    
+    start_date, end_date = validate_dates(
+        start_date, end_date, return_as_date_str= True )
+    
+    dates = pd.date_range(start=start_date, end=end_date)
+
+    if n_samples:
+        adjust_params = adjust_parameters_to_fit_samples(
+            n_samples, initial_guesses={'n_companies': n_companies, "n_days": len(dates)}
+        )
+        n_companies = adjust_params.get("n_companies", 7)
+        n_days = adjust_params.get("n_days", 7)
+        dates = dates[:n_days]
+
+    data = []
+    for i in range(n_companies):
+        unique_set = set()
+        company_id = generate_custom_id( 
+            length=22, unique_ids=unique_set, retries=5, 
+            default_id="Company_{i+1}"
+            ) 
+        prices = np.cumprod(1 + np.random.normal(0, 0.01, len(dates)))
+        if noise_level is not None:
+            noise_level = validate_noise_level(noise_level)
+        prices += np.random.normal(0, noise_level, len(dates)) if noise_level else 0
+        data.extend([{"date": date, "company_id": company_id, "price": price} 
+                     for date, price in zip(dates, prices)])
+
+    stock_prices_df = pd.DataFrame(data)
+
+    target_name = target_name or ["price"]
+
+    return manage_data(
+        data=stock_prices_df, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
+
+def simulate_transactions(
+    *, n_accounts=100, 
+    start_date="2024-01-01", 
+    end_date="2024-12-31", 
+    as_frame=False, 
+    n_samples=None, 
+    return_X_y=False, 
+    target_name=None, 
+    noise_level=None, 
+    seed=None
+):
+    """
+    Generates a dataset of synthetic financial transactions for multiple accounts
+    over a specified time period.
+    
+    Parameters
+    ----------
+    n_accounts : int, optional
+        Number of unique accounts for which data will be generated. Each 
+        account will have entries for each day within the specified date range,
+        creating a comprehensive dataset across time. Default is 100.
+        
+    start_date : str, optional
+        The start date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        The function will generate data from this date to `end_date`, inclusive.
+        Default is ``"2024-01-01"``.
+        
+    end_date : str, optional
+        The end date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        Default is ``"2024-12-31"``.
+    
+    as_frame : bool, optional
+        Determines the format of the returned dataset. If `True`, the dataset
+        is returned as a pandas DataFrame. If `False`, the dataset is returned 
+        in a Bunch object or as arrays, based on the `return_X_y` parameter.
+        Default is `False`.
+        
+    n_samples : int or None, optional
+        Specifies the target number of total samples to generate in the dataset. 
+        This parameter allows for dynamic adjustment of the `n_accounts` parameter 
+        to match the desired number of samples, considering the number of days 
+        between `start_date` and `end_date`. Default is `None`.
+    
+    return_X_y : bool, optional
+        If `True`, the function returns a tuple `(X, y)` where `X` is the array
+        of feature values and `y` is the array of targets. This is useful 
+        for directly feeding data into machine learning models. If `False`, 
+        returns a Bunch object containing the dataset, targets, and 
+        additional information. This parameter is ignored if `as_frame` is 
+        `True`. Default is `False`.
+        
+    target_name : str or None, optional
+        Specifies the name of the target variable to be included in the 
+        output. By default (`None`), the function uses ``"amount"`` as 
+        the target variable.
+    
+    noise_level : float or None, optional
+        Adds Gaussian noise with standard deviation equal to `noise_level` to the 
+        transaction amounts to simulate real-world financial variations. If `None`, 
+        no noise is added. Default is `None`.
+        
+    seed : int or None, optional
+        Seed for the random number generator to ensure reproducibility of 
+        the dataset. If `None`, the random number generator is initialized
+        without a fixed seed. Setting a seed is useful when conducting 
+        experiments that require consistent results. Default is `None`.
+    
+    Returns
+    -------
+    Depending on the combination of `as_frame` and `return_X_y` parameters, 
+    the function can return a pandas DataFrame, a tuple of `(X, y)` arrays, or 
+    a Bunch object encapsulating the dataset, targets, and additional 
+    metadata.
+    
+    Notes
+    -----
+    The simulated dataset is generated using pseudo-random numbers to model 
+    financial transactions, influenced by daily account activities. The transaction
+    amounts are generated using a normal distribution, adjusted by transaction type 
+    (debit or credit). The balance is calculated as the cumulative sum of 
+    transactions for each account, initialized with a random starting balance. 
+    
+    Examples
+    --------
+    >>> from gofast.datasets.simulate import simulate_transactions
+    >>> data_obj = simulate_transactions(n_samples=10)
+    >>> X, y = simulate_transactions(return_X_y=True)
+    
+    See Also
+    --------
+    simulate.simulate_stock_prices : 
+        Simulates stock price data for multiple companies.
+    sklearn.utils.Bunch : 
+        Used to package the dataset when arrays are returned.
+    
+    References
+    ----------
+    .. [1] Hull, J. C. (2017). Options, Futures, and Other Derivatives. Pearson.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+    
+    start_date, end_date = validate_dates(
+        start_date, end_date, return_as_date_str= True )
+    
+    dates = pd.date_range(start=start_date, end=end_date)
+
+    if n_samples:
+        adjust_params = adjust_parameters_to_fit_samples(
+            n_samples, initial_guesses={'n_accounts': n_accounts, "n_days": len(dates)}
+        )
+        n_accounts = adjust_params.get("n_accounts", 50)
+        n_days = adjust_params.get("n_days", 30)
+        dates = dates[:n_days]
+
+    data = []
+    for i in range(n_accounts):
+        account_id = generate_custom_id(
+            length=8, prefix="ACC-", include_timestamp=True, 
+            default_id=f"Account_{i+1}") 
+        for date in dates:
+            amount = np.random.uniform(-500, 500)
+            transaction_type = np.random.choice(["debit", "credit"])
+            balance = np.random.uniform(1000, 10000) + amount
+            if noise_level is not None:
+                noise_level = validate_noise_level(noise_level)
+            amount += np.random.normal(0, noise_level) if noise_level else 0
+            balance += np.random.normal(0, noise_level) if noise_level else 0
+            data.append({
+                "date": date, 
+                "account_id": account_id, 
+                "transaction_type": transaction_type, 
+                "amount": amount, 
+                "balance": balance
+            })
+
+    transactions_df = pd.DataFrame(data)
+
+    target_name = target_name or ["amount"]
+
+    return manage_data(
+        data=transactions_df, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
+
+def simulate_patient_data(
+    *, 
+    n_patients=100, 
+    start_date="2024-01-01", 
+    end_date="2024-12-31", 
+    as_frame=False, 
+    n_samples=None, 
+    return_X_y=False, 
+    target_name=None, 
+    noise_level=None, 
+    seed=None
+):
+    """
+    Simulate synthetic patient data with specified features for a given date 
+    range. The function allows flexibility in the number of patients, sampling 
+    frequency, and addition of noise, with options for returning a DataFrame or 
+    data-target split format.
+
+    Parameters
+    ----------
+    n_patients : int, optional
+        The number of unique patients to simulate data for. Defaults to 100.
+        
+    start_date : str, optional
+        Start date for data simulation in 'YYYY-MM-DD' format. Defaults to 
+        "2024-01-01".
+        
+    end_date : str, optional
+        End date for data simulation in 'YYYY-MM-DD' format. Defaults to 
+        "2024-12-31".
+
+    as_frame : bool, optional
+        If ``True``, returns the data as a pandas DataFrame. If ``False``, 
+        returns data as a structured array or, if `return_X_y` is also set to 
+        ``True``, returns data in an (X, y) tuple format. Defaults to ``False``.
+        
+    n_samples : int or None, optional
+        Specifies the total number of samples (data points) in the output dataset. 
+        The function adjusts `n_patients` and the number of days automatically to 
+        approximate this number of samples. Defaults to ``None`` (ignores sampling).
+
+    return_X_y : bool, optional
+        If ``True``, returns the dataset as an (X, y) tuple, where X is the 
+        dataset excluding the target variable(s), and y includes the target 
+        variables specified in `target_name`. Defaults to ``False``.
+
+    target_name : str or list of str, optional
+        Specifies the target variable(s) in the dataset. Can be a single string 
+        or list of strings representing one or more feature names. Defaults to 
+        "blood_pressure" if not provided.
+
+    noise_level : float or None, optional
+        The standard deviation of Gaussian noise added to numerical variables. 
+        If ``None``, no noise is added. Noise is independently applied to each 
+        patient feature with mean 0 and standard deviation `noise_level`. 
+        Defaults to ``None``.
+
+    seed : int or None, optional
+        Sets the random seed for reproducibility. If ``None``, the random 
+        generator is not seeded. Defaults to ``None``.
+
+    Returns
+    -------
+    pd.DataFrame or tuple
+        A DataFrame or tuple containing the simulated patient data. The 
+        structure of the output depends on the `as_frame` and `return_X_y` 
+        parameters:
+        
+        - If `as_frame=True`, a pandas DataFrame with columns corresponding 
+          to each patient feature and an index of dates.
+        - If `as_frame=False` and `return_X_y=False`, returns a structured 
+          array of all features.
+        - If `return_X_y=True`, returns an (X, y) tuple where X is the dataset 
+          excluding the target and y is the target variable(s) specified in 
+          `target_name`.
+
+    Notes
+    -----
+    This function is useful for generating synthetic datasets for healthcare 
+    and patient-related simulations, with features commonly found in clinical 
+    data. The generated dataset includes various patient attributes:
+    
+    - **date**: The date of data recording.
+    - **patient_id**: Unique identifier for each patient, with format `PAT-XXXXX`.
+    - **age**: Random age of each patient, sampled from a uniform distribution 
+      between 0 and 100 years.
+    - **gender**: Random gender assigned as either 'male' or 'female'.
+    - **height**: Height in cm, sampled from a uniform distribution (150-200 cm).
+    - **weight**: Weight in kg, sampled from a uniform distribution (50-100 kg).
+    - **smoking_status**: Random smoking status, either 'never', 'former', or 
+      'current'.
+    - **blood_pressure**: Blood pressure in mmHg, sampled from a normal 
+      distribution with mean 120 and standard deviation 15.
+    - **cholesterol**: Cholesterol level in mg/dL, with mean 200 and std 30.
+    - **bmi**: Body Mass Index, calculated as :math:`\text{weight} / 
+      (\text{height} / 100)^2`.
+    - **heart_rate**: Heart rate in bpm, sampled from a normal distribution 
+      with mean 70 and std 10.
+    - **blood_sugar**: Blood sugar level in mg/dL, sampled from a normal 
+      distribution with mean 100 and std 20.
+
+    Gaussian noise with standard deviation `noise_level` is added to numerical 
+    features to increase variability.
+
+    Examples
+    --------
+    >>> from gofast.datasets.simulate import simulate_patient_data
+    >>> df = simulate_patient_data(n_patients=10, as_frame=True)
+    >>> df.head()
+    
+    >>> X, y = simulate_patient_data(
+    ...     n_patients=5, return_X_y=True, target_name="cholesterol"
+    ... )
+    
+    See Also
+    --------
+    generate_custom_id : Function for generating unique IDs.
+    
+    References
+    ----------
+    .. [1] Doe, J., et al. "Simulating Healthcare Data for Machine Learning 
+           Applications." Journal of Synthetic Data Science, 2023.
+    .. [2] Smith, A. et al. "Randomized Patient Simulation for Clinical Research."
+           Health Data Science Proceedings, 2024.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+    
+    start_date, end_date = validate_dates(
+        start_date, end_date, return_as_date_str= True )
+    dates = pd.date_range(start=start_date, end=end_date)
+
+    if n_samples:
+        adjust_params = adjust_parameters_to_fit_samples(
+            n_samples, initial_guesses={'n_patients': n_patients, "n_days": len(dates)}
+        )
+        n_patients = adjust_params.get("n_patients", 50)
+        n_days = adjust_params.get("n_days", 30)
+        dates = dates[:n_days]
+
+    data = []
+    for i in range(n_patients):
+        unique_set = set()
+        patient_id = generate_custom_id(
+            length=10, unique_ids=unique_set, retries=5, prefix="PAT-", 
+            default_id="Patient_{i+1}") 
+        age = np.random.randint(0, 100)
+        gender = np.random.choice(["male", "female"])
+        height = np.random.uniform(150, 200)
+        weight = np.random.uniform(50, 100)
+        smoking_status = np.random.choice(["never", "former", "current"])
+        for date in dates:
+            blood_pressure = np.random.normal(120, 15)
+            cholesterol = np.random.normal(200, 30)
+            bmi = weight / (height / 100) ** 2
+            heart_rate = np.random.normal(70, 10)
+            blood_sugar = np.random.normal(100, 20)
+            if noise_level is not None:
+                noise_level = validate_noise_level(noise_level)
+            blood_pressure += np.random.normal(0, noise_level) if noise_level else 0
+            cholesterol += np.random.normal(0, noise_level) if noise_level else 0
+            bmi += np.random.normal(0, noise_level) if noise_level else 0
+            heart_rate += np.random.normal(0, noise_level) if noise_level else 0
+            blood_sugar += np.random.normal(0, noise_level) if noise_level else 0
+            data.append({
+                "date": date, 
+                "patient_id": patient_id, 
+                "age": age, 
+                "gender": gender, 
+                "height": height,
+                "weight": weight,
+                "smoking_status": smoking_status,
+                "blood_pressure": blood_pressure, 
+                "cholesterol": cholesterol, 
+                "bmi": bmi,
+                "heart_rate": heart_rate,
+                "blood_sugar": blood_sugar
+            })
+
+    patient_data_df = pd.DataFrame(data)
+
+    target_name = target_name or ["blood_pressure"]
+
+    return manage_data(
+        data=patient_data_df, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
+
+def simulate_clinical_trials(
+    *, n_patients=100, 
+    start_date="2024-01-01", 
+    end_date="2024-12-31", 
+    as_frame=False, 
+    n_samples=None, 
+    return_X_y=False, 
+    target_name=None, 
+    noise_level=None, 
+    seed=None
+):
+    """
+    Generates synthetic patient data including demographics, medical history, 
+    and test results over a specified time period.
+    
+    Parameters
+    ----------
+    n_patients : int, optional
+        Number of unique patients for whom data will be generated. Each 
+        patient will have entries for each day within the specified date range,
+        creating a comprehensive dataset across time. Default is 100.
+        
+    start_date : str, optional
+        The start date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        The function will generate data from this date to `end_date`, inclusive.
+        Default is ``"2024-01-01"``.
+        
+    end_date : str, optional
+        The end date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        Default is ``"2024-12-31"``.
+    
+    as_frame : bool, optional
+        Determines the format of the returned dataset. If `True`, the dataset
+        is returned as a pandas DataFrame. If `False`, the dataset is returned 
+        in a Bunch object or as arrays, based on the `return_X_y` parameter.
+        Default is `False`.
+        
+    n_samples : int or None, optional
+        Specifies the target number of total samples to generate in the dataset. 
+        This parameter allows for dynamic adjustment of the `n_patients` parameter 
+        to match the desired number of samples, considering the number of days 
+        between `start_date` and `end_date`. Default is `None`.
+    
+    return_X_y : bool, optional
+        If `True`, the function returns a tuple `(X, y)` where `X` is the array
+        of feature values and `y` is the array of targets. This is useful 
+        for directly feeding data into machine learning models. If `False`, 
+        returns a Bunch object containing the dataset, targets, and 
+        additional information. This parameter is ignored if `as_frame` is 
+        `True`. Default is `False`.
+        
+    target_name : str or None, optional
+        Specifies the name of the target variable to be included in the 
+        output. By default (`None`), the function uses ``"blood_pressure"`` as 
+        the target variable.
+    
+    noise_level : float or None, optional
+        Adds Gaussian noise with standard deviation equal to `noise_level` to the 
+        numerical features of the dataset to simulate measurement errors or 
+        physiological fluctuations. If `None`, no noise is added. Default is `None`.
+        
+    seed : int or None, optional
+        Seed for the random number generator to ensure reproducibility of 
+        the dataset. If `None`, the random number generator is initialized
+        without a fixed seed. Setting a seed is useful when conducting 
+        experiments that require consistent results. Default is `None`.
+    
+    Returns
+    -------
+    Depending on the combination of `as_frame` and `return_X_y` parameters, 
+    the function can return a pandas DataFrame, a tuple of `(X, y)` arrays, or 
+    a Bunch object encapsulating the dataset, targets, and additional 
+    metadata.
+    
+    Notes
+    -----
+    The simulated dataset is generated using pseudo-random numbers to model 
+    patient health data, influenced by demographic and lifestyle factors. The health
+    metrics, such as blood pressure, cholesterol, and BMI, are generated using normal
+    distributions with means and standard deviations typical of real-world 
+    measurements.
+    
+    Examples
+    --------
+    >>> from gofast.datasets.simulate import simulate_patient_data
+    >>> data_obj = simulate_patient_data(n_samples=10)
+    >>> X, y = simulate_patient_data(return_X_y=True)
+    
+    See Also
+    --------
+    simulate.simulate_clinical_trials : 
+        Simulates clinical trial data for multiple patients.
+    sklearn.utils.Bunch : 
+        Used to package the dataset when arrays are returned.
+    
+    References
+    ----------
+    .. [1] Doe, J., & Smith, A. (2020). Healthcare Data Simulation. Journal of 
+           Medical Informatics.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+    start_date, end_date = validate_dates(
+        start_date, end_date, return_as_date_str= True )
+    dates = pd.date_range(start=start_date, end=end_date)
+
+    if n_samples:
+        adjust_params = adjust_parameters_to_fit_samples(
+            n_samples, initial_guesses={'n_patients': n_patients, 
+                                        "n_days": len(dates)}
+        )
+        n_patients = adjust_params.get("n_patients", 50)
+        n_days = adjust_params.get("n_days", 7)
+        dates = dates[:n_days]
+
+    data = []
+    for i in range(n_patients):
+        patient_id = generate_custom_id(
+            length=7, prefix="PAT-", include_timestamp=True, 
+            default_id=f"Patient_{i+1}")
+        age = np.random.randint(18, 90)
+        gender = np.random.choice(["male", "female"])
+        height = np.random.uniform(150, 200)
+        weight = np.random.uniform(50, 100)
+        smoking_status = np.random.choice(["never", "former", "current"])
+        medication = np.random.choice(["placebo", "drug_a", "drug_b"])
+        ethnicity = np.random.choice(
+            ["Caucasian", "African American", "Asian", "Hispanic", "Other"])
+        pre_existing_conditions = np.random.choice(
+            ["none", "diabetes", "hypertension", "heart disease", "asthma"])
+        for date in dates:
+            blood_pressure = np.random.normal(120, 15)
+            cholesterol = np.random.normal(200, 30)
+            bmi = weight / (height / 100) ** 2
+            heart_rate = np.random.normal(70, 10)
+            blood_sugar = np.random.normal(100, 20)
+            adverse_events = np.random.choice(["none", "mild", "moderate", "severe"])
+            treatment_effectiveness = ( 
+                np.random.normal(0.5, 0.1) if medication != "placebo" 
+                else np.random.normal(0.1, 0.05))
+            quality_of_life = np.random.normal(70, 15)
+            survival_rate = ( 
+                np.random.choice([0, 1], p=[0.1, 0.9]) if medication != "placebo" 
+                else np.random.choice([0, 1], p=[0.3, 0.7]))
+            if noise_level is not None:
+                noise_level = validate_noise_level(noise_level)
+            blood_pressure += np.random.normal(0, noise_level) if noise_level else 0
+            cholesterol += np.random.normal(0, noise_level) if noise_level else 0
+            bmi += np.random.normal(0, noise_level) if noise_level else 0
+            heart_rate += np.random.normal(0, noise_level) if noise_level else 0
+            blood_sugar += np.random.normal(0, noise_level) if noise_level else 0
+            treatment_effectiveness += np.random.normal(0, noise_level) if noise_level else 0
+            quality_of_life += np.random.normal(0, noise_level) if noise_level else 0
+            data.append({
+                "date": date, 
+                "patient_id": patient_id, 
+                "age": age, 
+                "gender": gender, 
+                "height": height,
+                "weight": weight,
+                "smoking_status": smoking_status,
+                "medication": medication,
+                "ethnicity": ethnicity,
+                "pre_existing_conditions": pre_existing_conditions,
+                "blood_pressure": blood_pressure, 
+                "cholesterol": cholesterol, 
+                "bmi": bmi,
+                "heart_rate": heart_rate,
+                "blood_sugar": blood_sugar,
+                "adverse_events": adverse_events,
+                "treatment_effectiveness": treatment_effectiveness,
+                "quality_of_life": quality_of_life,
+                "survival_rate": survival_rate
+            })
+
+    clinical_trials_df = pd.DataFrame(data)
+
+    target_name = target_name or ["treatment_effectiveness"]
+
+    return manage_data(
+        data=clinical_trials_df, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
+
+def simulate_weather_data(
+    *, n_locations=100, 
+    start_date="2024-01-01", 
+    end_date=None, 
+    n_days=None, 
+    as_frame=False, 
+    n_samples=None, 
+    return_X_y=False, 
+    target_name=None, 
+    noise_level=None, 
+    seed=None, 
+    region=None, 
+    cyclical_order=False, 
+    random_order=False, 
+    max_repeats=7, 
+    
+):
+    """
+    Simulates weather data including temperature, humidity, and precipitation 
+    for multiple locations over a specified time period.
+    
+    Parameters
+    ----------
+    n_locations : int, optional
+        Number of unique locations for which data will be generated. Each 
+        location will have entries for each day within the specified date range,
+        creating a comprehensive dataset across time. Default is 100.
+        
+    start_date : str, optional
+        The start date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        The function will generate data from this date to `end_date`, inclusive.
+        Default is ``"2024-01-01"``.
+    
+    end_date : str or None, optional
+        The end date for the dataset, specified in ``"YYYY-MM-DD"`` format. 
+        If `None`, the end date is set to the current date. Default is `None`.
+    
+    n_days : int or None, optional
+        Number of days for which data will be generated. If specified, `end_date`
+        is ignored, and data is generated for `n_days` starting from `start_date`.
+        Default is `None`.
+    
+    as_frame : bool, optional
+        Determines the format of the returned dataset. If `True`, the dataset
+        is returned as a pandas DataFrame. If `False`, the dataset is returned 
+        in a Bunch object or as arrays, based on the `return_X_y` parameter.
+        Default is `False`.
+        
+    n_samples : int or None, optional
+        Specifies the target number of total samples to generate in the dataset. 
+        This parameter allows for dynamic adjustment of the `n_locations` parameter 
+        to match the desired number of samples, considering the number of days 
+        between `start_date` and `end_date`. Default is `None`.
+    
+    return_X_y : bool, optional
+        If `True`, the function returns a tuple `(X, y)` where `X` is the array
+        of feature values and `y` is the array of targets. This is useful 
+        for directly feeding data into machine learning models. If `False`, 
+        returns a Bunch object containing the dataset, targets, and 
+        additional information. This parameter is ignored if `as_frame` is 
+        `True`. Default is `False`.
+        
+    target_name : str or None, optional
+        Specifies the name of the target variable to be included in the 
+        output. By default (`None`), the function uses ``"temperature"`` as 
+        the target variable.
+    
+    noise_level : float or None, optional
+        Adds Gaussian noise with standard deviation equal to `noise_level` to the 
+        numerical features of the dataset to simulate measurement errors or 
+        environmental fluctuations. If `None`, no noise is added. Default is `None`.
+        
+    seed : int or None, optional
+        Seed for the random number generator to ensure reproducibility of 
+        the dataset. If `None`, the random number generator is initialized
+        without a fixed seed. Setting a seed is useful when conducting 
+        experiments that require consistent results. Default is `None`.
+        
+    region : str, optional
+        The region to select countries from (e.g., 'Africa', 'America'). If 
+        ``None``, the function will return countries from all regions. The 
+        specified `region` can be a substring or partial match, allowing 
+        flexible searches (e.g., 'America' matches both North and South America).
+        
+    cyclical_order : bool, optional, default=False
+        If ``True``, repeats countries in a cyclical manner if ``allow_repeat`` 
+        is enabled (e.g., [A, B, C, A, B, C...]). Otherwise, repeats are chosen 
+        randomly if enabled.
+        
+    random_order : bool, optional, default=False
+        If ``True``, shuffles the list of countries to return them in random 
+        order. If ``False``, countries are returned in the order they are 
+        listed in the dictionary.
+        
+    max_repeats : int, optional, default=7
+        The maximum number of times a country can be repeated if ``allow_repeat`` 
+        is set to ``True``. This controls over-repetition of any specific country.
+        
+    Returns
+    -------
+    Depending on the combination of `as_frame` and `return_X_y` parameters, 
+    the function can return a pandas DataFrame, a tuple of `(X, y)` arrays, or 
+    a Bunch object encapsulating the dataset, targets, and additional 
+    metadata.
+    
+    Notes
+    -----
+    The simulated dataset is generated using pseudo-random numbers to model 
+    weather conditions, influenced by typical daily variations. The weather metrics,
+    such as temperature, humidity, and precipitation, are generated using normal
+    distributions with means and standard deviations typical of real-world 
+    measurements.
+    
+    Examples
+    --------
+    >>> from gofast.datasets.simulate import simulate_weather_data
+    >>> data_obj = simulate_weather_data(n_samples=10)
+    >>> X, y = simulate_weather_data(return_X_y=True)
+    
+    See Also
+    --------
+    simulate.simulate_climate_data : 
+        Simulates long-term climate data for multiple locations.
+    sklearn.utils.Bunch : 
+        Used to package the dataset when arrays are returned.
+    
+    References
+    ----------
+    .. [1] Smith, B., & Johnson, M. (2019). Weather Data Simulation. Journal of 
+           Environmental Data Science.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+
+    if end_date is None:
+        end_date = datetime.date.today().strftime("%Y-%m-%d")
+
+    if n_days is not None:
+        
+        dates = pd.date_range(start=start_date, periods=n_days)
+    else:
+        start_date, end_date = validate_dates(
+            start_date, end_date, return_as_date_str= True )
+        dates = pd.date_range(start=start_date, end=end_date)
+
+    if n_samples:
+        adjust_params = adjust_parameters_to_fit_samples(
+            n_samples, initial_guesses={'n_locations': n_locations, 
+                                        "n_days": len(dates)}
+        )
+        n_locations = adjust_params.get("n_locations", 50)
+        n_days = adjust_params.get("n_days", 30)
+        dates = dates[:n_days]
+
+    data = []
+    locations = get_country_by(
+        region=region,
+        number= validate_positive_integer(n_locations, "region's number"), 
+        cyclical_order=cyclical_order, 
+        random_order=random_order, 
+        max_repeats=max_repeats, 
+        force_repeat_fill=True
+        ) 
+    for i in range(n_locations):
+        location = locations[i] 
+        for date in dates:
+            temperature = np.random.normal(20, 5)
+            humidity = np.random.uniform(30, 90)
+            precipitation = np.random.uniform(0, 20)
+            wind_speed = np.random.uniform(0, 15)
+            wind_direction = np.random.uniform(0, 360)
+            cloud_cover = np.random.uniform(0, 100)
+            pressure = np.random.uniform(980, 1050)
+            visibility = np.random.uniform(1, 10)
+            dew_point = temperature - ((100 - humidity) / 5)
+            uv_index = np.random.uniform(0, 11)
+            if noise_level is not None:
+                noise_level = validate_noise_level(noise_level)
+            temperature += np.random.normal(0, noise_level) if noise_level else 0
+            humidity += np.random.normal(0, noise_level) if noise_level else 0
+            precipitation += np.random.normal(0, noise_level) if noise_level else 0
+            wind_speed += np.random.normal(0, noise_level) if noise_level else 0
+            wind_direction += np.random.normal(0, noise_level) if noise_level else 0
+            cloud_cover += np.random.normal(0, noise_level) if noise_level else 0
+            pressure += np.random.normal(0, noise_level) if noise_level else 0
+            visibility += np.random.normal(0, noise_level) if noise_level else 0
+            dew_point += np.random.normal(0, noise_level) if noise_level else 0
+            uv_index += np.random.normal(0, noise_level) if noise_level else 0
+            data.append({
+                "date": date, 
+                "location": location, 
+                "temperature": temperature, 
+                "humidity": humidity, 
+                "precipitation": precipitation,
+                "wind_speed": wind_speed,
+                "wind_direction": wind_direction,
+                "cloud_cover": cloud_cover,
+                "pressure": pressure,
+                "visibility": visibility,
+                "dew_point": dew_point,
+                "uv_index": uv_index
+            })
+
+    weather_data_df = pd.DataFrame(data)
+
+    target_name = target_name or ["temperature"]
+
+    return manage_data(
+        data=weather_data_df, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
+
+def simulate_climate_data(
+    *, n_locations=100, 
+    n_years=30, 
+    start_year=1990, 
+    as_frame=False, 
+    n_samples=None, 
+    return_X_y=False, 
+    target_name=None, 
+    noise_level=None, 
+    seed=None, 
+    region=None, 
+    cyclical_order=False, 
+    random_order=False, 
+    max_repeats=7, 
+):
+    """
+    Creates synthetic climate data for long-term environmental studies.
+    
+    Parameters
+    ----------
+    n_locations : int, optional
+        Number of unique locations for which data will be generated. Each 
+        location will have entries for each year within the specified time range,
+        creating a comprehensive dataset across time. Default is 100.
+        
+    n_years : int, optional
+        Number of years for which data will be generated. Each location will have
+        entries for each year within the specified range. Default is 30.
+        
+    start_year : int, optional
+        The starting year for the dataset. The function will generate data from 
+        this year for `n_years`. Default is 1990.
+    
+    as_frame : bool, optional
+        Determines the format of the returned dataset. If `True`, the dataset
+        is returned as a pandas DataFrame. If `False`, the dataset is returned 
+        in a Bunch object or as arrays, based on the `return_X_y` parameter.
+        Default is `False`.
+        
+    n_samples : int or None, optional
+        Specifies the target number of total samples to generate in the dataset. 
+        This parameter allows for dynamic adjustment of the `n_locations` parameter 
+        to match the desired number of samples, considering the number of years 
+        in the dataset. Default is `None`.
+    
+    return_X_y : bool, optional
+        If `True`, the function returns a tuple `(X, y)` where `X` is the array
+        of feature values and `y` is the array of targets. This is useful 
+        for directly feeding data into machine learning models. If `False`, 
+        returns a Bunch object containing the dataset, targets, and 
+        additional information. This parameter is ignored if `as_frame` is 
+        `True`. Default is `False`.
+        
+    target_name : str or None, optional
+        Specifies the name of the target variable to be included in the 
+        output. By default (`None`), the function uses ``"avg_temp"`` as 
+        the target variable.
+    
+    noise_level : float or None, optional
+        Adds Gaussian noise with standard deviation equal to `noise_level` to the 
+        numerical features of the dataset to simulate measurement errors or 
+        environmental fluctuations. If `None`, no noise is added. Default is `None`.
+        
+    seed : int or None, optional
+        Seed for the random number generator to ensure reproducibility of 
+        the dataset. If `None`, the random number generator is initialized
+        without a fixed seed. Setting a seed is useful when conducting 
+        experiments that require consistent results. Default is `None`.
+    
+    region : str, optional
+        The region to select countries from (e.g., 'Africa', 'America'). If 
+        ``None``, the function will return countries from all regions. The 
+        specified `region` can be a substring or partial match, allowing 
+        flexible searches (e.g., 'America' matches both North and South America).
+        
+    cyclical_order : bool, optional, default=False
+        If ``True``, repeats countries in a cyclical manner if ``allow_repeat`` 
+        is enabled (e.g., [A, B, C, A, B, C...]). Otherwise, repeats are chosen 
+        randomly if enabled.
+        
+    random_order : bool, optional, default=False
+        If ``True``, shuffles the list of countries to return them in random 
+        order. If ``False``, countries are returned in the order they are 
+        listed in the dictionary.
+        
+    max_repeats : int, optional, default=7
+        The maximum number of times a country can be repeated if ``allow_repeat`` 
+        is set to ``True``. This controls over-repetition of any specific country.
+    
+    Returns
+    -------
+    Depending on the combination of `as_frame` and `return_X_y` parameters, 
+    the function can return a pandas DataFrame, a tuple of `(X, y)` arrays, or 
+    a Bunch object encapsulating the dataset, targets, and additional 
+    metadata.
+    
+    Notes
+    -----
+    The simulated dataset is generated using pseudo-random numbers to model 
+    long-term climate conditions, influenced by typical annual variations. The 
+    climate metrics, such as average temperature, precipitation, and humidity, 
+    are generated using normal distributions with means and standard deviations 
+    typical of real-world measurements.
+    
+    Examples
+    --------
+    >>> from gofast.datasets.simulate import simulate_climate_data
+    >>> data_obj = simulate_climate_data(n_samples=100)
+    >>> X, y = simulate_climate_data(return_X_y=True)
+    
+    See Also
+    --------
+    simulate.simulate_weather_data : 
+        Simulates daily weather data for multiple locations.
+    sklearn.utils.Bunch : 
+        Used to package the dataset when arrays are returned.
+    
+    References
+    ----------
+    .. [1] Brown, L., & Green, P. (2018). Climate Data Simulation for Long-term 
+           Studies. Journal of Environmental Data Science.
+    """
+
+    np.random.seed(seed)
+    func_name = inspect.currentframe().f_code.co_name
+    dataset_descr, features_descr = fetch_simulation_metadata(func_name)
+    start_year = validate_positive_integer(start_year, "start_year")
+    
+    years = range(start_year, start_year + n_years)
+
+    if n_samples:
+        adjust_params = adjust_parameters_to_fit_samples(
+            n_samples, initial_guesses={'n_locations': n_locations, "n_years": len(years)}
+        )
+        n_locations = adjust_params.get("n_locations", 50)
+        n_years = adjust_params.get("n_years", 30)
+        years = range(start_year, start_year + n_years)
+
+    data = []
+    locations = get_country_by(
+        region=region,
+        number= validate_positive_integer(n_locations, "region's number"), 
+        cyclical_order=cyclical_order, 
+        random_order=random_order, 
+        max_repeats=max_repeats, 
+        force_repeat_fill=True
+        ) 
+    for i in range(n_locations):
+        location = locations[i]
+        for year in years:
+            avg_temp = np.random.normal(15, 3)
+            min_temp = avg_temp - np.random.uniform(5, 10)
+            max_temp = avg_temp + np.random.uniform(5, 10)
+            precipitation = np.random.uniform(200, 2000)
+            humidity = np.random.uniform(30, 90)
+            wind_speed = np.random.uniform(0, 20)
+            wind_direction = np.random.uniform(0, 360)
+            cloud_cover = np.random.uniform(0, 100)
+            pressure = np.random.uniform(950, 1050)
+            if noise_level is not None:
+                noise_level = validate_noise_level(noise_level)
+            avg_temp += np.random.normal(0, noise_level) if noise_level else 0
+            min_temp += np.random.normal(0, noise_level) if noise_level else 0
+            max_temp += np.random.normal(0, noise_level) if noise_level else 0
+            precipitation += np.random.normal(0, noise_level) if noise_level else 0
+            humidity += np.random.normal(0, noise_level) if noise_level else 0
+            wind_speed += np.random.normal(0, noise_level) if noise_level else 0
+            wind_direction += np.random.normal(0, noise_level) if noise_level else 0
+            cloud_cover += np.random.normal(0, noise_level) if noise_level else 0
+            pressure += np.random.normal(0, noise_level) if noise_level else 0
+            data.append({
+                "year": year, 
+                "location": location, 
+                "avg_temp": avg_temp, 
+                "min_temp": min_temp, 
+                "max_temp": max_temp,
+                "precipitation": precipitation,
+                "humidity": humidity,
+                "wind_speed": wind_speed,
+                "wind_direction": wind_direction,
+                "cloud_cover": cloud_cover,
+                "pressure": pressure
+            })
+
+    climate_data_df = pd.DataFrame(data)
+
+    target_name = target_name or ["avg_temp"]
+
+    return manage_data(
+        data=climate_data_df, 
+        as_frame=as_frame, 
+        return_X_y=return_X_y,
+        target_names=target_name,
+        DESCR=dataset_descr, 
+        FDESCR=features_descr, 
+        noise=noise_level,
+    )
 
 def simulate_landfill_capacity(
     *, n_landfills=100, 
@@ -187,7 +1559,12 @@ def simulate_landfill_capacity(
 
     data = []
 
-    for landfill_id in range(1, n_landfills + 1):
+    for lf_id in range(1, n_landfills + 1):
+        unique_set = set()
+        landfill_id = generate_custom_id( prefix="LF-", suffix ='-ENV.ID',
+            length=12, unique_ids=unique_set, retries=5, 
+            default_id="landfill_{i+1}"
+            ) 
         for date in date_range:
             total_capacity = np.random.uniform(50000, 100000)  # in tons
             current_waste = np.random.uniform(10000, total_capacity)
@@ -391,6 +1768,7 @@ def simulate_water_reserves(
     location_names = {i+1: np.random.choice(WATER_RESERVES_LOC) for i in range(n_locations)}
 
     for i in range(n_locations):
+        
         for date in dates:
             total_capacity_ml = np.random.uniform(5000, 10000)
             current_volume_ml = np.random.uniform(1000, total_capacity_ml)
@@ -585,6 +1963,10 @@ def simulate_world_mineral_reserves(
     # Simulate mineral reserve data for each sample
     data = []
     for i in range(n_samples):
+        sample_id = generate_custom_id(suffix ='-RESV',
+            length=10, prefix="WMIN-", include_timestamp=True, 
+            default_id=f"WorldMinResv_{i+1}"
+            ) 
         selected_region = np.random.choice(list(distributions.keys()))
         available_minerals = distributions[selected_region]
         mineral_type = np.random.choice(available_minerals)
@@ -604,7 +1986,7 @@ def simulate_world_mineral_reserves(
         reserve_details = build_reserve_details_by_country (location)
 
         data.append({
-            'sample_id': i + 1,
+            'sample_id': sample_id,
             'region': selected_region,
             'location': location,
             'mineral_type': mineral_type,
@@ -721,7 +2103,12 @@ def simulate_energy_consumption(
     dates = pd.date_range(start=start_date, periods=days, freq='D')
     time_features = np.tile(dates, n_households)
     
-    household_ids = np.repeat(np.arange(1, n_households + 1), len(dates))
+    # Generate id numbers
+    household_ids_ = np.repeat(np.arange(1, n_households + 1), len(dates))
+    household_ids= np.repeat([generate_custom_id(
+        length=12, prefix ='H-', suffix ='',  ) for _ in range(n_households)], 
+        len(dates))
+    
     household_sizes = np.random.choice(
         [1, 2, 3, 4, 5], size=n_households, p=[0.1, 0.2, 0.4, 0.2, 0.1])
     energy_saving_appliances = np.random.choice(
@@ -730,13 +2117,13 @@ def simulate_energy_consumption(
     avg_temperature = np.sin(np.linspace(0, 2 * np.pi, days)) * 10 + 15
     temperatures = np.repeat(avg_temperature, n_households)
     
-    base_consumption = household_sizes[household_ids - 1] * 5
+    base_consumption = household_sizes[household_ids_ - 1] * 5
     temperature_effect = (temperatures - 15) / 5
-    energy_saving_effect = energy_saving_appliances[household_ids - 1] * -1
+    energy_saving_effect = energy_saving_appliances[household_ids_ - 1] * -1
     # Increase consumption for EV households
-    ev_effect = electric_vehicles[household_ids - 1] * 2  
+    ev_effect = electric_vehicles[household_ids_ - 1] * 2  
     # Decrease consumption for solar panel households
-    solar_panel_effect = solar_panels[household_ids - 1] * -2  
+    solar_panel_effect = solar_panels[household_ids_ - 1] * -2  
     
     energy_consumption = ( 
         base_consumption 
@@ -750,10 +2137,10 @@ def simulate_energy_consumption(
     energy_data = pd.DataFrame({
         'date': time_features,
         'household_id': household_ids,
-        'household_size': household_sizes[household_ids - 1],
-        'energy_saving_appliances': energy_saving_appliances[household_ids - 1],
-        'electric_vehicles': electric_vehicles[household_ids - 1],
-        'solar_panels': solar_panels[household_ids - 1],
+        'household_size': household_sizes[household_ids_ - 1],
+        'energy_saving_appliances': energy_saving_appliances[household_ids_ - 1],
+        'electric_vehicles': electric_vehicles[household_ids_ - 1],
+        'solar_panels': solar_panels[household_ids_ - 1],
         'temperature': temperatures,
         'energy_consumption_kwh': energy_consumption
     })
@@ -1042,8 +2429,13 @@ def simulate_predictive_maintenance(
                    return_as_date_str= True
                    )
     dates = pd.date_range(start=start_date, periods=days, freq='D')
-    machine_ids = np.arange(1, n_machines + 1)
-    
+    unique_set = set()
+    machine_ids =  np.array ( [ 
+        generate_custom_id(length=13 , unique_ids=unique_set, 
+                            retries=7
+            ) for _ in range(  n_machines)
+          ] 
+        )
     sensor_data = np.random.randn(days * n_machines, n_sensors)
     operational_data = np.random.randn(days * n_machines, operational_params)
     
@@ -1094,6 +2486,7 @@ def simulate_predictive_maintenance(
               [f'op_param_{i}' for i in range(1, operational_params + 1)]
     df = pd.DataFrame(data, columns=columns)
     df['date'] = np.tile(dates, n_machines)
+    
     df['machine_id'] = np.repeat(machine_ids, days)
     
     if not target_name:

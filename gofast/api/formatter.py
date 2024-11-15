@@ -2174,8 +2174,6 @@ def get_display_limits(
 
     return max_rows, max_cols
 
-
-    
 def get_formatter_classes():
     """
     Retrieves all the formatter classes defined within the same module as this function.
@@ -2213,7 +2211,7 @@ def get_formatter_classes():
             if member.__module__ == current_module.__name__]
 
 def formatter_validator(instance, obj=None, attributes=None, df_indices=None,
-                        error='raise', check_only=False):
+                        error='raise', check_only=False, only_df=False):
     """
     Validates formatter instances against specified criteria, handling different
     types of formatter classes.
@@ -2244,7 +2242,11 @@ def formatter_validator(instance, obj=None, attributes=None, df_indices=None,
     check_only : bool, optional
         If True, the function only checks for existence and types without returning
         values or performing deeper validation. Default is False.
-
+    only_df: bool, default is False 
+        Return only the dataframe when the instance is the `DataFrameFormatter` 
+        and indices is passed, rather than returning selected rows or the single 
+        dataset. 
+        
     Raises
     ------
     TypeError
@@ -2270,11 +2272,11 @@ def formatter_validator(instance, obj=None, attributes=None, df_indices=None,
     >>> from gofast.api.formatter import formatter_validator 
     >>> from gofast.api.formatter import DataFrameFormatter, MultiFrameFormatter
     >>> df_0 = pd.DataFrame({
-        'age': [68, 75], 
+        'age': [75, 68], 
         'name': ['Kouadio Ernest', "Agaman Bla"]
         })
     >>> df_1= pd.DataFrame({
-        'village': ["Niable", 75], 
+        'village': ["Niable", "Yobouakro"], 
         'name': ['Kouadio Ernest', "Agaman Bla"]
         })
     >>> df_formatter= DataFrameFormatter()
@@ -2328,7 +2330,9 @@ def formatter_validator(instance, obj=None, attributes=None, df_indices=None,
         if isinstance_(formatter, DataFrameFormatter):
             if formatter.df is None:
                 handle_error("DataFrameFormatter instance 'df' attribute is empty.")
-            return formatter.df if not indices else formatter.df.loc[indices]
+            return formatter.df if not indices else ( 
+                formatter.df if only_df else formatter.df.loc[indices]
+                ) 
 
         if isinstance_(formatter, MultiFrameFormatter):
             if not formatter.dfs:

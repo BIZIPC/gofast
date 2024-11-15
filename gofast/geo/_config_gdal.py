@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-_config_gdal.py
-
-This module configures GDAL and PyProj for the application. It checks for the 
+Configures GDAL and PyProj for the application. It checks for the 
 availability of GDAL and PyProj libraries, determines the version of GDAL if 
 available, and loads EPSG codes from a local file or a numpy backup, ensuring
  the application can correctly handle geospatial data.
@@ -18,8 +16,9 @@ Created on Sat Feb  3 21:33:42 2024
 """
 
 import os
-import warnings
 import re
+import warnings
+
 import numpy as np
 
 def suppress_warnings():

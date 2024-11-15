@@ -10,7 +10,7 @@ CNNs, and other types of models.
 
 from ..api.types import _Loss, _Regularizer, _Optimizer, _Metric, _Sequential
 from ..api.types import _Model, List, Optional, Union, Tuple
-from ..tools.funcutils import ensure_pkg
+from ..tools.depsutils import ensure_pkg
 from . import KERAS_DEPS, KERAS_BACKEND, dependency_message
 
 if KERAS_BACKEND:
@@ -143,7 +143,7 @@ def build_lstm_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import build_lstm_model
+    >>> from gofast.nn.build_models import build_lstm_model
     >>> model = build_lstm_model(n_lag=10, learning_rate=0.01, activation='relu')
     >>> print(model.summary())
     
@@ -260,7 +260,7 @@ def build_mlp_model(
 
     Examples
     --------
-    >> from gofast.models.deep_search import build_mlp_model
+    >> from gofast.nn.build_models import build_mlp_model
     >>> from tensorflow.keras.optimizers import Adam
     >>> model = build_mlp_model(input_dim=20, output_classes=3, 
     ...                         hidden_units=[50, 30], dropout_rate=0.3,
@@ -424,7 +424,7 @@ def create_attention_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import create_attention_model
+    >>> from gofast.nn.build_models import create_attention_model
     >>> input_dim = 128  # Feature dimensionality
     >>> seq_length = 100  # Length of the sequence
     >>> lstm_units = [64, 64]  # Two LSTM layers
@@ -557,7 +557,7 @@ def create_autoencoder_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import create_autoencoder_model
+    >>> from gofast.nn.build_models import create_autoencoder_model
     >>> input_dim = 784  # For MNIST images flattened to a vector
     >>> encoder_layers = [(128, 'relu', 0.2), (64, 'relu', 0.2)]
     >>> decoder_layers = [(128, 'relu', 0.2), (784, 'sigmoid', 0.0)]
@@ -692,7 +692,7 @@ def create_cnn_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import create_cnn_model
+    >>> from gofast.nn.build_models import create_cnn_model
     >>> input_shape = (28, 28, 1)  # Example for MNIST
     >>> conv_layers = [
     ...     (32, (3, 3), 'relu', 0.2),
@@ -818,7 +818,7 @@ def create_lstm_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import create_lstm_model
+    >>> from gofast.nn.build_models import create_lstm_model
     >>> input_shape = (10, 1)  # 10 time steps, 1 feature
     >>> n_units_list = [50, 25]  # Two LSTM layers with 50 and 25 units
     >>> n_future = 1  # Predicting a single future value

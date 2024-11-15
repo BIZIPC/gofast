@@ -1,95 +1,225 @@
 # -*- coding: utf-8 -*-
-#   License: BSD-3-Clause
-#   Author: LKouadio <etanoyau@gmail.com> 
+# License: BSD 3-Clause
+# Author: LKouadio (a.k.a. @Daniel) <etanoyau@gmail.com>
 
 """
-Fetch data online from zenodo record or repository.  
-Provides functions and classes for loading and managing datasets, including 
-remote loading, extracting from archives, and moving
+The `gofast-datasets-rload` module provides tools for remotely loading and
+managing datasets stored in Zenodo and GitHub repositories. This module
+includes functions and classes to retrieve data archives, extract files, and
+organize datasets for easy access and integration into processing workflows.
+
+This module is essential for users needing datasets not included in the
+package distribution, enabling remote dataset fetching, setup, and management.
+
+Bagoue Dataset:
+---------------
+The Bagoue dataset is not included directly within the `gofast` package. Instead,
+it is retrieved from the `watex` package, which hosts the dataset and related
+documentation. To learn more about the `watex` package and its dataset, visit:
+  - GitHub Repository: https://github.com/earthai-tech/watex
+  - Documentation: https://watex.readthedocs.io/
+
+Configuration details for the Bagoue dataset, including repository paths, Zenodo
+records, and GitHub links, are specified below in `DEFAULT_DATA_CONFIG`. For
+minimal pre-processed Bagoue data, users can load it directly within `gofast`:
+
+    >>> from gofast.datasets import load_bagoue
+    >>> bagoue_dataset = load_bagoue()
+    >>> print(bagoue_dataset.DESCR)  # Provides details on the data
+
+Published studies utilizing this dataset can be found at:
+  - https://doi.org/10.1029/2021WR031623
+  - https://doi.org/10.1007/s11269-023-03562-5
+
+Key Features:
+-------------
+- **Remote Data Loading**: Fetch datasets from remote repositories such as
+  Zenodo and GitHub.
+- **Archive Extraction**: Support for extracting files from various archive
+  formats, including `.zip`, `.tar.gz`, and `.rar`.
+- **Dataset Organization**: Tools to move and structure datasets for seamless
+  integration with data processing pipelines.
+
+Examples:
+---------
+>>> from gofast.datasets.rload import load_dataset
+>>> data = load_dataset('my_dataset_name')
+>>> print(data.head())
+
+Notes:
+------
+- The module handles dependencies gracefully, providing informative messages
+  if required packages (e.g., `tqdm`) are unavailable.
+- Logging is configured to offer detailed information during the data loading
+  process, aiding in debugging and tracking.
+
+References:
+-----------
+- `GoFast GitHub Repository <https://github.com/earthai-tech/gofast>`_
+- `WATex GitHub Repository <https://github.com/earthai-tech/watex>`_
+- `Zenodo <https://zenodo.org/>`_
 
 """
-from __future__ import print_function , annotations 
-import os 
-import sys 
-import subprocess 
-import shutil  
+
+from __future__ import print_function, annotations
+
+import os
+import sys
+import subprocess
+import shutil
 import zipfile
 
-from ..api.types import Optional
-try: 
+try:
     import tqdm
     TQDM_AVAILABLE = True
 except ImportError:
     TQDM_AVAILABLE = False
 
-from ..tools._dependency import import_optional_dependency
-from .._gofastlog import  gofastlog
+from .._gofastlog import gofastlog
+from ..decorators import RunReturn, smartFitRun
+from ..api.types import Optional
+from ..api.property import BaseClass
+from ..tools.depsutils import import_optional_dependency
 
+# Initialize logging
 _logger = gofastlog().get_gofast_logger(__name__)
 
-##### config repo data ################################################
-
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Default Configuration for Bagoue Dataset
+# --------------------------------------------------------------------------
 _DATA = 'data/geodata/main.bagciv.data.csv'
-_ZENODO_RECORD= '10.5281/zenodo.5571534'
+_ZENODO_RECORD = '10.5281/zenodo.5571534'
 
-_TGZ_DICT = dict (
-    # path = 'data/__tar.tgz', 
-    tgz_f = 'data/__tar.tgz/fmain.bagciv.data.tar.gz', 
-    csv_f = '/__tar.tgz_files__/___fmain.bagciv.data.csv'
- )
+# Paths for Tar and CSV files within the dataset archive
+_TGZ_DICT = {
+    'tgz_f': 'data/__tar.tgz/fmain.bagciv.data.tar.gz',
+    'csv_f': '/__tar.tgz_files__/___fmain.bagciv.data.csv'
+}
 
-_GIT_DICT = dict(
-    root  = 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/' , 
-    repo = 'https://github.com/WEgeophysics/gofast' , 
-    blob_root = 'https://github.com/WEgeophysics/gofast/blob/master/'
- )
-_GIT_DICT ['url_tgz'] = _GIT_DICT.get ('root') + _TGZ_DICT.get('tgz_f')
+# GitHub Repository details for remote data retrieval
+_GIT_DICT = {
+    'root': 'https://raw.githubusercontent.com/earthai-tech/watex/master/',
+    'repo': 'https://github.com/earthai-tech/watex',
+    'blob_root': 'https://github.com/earthai-tech/watex/blob/master/'
+}
+_GIT_DICT['url_tgz'] = f"{_GIT_DICT['root']}{_TGZ_DICT['tgz_f']}"
 
-# Default configuration for the Bagoue dataset
+# Comprehensive default configuration for the Bagoue dataset
 DEFAULT_DATA_CONFIG = {
     'data_path': 'data/geodata/main.bagciv.data.csv',
     'zenodo_record': '10.5281/zenodo.5571534',
     'tgz_file': 'data/__tar.tgz/fmain.bagciv.data.tar.gz',
     'csv_file': '/__tar.tgz_files__/___fmain.bagciv.data.csv',
-    'git_root': 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/',
-    'repo_url': 'https://github.com/WEgeophysics/gofast',
-    'blob_root': 'https://github.com/WEgeophysics/gofast/blob/master/',
-    'url_tgz': 'https://raw.githubusercontent.com/WEgeophysics/gofast/master/data/__tar.tgz/fmain.bagciv.data.tar.gz',
+    'git_root': 'https://raw.githubusercontent.com/earthai-tech/watex/master/',
+    'repo_url': 'https://github.com/earthai-tech/watex',
+    'blob_root': 'https://github.com/earthai-tech/watex/blob/master/',
+    'url_tgz': 'https://raw.githubusercontent.com/earthai-tech/watex/master/data/__tar.tgz/fmain.bagciv.data.tar.gz',
     'zip_or_rar_file': 'BagoueCIV__dataset__main.rar'
 }
 
-__all__=["load_dataset", "RemoteLoader","extract_and_move_archive_file", 
-         "move_data", "extract_from_rar", "extract_from_zip", 
-         ]
+__all__ = [
+    "load_dataset", "GFRemoteLoader", "extract_and_move_archive_file",
+    "move_data", "extract_from_rar", "extract_from_zip"
+]
 
-def load_dataset(data_config: dict=DEFAULT_DATA_CONFIG):
+def load_dataset(
+    data_config: dict = DEFAULT_DATA_CONFIG
+):
     """
-    Load a dataset based on the provided configuration. Defaults to the Bagoue dataset.
+    Load a dataset based on the provided configuration. By default, it loads
+    the Bagoue dataset.
+
+    This function leverages the `GFRemoteLoader` to download, extract, and
+    organize datasets from remote repositories, including GitHub and Zenodo.
+    It is especially useful for datasets not bundled directly within the
+    `gofast` package.
 
     Parameters
     ----------
-    data_config : dict
-        Configuration dictionary for the dataset.
+    data_config : dict, optional
+        A configuration dictionary for the dataset, containing details on
+        file paths, URLs, and repository records. Defaults to
+        `DEFAULT_DATA_CONFIG`, which provides the configuration for the
+        Bagoue dataset.
+        
+        Required keys include:
+        
+        - `zenodo_record` : str
+            Zenodo record ID for the dataset.
+        - `git_root` : str
+            Base URL for the GitHub raw content, used for direct access.
+        - `repo_url` : str
+            URL for the main GitHub repository page.
+        - `url_tgz` : str
+            URL for the compressed `.tgz` file.
+        - `blob_root` : str
+            URL for GitHub blob content, used for file navigation.
+        - `zip_or_rar_file` : str
+            Filename of the compressed dataset archive.
+        - `csv_file` : str
+            Name of the CSV file within the archive.
+        - `data_path` : str
+            Path where the extracted data will be stored locally.
 
-    Example
+    Returns
     -------
-    # Usage example with default Bagoue dataset
-    # load_dataset()
-    # Usage example with a different dataset (user needs to provide a configuration dictionary)
-    # custom_data_config = { ... }  # Custom configuration
-    # load_dataset(custom_data_config)
-    >>> from gofast.datasets.rload import load_dataset
+    None
+        The function does not return any value but loads the dataset and
+        saves it to the specified location.
 
+    Raises
+    ------
+    FileNotFoundError
+        Raised if the dataset cannot be found or retrieved from the remote
+        repository.
+    ValueError
+        Raised if the configuration dictionary is missing required keys.
+
+    Notes
+    -----
+    The function automatically handles dataset retrieval, including data
+    extraction and caching, where applicable. It uses `GFRemoteLoader`,
+    which manages the complexities of remote file handling, including
+    retries, decompression, and data structure organization.
+
+    Examples
+    --------
+    >>> from gofast.datasets.rload import load_dataset
+    >>> # Load the default Bagoue dataset
     >>> load_dataset()
-    ... dataset:   0%|                                          | 0/1 [00:00<?, ?B/s]
-    ... ### -> Wait while decompressing 'fmain.bagciv.data.tar.gz' file ...
-    ... --- -> Fail to decompress 'fmain.bagciv.data.tar.gz' file
-    ... --- -> 'main.bagciv.data.csv' not found in the local machine
-    ... ### -> Wait while fetching data from GitHub...
-    ... +++ -> Load data from GitHub successfully done!
-    ... dataset: 100%|##################################| 1/1 [00:03<00:00,  3.38s/B]
+    dataset:   0%|                                          | 0/1 [00:00<?, ?B/s]
+    ### -> Decompressing 'fmain.bagciv.data.tar.gz' file...
+    --- -> Decompression failed for 'fmain.bagciv.data.tar.gz'
+    --- -> 'main.bagciv.data.csv' not found locally
+    ### -> Fetching data from GitHub...
+    +++ -> Data successfully loaded from GitHub!
+    dataset: 100%|##################################| 1/1 [00:03<00:00,  3.38s/B]
+
+    >>> # Using a custom configuration
+    >>> custom_data_config = {
+    ...     'zenodo_record': '10.5281/zenodo.1234567',
+    ...     'git_root': 'https://raw.githubusercontent.com/earthai-tech/customrepo/master/',
+    ...     'repo_url': 'https://github.com/earthai-tech/customrepo',
+    ...     'url_tgz': 'https://raw.githubusercontent.com/earthai-tech/customrepo/master/data.tar.gz',
+    ...     'blob_root': 'https://github.com/earthai-tech/customrepo/blob/master/',
+    ...     'zip_or_rar_file': 'CustomDataset.rar',
+    ...     'csv_file': '/data_files/custom_data.csv',
+    ...     'data_path': 'data/custom_data.csv'
+    ... }
+    >>> load_dataset(custom_data_config)
+
+    See Also
+    --------
+    GFRemoteLoader : Handles dataset retrieval from remote repositories,
+                     including decompression and data structuring.
+
+    References
+    ----------
+    .. [1] `GoFast GitHub Repository <https://github.com/earthai-tech/gofast>`_
+    .. [2] `Zenodo <https://zenodo.org/>`_
+    
     """
-    RemoteLoader(
+    GFRemoteLoader(
         zenodo_record=data_config['zenodo_record'],
         content_url=data_config['git_root'],
         repo_url=data_config['repo_url'],
@@ -98,48 +228,109 @@ def load_dataset(data_config: dict=DEFAULT_DATA_CONFIG):
         zip_or_rar_file=data_config['zip_or_rar_file'],
         csv_file=data_config['csv_file'],
         verbose=10
-    ).fit(data_config['data_path'])
+    ).run(data_config['data_path'])
 
-
-class RemoteLoader:
+@smartFitRun
+class GFRemoteLoader(BaseClass):
     """
-    Load data from online sources like Zenodo, GitHub, or local files.
+    Load `GoFast` package data from online sources such as Zenodo, GitHub,
+    or local files.
+
+    This class provides methods to retrieve datasets stored remotely in 
+    repositories or Zenodo records, with functionality for downloading,
+    decompressing, and structuring datasets in a local environment.
 
     Parameters
     ----------
     zenodo_record : str, optional
-        A Zenodo digital object identifier (DOI) or filepath to a Zenodo record.
+        A Zenodo digital object identifier (DOI) or filepath to a Zenodo 
+        record, used for fetching data from Zenodo.
     content_url : str, optional
-        URL to the repository user content. For GitHub, it can be in the format
-        'https://raw.githubusercontent.com/user/repo/branch/'.
+        URL to access the repository user content directly, such as:
+        'https://raw.githubusercontent.com/user/repo/branch/' for GitHub.
     repo_url : str, optional
-        URL for the repository hosting the project.
+        URL for the main repository page that hosts the dataset.
     tgz_file : str, optional
-        If data is saved in a TGZ file format, provide the URL to fetch the data.
+        URL to the TGZ (or TAR.GZ) file if the data is stored in this format.
     blobcontent_url : str, optional
-        Root URL to blob content for accessing raw data in GitHub.
+        URL to the blob root for accessing raw GitHub data files.
     zip_or_rar_file : str, optional
-        If data is in a ZIP or RAR file, provide the file name.
+        Filename of the ZIP or RAR file, if the data is compressed in either 
+        of these formats.
     csv_file : str, optional
-        Path to the main CSV file to retrieve in the record.
+        Path to the primary CSV file to retrieve within the dataset record.
     verbose : int, optional
-        Level of verbosity. Higher values mean more messages (default is 0).
+        Level of verbosity for logging information. Higher values result in
+        more detailed messages, with a default of `0`.
+
+    Attributes
+    ----------
+    zenodo_record : str
+        Zenodo DOI or identifier for the dataset.
+    content_url : str
+        URL for accessing repository content.
+    repo_url : str
+        URL for the hosting repository.
+    tgz_file : str
+        Path or URL to the TGZ archive.
+    blobcontent_url : str
+        URL to the blob content root.
+    zip_or_rar_file : str
+        Filename of ZIP or RAR data archive.
+    csv_file : str
+        Path to the CSV file within the dataset.
+    verbose : int
+        Verbose output level for logging.
+    f : str
+        Path to the main file used by the instance, set during operations.
+
+    Methods
+    -------
+    run(f: str = None) -> 'GFRemoteLoader'
+        Retrieves the dataset from the configured source, trying local, 
+        GitHub, and Zenodo in that order.
+
+    from_zenodo(zenodo_record: Optional[str] = None, ...)
+        Fetches data directly from Zenodo by record ID, with options for
+        specifying files within the archive.
+
+    from_git_repo(f: Optional[str] = None, ...)
+        Downloads the dataset from a GitHub repository to the specified
+        local location.
+
+    from_local_machine(f: str = None) -> bool
+        Checks for the local existence of the dataset and loads it if
+        available, also extracting any TGZ/TAR files.
 
     Examples
     --------
-    >>> from gofast.datasets.rload import RemoteLoader 
-    >>> loader = RemoteLoader(
+    >>> from gofast.datasets.rload import GFRemoteLoader
+    >>> loader = GFRemoteLoader(
             zenodo_record='10.5281/zenodo.5571534',
-            content_url='https://raw.githubusercontent.com/WEgeophysics/gofast/master/',
+            content_url='https://raw.githubusercontent.com/earthai-tech/gofast/master/',
             repo_url='https://github.com/WEgeophysics/gofast',
-            tgz_file='https://raw.githubusercontent.com/WEgeophysics/gofast/master/data/__tar.tgz/fmain.bagciv.data.tar.gz',
+            tgz_file='https://raw.githubusercontent.com/earthai-tech/gofast/master/data/__tar.tgz/fmain.bagciv.data.tar.gz',
             blobcontent_url='https://github.com/WEgeophysics/gofast/blob/master/',
             zip_or_rar_file='BagoueCIV__dataset__main.rar',
             csv_file='/__tar.tgz_files__/___fmain.bagciv.data.csv',
             verbose=10
         )
-    >>> loader.fit('data/geodata/main.bagciv.data.csv')
+    >>> loader.run('data/geodata/main.bagciv.data.csv')
+
+    Notes
+    -----
+    The `run` method attempts a multi-source retrieval, prioritizing local
+    files first, then GitHub, and finally Zenodo if no local or GitHub data
+    is found. This approach allows for efficient data handling across 
+    various hosting platforms and formats.
+
+
+    References
+    ----------
+    .. [1] `GoFast GitHub Repository <https://github.com/earthai-tech/gofast>`_
+    .. [2] `Zenodo <https://zenodo.org/>`_
     """
+
     def __init__(
         self,
         zenodo_record: Optional[str] = None,
@@ -178,7 +369,8 @@ class RemoteLoader:
         """ assert the file exists"""
         self.f_ = file 
 
-    def fit(self, f: str = None) -> 'RemoteLoader':
+    @RunReturn 
+    def run(self, f: str = None) -> 'GFRemoteLoader':
         """
         Retrieve dataset from GitHub repository, Zenodo record, or local file.
 
@@ -202,7 +394,7 @@ class RemoteLoader:
         --------
         >>> from gofast.datasets.rload import RemoteLoader 
         >>> loader = RemoteLoader(...)
-        >>> loader.fit('data/geodata/main.bagciv.data.csv')
+        >>> loader.run('data/geodata/main.bagciv.data.csv')
         """
         if f is not None:
             self.f = f
@@ -216,8 +408,7 @@ class RemoteLoader:
         else:
             _logger.error(f"Unable to load {os.path.basename(self.f)!r}"
                           " from any source.")
-
-        return self
+        
 
     def _try_load_from_local(self) -> bool:
         """
@@ -579,6 +770,7 @@ class RemoteLoader:
                 _logger.error(f"Failed to decompress {self.tgz_file}: {e}")
 
         return False
+
 
 def extract_and_move_archive_file(
         archive_file: str, target_file: str, destination_dir: str, 

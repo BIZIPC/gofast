@@ -105,7 +105,7 @@ def create_sequences(
     Examples
     --------
     >>> import numpy as np 
-    >>> from gofast.models.deep_search import create_sequences
+    >>> from gofast.nn.generate import create_sequences
     >>> input_data = np.random.rand(100, 5)  # Example data
     >>> X, y = create_sequences(input_data, n_features=5, n_forecast=1, n_lag=12,
     ...                         step=1, output_features=[-1], shuffle=True, normalize=True)
@@ -229,7 +229,7 @@ def data_generator(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import data_generator
+    >>> from gofast.nn.generate import data_generator
     >>> import numpy as np
     >>> X = np.random.rand(100, 10)  # 100 samples, 10 features
     >>> y_actual = np.random.rand(100, 1)

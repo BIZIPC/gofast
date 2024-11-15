@@ -3,16 +3,18 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-`util` module provides utility functions for machine learning estimators. 
+Provides utility functions for machine learning estimators. 
 It includes tools for scaling, problem detection, weight determination, 
 memory depth estimation, hyperparameter optimization, model selection, and 
 estimator validation.
 """
 
 from __future__ import annotations
-import warnings 
 import re
+import warnings 
+
 from scipy.sparse import issparse
+from scipy.special import expit, softmax
 import numpy as np 
 
 from sklearn.base import BaseEstimator
@@ -110,8 +112,10 @@ def activator(z, activation='sigmoid', alpha=1.0, clipping_threshold=250):
     if isinstance(activation, str):
         activation = activation.lower()
         if activation == 'sigmoid':
-            z = np.clip(z, -clipping_threshold, clipping_threshold)
-            return 1 / (1 + np.exp(-z))
+            z = expit(z)
+            # z = np.clip(z, -clipping_threshold, clipping_threshold)
+            # z= 1 / (1 + np.exp(-z))
+            return z
         elif activation == 'relu':
             return np.maximum(0, z)
         elif activation == 'leaky_relu':
@@ -123,9 +127,10 @@ def activator(z, activation='sigmoid', alpha=1.0, clipping_threshold=250):
         elif activation == 'tanh':
             return np.tanh(z)
         elif activation == 'softmax':
-            z = np.clip(z, -clipping_threshold, clipping_threshold)
-            exp_z = np.exp(z - np.max(z, axis=1, keepdims=True))
-            return exp_z / np.sum(exp_z, axis=1, keepdims=True)
+            exp_z= softmax(z)
+            # z = np.clip(z, -clipping_threshold, clipping_threshold)
+            # exp_z = np.exp(z - np.max(z, axis=1, keepdims=True))
+            return exp_z # exp_z / np.sum(exp_z, axis=1, keepdims=True)
         else:
             raise ValueError(f"Unsupported activation function: {activation}")
     elif callable(activation):

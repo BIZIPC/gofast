@@ -1,77 +1,109 @@
-# util.py
+# -*- coding: utf-8 -*-
+# License: BSD-3-Clause
+# Author: LKouadio <etanoyau@gmail.com>
 
-"""provides utility functions for the GOFast package, including logging setup,
-file conversion from Python to Cython, and creation of Cython extension modules."""
+"""Provides utility functions for the GOFast package, including logging 
+setup, file conversion from Python to Cython, and creation of Cython 
+extension modules.
+
+The module initializes the logging configuration to ensure
+consistent logging across all modules within the package.
+"""
+
 import os
-import sys 
 import logging
-import logging.config  
-import yaml
+from ._gofastlog import gofastlog
 
-__all__ = ['create_log_files', 'ensure_logging_directory',
-           'load_logging_configuration',  'make_extensions',
-          'setup_gofast_logging', 'setup_logging', 'to_pyx' 
-          ]
 
-def ensure_logging_directory(log_path):
-    """Ensure that the logging directory exists."""
-    os.makedirs(log_path, exist_ok=True)
+__all__ = [ 'make_extensions', 'to_pyx' , 'initialize_logging', 'get_logger']
 
-def setup_logging(default_path='_gflog.yml', default_level=logging.INFO):
-    """Setup logging configuration with fallback."""
-    package_dir = os.path.dirname(__file__)
-    log_path = os.environ.get('LOG_PATH', os.path.join(package_dir, 'gflogs'))
-    ensure_logging_directory(log_path)
-    create_log_files(log_path)  # Ensure log files are created
-    config_file_path = os.path.join(package_dir, default_path)
+
+# Determine the directory where __init__.py resides
+PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Define the default logging configuration file path
+DEFAULT_LOG_CONFIG = os.path.join(PACKAGE_DIR, '_gflog.yml')
+
+def initialize_logging(
+    config_file: str = DEFAULT_LOG_CONFIG,
+    use_default_logger: bool = True,
+    verbose: bool = False
+) -> None:
+    """
+    Initializes the logging configuration for the GOFast package.
+
+    This function configures logging based on a YAML configuration file located
+    within the package directory. If the configuration file is not found or an
+    error occurs during loading, it falls back to a default logger setup.
+
+    Parameters
+    ----------
+    config_file : str, optional
+        Path to the logging configuration YAML file. Defaults to
+        `_gflog.yml` located in the package directory.
+    
+    use_default_logger : bool, optional
+        Whether to use the default logger configuration if the specified
+        `config_file` is not found or fails to load. Defaults to `True`.
+    
+    verbose : bool, optional
+        If `True`, prints additional information during the logging setup.
+        Useful for debugging purposes. Defaults to `False`.
+    
+    Raises
+    ------
+    FileNotFoundError
+        If the specified `config_file` does not exist and `use_default_logger`
+        is set to `False`.
+    
+    yaml.YAMLError
+        If there is an error parsing the YAML configuration file.
+    """
     try:
-        load_logging_configuration(config_file_path, default_level)
+        # Attempt to load and configure 
+        # logging using the specified config file
+        gofastlog.load_configuration(
+            config_path=config_file,
+            use_default_logger=use_default_logger,
+            verbose=verbose
+        )
+    except FileNotFoundError as e:
+        if use_default_logger:
+            logging.warning(
+                f"Logging configuration file not found: {config_file}. "
+                "Falling back to default logger."
+            )
+            gofastlog.set_default_logger()
+        else:
+            raise e
     except Exception as e:
-        logging.basicConfig(level=default_level)
-        logging.warning(f"Failed to load logging configuration from {config_file_path}."
-                        f" Error: {e}. Using basicConfig with level={default_level}.")
+        if use_default_logger:
+            logging.error(
+                f"Failed to load logging configuration from {config_file}: {e}. "
+                "Falling back to default logger."
+            )
+            gofastlog.set_default_logger()
+        else:
+            raise e
 
-def create_log_files(log_path):
-    """Create log files if they do not exist."""
-    for log_file in ['infos.log', 'warnings.log', 'errors.log']:
-        full_path = os.path.join(log_path, log_file)
-        if not os.path.exists(full_path):
-            with open(full_path, 'w'):  # This will create the file if it does not exist
-                pass
+def get_logger(logger_name: str = '') -> logging.Logger:
+    """
+    Retrieves a logger with the specified name.
 
-def load_logging_configuration(config_file_path, default_level):
-    """Load and interpolate environment variables in logging configuration."""
-    if os.path.exists(config_file_path):
-        with open(config_file_path, 'rt') as f:
-            config = yaml.safe_load(f.read())
-            # Interpolate environment variables
-            for handler in config.get('handlers', {}).values():
-                if 'filename' in handler:
-                    handler['filename'] = os.path.expandvars(handler['filename'])
-            logging.config.dictConfig(config)
-    else:
-        raise FileNotFoundError(f"Logging configuration file not found: {config_file_path}")
+    Parameters
+    ----------
+    logger_name : str, optional
+        The name of the logger. If empty, returns the root logger.
+        Defaults to `''`.
+    
+    Returns
+    -------
+    logging.Logger
+        The logger instance with the specified name.
+    """
+    return gofastlog.get_gofast_logger(logger_name)
 
-def setup_gofast_logging (default_path='_gflog.yml'): 
-    "Setup gofast logging config YAML file."
-    # Only modify sys.path if necessary, avoid inserting unnecessary paths
-    package_dir = os.path.dirname(__file__)
-    if package_dir not in sys.path:
-        sys.path.insert(0, package_dir)
-        
-    # Set a default LOG_PATH if it's not already set
-    os.environ.setdefault('LOG_PATH', os.path.join(package_dir, 'gflogs'))
-    
-    # Import the logging setup function from _gofastlog.py
-    from ._gofastlog import gofastlog
-    
-    # Define the path to the _gflog.yml file
-    config_file_path = os.path.join(package_dir, default_path)
-    
-    # Set up logging with the path to the configuration file
-    gofastlog.load_configuration(config_file_path)
   
-
 def to_pyx(*files_or_modules: str, rename: bool = False, verbose: bool = False):
     for file_or_module in files_or_modules:
         if file_or_module.endswith('.py'):
@@ -236,6 +268,8 @@ References
 """
 
 if __name__ == "__main__":
-    setup_logging()
+    # Initialize logging when the package is imported
+    initialize_logging()
+
 
 

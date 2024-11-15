@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 
+from .core import ( 
+    Data, 
+    Frames, 
+    MergeableFrames, 
+    MergeableSeries, 
+    Missing 
+)
 from .enrichment import ( 
     enrich_data_spectrum,
     outlier_performance_impact,
@@ -18,12 +25,13 @@ from .management import (
     request_data,
     store_or_retrieve_data, 
     )
-from .preprocessing import ( 
+from .preprocessing import (
+    Target, Features, 
     apply_bow_vectorization,
     apply_tfidf_vectorization,
     apply_word_embeddings,
     augment_data,
-    base_transform,
+    transform,
     boxcox_transformation,
     transform_dates,
     )
@@ -45,7 +53,6 @@ from .quality import (
     convert_date_features, 
     handle_categorical_features, 
     scale_data 
-    ,
     )
 from .transformation import ( 
     format_long_column_names, 
@@ -55,6 +62,13 @@ from .transformation import (
   )
 
 __all__=[
+        'Data', 
+        'Frames', 
+        'MergeableSeries', 
+        'MergeableFrames', 
+        "Missing", 
+        'Target', 
+        'Features', 
         'analyze_data_corr',
         'apply_bow_vectorization',
         'apply_tfidf_vectorization', 
@@ -62,7 +76,6 @@ __all__=[
         'assess_outlier_impact', 
         'augment_data', 
         'audit_data', 
-        'base_transform',
         'boxcox_transformation',
         'check_correlated_features', 
         'check_missing_data',
@@ -93,6 +106,7 @@ __all__=[
         'store_or_retrieve_data',
         'split_data', 
         'summarize_text_columns',
+        'transform',
         'transform_dates',
         'verify_data_integrity', 
         'smart_group', 

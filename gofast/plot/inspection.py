@@ -28,7 +28,7 @@ from ..decorators import Dataify
 from ..exceptions import PlotError 
 from ..tools.coreutils import is_iterable, to_numeric_dtypes 
 from ..tools.coreutils import _assert_all_types, projection_validator
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 from ..tools.validator import check_X_y, check_array, validate_square_matrix 
 from ..tools.validator import get_estimator_name, _check_consistency_size 
 from ..tools.validator import parameter_validator, validate_sets

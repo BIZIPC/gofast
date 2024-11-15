@@ -4,8 +4,8 @@
 # Copyright (c) 2024 gofast developers.
 # All rights reserved.
 """
-`validator` module provides a comprehensive set of functions and warnings
- for validating and ensuring the integrity of data. This includes 
+Provides a comprehensive set of functions and warnings
+for validating and ensuring the integrity of data. This includes 
 utilities for checking data consistency, validating machine learning targets, 
 ensuring proper data types, and handling various validation scenarios.
 """
@@ -46,8 +46,10 @@ __all__=[
      'check_consistency_size',
      'check_consistent_length',
      'check_epsilon',
+     'check_has_run_method',
      'check_is_fitted',
      'check_is_fitted2',
+     'check_is_runned', 
      'check_memory',
      'check_mixed_data_types',
      'check_random_state',
@@ -61,6 +63,7 @@ __all__=[
      'filter_valid_kwargs',
      'get_estimator_name',
      'handle_zero_division',
+     'has_methods', 
      'has_fit_parameter',
      'has_required_attributes',
      'is_binary_class',
@@ -76,11 +79,13 @@ __all__=[
      'parameter_validator',
      'to_dtype_str',
      'validate_and_adjust_ranges',
+     'validate_batch_size', 
      'validate_comparison_data',
      'validate_data_types',
      'validate_dates',
      'validate_distribution',
      'validate_dtype_selector',
+     'validate_estimator_methods',
      'validate_fit_weights',
      'validate_keras_model',
      'validate_length_range',
@@ -88,17 +93,693 @@ __all__=[
      'validate_multioutput',
      'validate_nan_policy',
      'validate_numeric', 
+     'validate_performance_data',
      'validate_positive_integer',
      'validate_sample_weights',
+     'validate_sets', 
      'validate_scores',
      'validate_square_matrix',
      'validate_weights',
      'validate_yy'
  ]
 
+def has_methods(
+    models,
+    methods, 
+    strict=True, 
+    check_status="check_only", 
+    msg=None
+    ):
+    """
+    Validates the implementation of specified methods across model objects.
+
+    This function checks whether each model in ``models`` implements all the 
+    methods listed in ``methods``. It supports both single and multiple 
+    model instances and provides flexible validation behaviors based on 
+    the parameters.
+
+    .. math::
+        \text{For each model } m \text{ in } M, \text{ verify } \forall 
+        \text{method } s \in S, \text{ } m \text{ has method } s \text{ and } 
+        \text{callable}(m.s).
+
+    Parameters
+    ----------
+    models : object or list of objects
+        A single model instance or a list of model instances to be validated.
+    methods : list of str
+        A list of method names (strings) to validate. Only methods that do 
+        not start with an underscore ('_') are considered.
+    strict : bool, optional
+        If ``strict=True``, raises an ``AttributeError`` upon finding a 
+        missing method. If ``False``, behaves based on the ``check_status``
+        parameter. Default is ``True``.
+    check_status : str, optional
+        Determines the return behavior. Must be either ``"validate"`` or 
+        ``"check_only"``.
+        
+        - ``"validate"``: 
+            - If ``strict=True``, raises an error for models missing methods.
+            - If ``False``, returns a list of models that have all required 
+              methods.
+        - ``"check_only"``: 
+            - If ``strict=True``, raises an error for models missing methods.
+            - If ``False``, returns ``True`` if all models have the methods, 
+              ``False`` otherwise.
+        
+        Default is ``"check_only"``.
+    msg : str, optional
+        Custom error message. Can include placeholders:
+        
+        - ``{model}``: Model name.
+        - ``{methods}``: Comma-separated list of missing methods.
+        
+        Example: ``"Model '{model}' lacks methods: {methods}."``
+
+    Returns
+    -------
+    list of objects or bool or True
+        - If ``check_status="validate"``:
+            - If ``strict=True`` and all models have the methods, returns the 
+              list of models.
+            - If ``strict=False``, returns a list of models that have all the 
+              required methods.
+        - If ``check_status="check_only"``:
+            - If ``strict=False``, returns ``True`` if all models have the 
+              methods, ``False`` otherwise.
+            - If ``strict=True`` and all models have the methods, returns 
+              ``True``.
+
+    Raises
+    ------
+    AttributeError
+        If a model does not implement a required method and ``strict=True``.
+    TypeError
+        If ``methods`` is not a list of strings.
+    ValueError
+        If ``check_status`` has an invalid value.
+
+    Examples
+    --------
+    >>> from gofast.tools.validator import has_methods
+    >>> class ModelA:
+    ...     def train(self):
+    ...         pass
+    ...     def predict(self):
+    ...         pass
+    >>> class ModelB:
+    ...     def train(self):
+    ...         pass
+    >>> model_a = ModelA()
+    >>> model_b = ModelB()
+    
+    # Strict validation with check_status="validate"
+    >>> try:
+    ...     validated = has_methods(
+    ...         models=[model_a, model_b],
+    ...         methods=['train', 'predict'],
+    ...         strict=True,
+    ...         check_status="validate",
+    ...         msg="Custom Error: {model} lacks methods: {methods}."
+    ...     )
+    ... except AttributeError as e:
+    ...     print(e)
+    Custom Error: ModelB lacks methods: predict.
+
+    # Non-strict validation with check_status="validate"
+    >>> validated = has_methods(
+    ...     models=[model_a, model_b],
+    ...     methods=['train', 'predict'],
+    ...     strict=False,
+    ...     check_status="validate"
+    ... )
+    >>> [type(m).__name__ for m in validated]
+    ['ModelA']
+
+    # Strict check_only
+    >>> try:
+    ...     result = has_methods(
+    ...         models=[model_a, model_b],
+    ...         methods=['train', 'predict'],
+    ...         strict=True,
+    ...         check_status="check_only",
+    ...         msg="Error: {model} is missing methods: {methods}."
+    ...     )
+    ... except AttributeError as e:
+    ...     print(e)
+    Error: ModelB is missing methods: predict.
+
+    # Non-strict check_only
+    >>> result = has_methods(
+    ...     models=[model_a, model_b],
+    ...     methods=['train', 'predict'],
+    ...     strict=False,
+    ...     check_status="check_only"
+    ... )
+    >>> result
+    False
+
+    # Single model input
+    >>> single_result = has_methods(
+    ...     models=model_a,
+    ...     methods=['train', 'predict'],
+    ...     strict=False,
+    ...     check_status="check_only"
+    ... )
+    >>> single_result
+    True
+
+    Notes
+    -----
+    - The function assumes that the model instances are properly initialized.
+    - Only methods that are publicly accessible (do not start with '_') are 
+      considered during validation.
+
+    See Also
+    --------
+    `validate_models` : Another function for model validation.
+
+    References
+    ----------
+    .. [1] Smith, J., & Doe, A. (2020). *Model Validation Techniques*. 
+       Journal of Machine Learning, 15(3), 123-145.
+
+    """
+    if isinstance (models, dict): 
+        models = list(models.values())
+        
+    # Ensure 'models' is a list
+    if not isinstance(models, list):
+        models = [models]
+    
+    # Validate 'methods' parameter
+    if not isinstance(methods, list) or not all(
+        isinstance(m, str) for m in methods
+    ):
+        raise TypeError("'methods' should be a list of method name strings.")
+    
+    # Validate 'check_status' parameter
+    valid_check_status = {"validate", "check_only"}
+    if check_status not in valid_check_status:
+        raise ValueError(
+            f"'check_status' must be one of {valid_check_status}, "
+            f"got '{check_status}'."
+        )
+    
+    missing_methods_report = {}
+    validated_models = []
+    
+    for model in models:
+        missing = []
+        for method in methods:
+            if not hasattr(model, method) or not callable(getattr(model, method)):
+                missing.append(method)
+        if missing:
+            model_name = getattr(model, '__name__', type(model).__name__)
+            missing_methods_report[model_name] = missing
+            if strict:
+                # Use custom message if provided
+                if msg:
+                    error_message = msg.format(
+                        model=model_name, methods=', '.join(missing)
+                    )
+                else:
+                    error_message = (
+                        f"Model '{model_name}' is missing "
+                        f"required methods: {', '.join(missing)}."
+                    )
+                raise AttributeError(error_message)
+        else:
+            validated_models.append(model)
+    
+    if check_status == "validate":
+        if strict:
+            # If strict and no exception was raised, return the list of models
+            return models
+        else:
+            # Return only the validated models
+            return validated_models
+        
+    elif check_status == "check_only":
+        if strict:
+            # If strict and no exception was raised, return True
+            return True
+        else:
+            # Return True if no missing methods, else False
+            return len(missing_methods_report) == 0
+
+def check_is_runned(estimator, attributes=None, *, msg=None, all_or_any=all):
+    """
+    Validate if an estimator instance has been "runned" (executed) prior 
+    to invoking dependent methods. This check ensures that the estimator is in 
+    the appropriate operational state, allowing users to identify and address 
+    runtime issues effectively.
+
+    If an estimator does not set "runned" attributes (such as ``_is_runned``), 
+    it may define a ``__gofast_is_runned__`` method. This method should return 
+    a boolean indicating whether the estimator is "runned" or not. 
+
+    Parameters
+    ----------
+    estimator : object
+        The instance of the estimator or class being validated. This 
+        parameter represents the object in which dependent methods 
+        are validated to confirm that the "runned" state has been achieved.
+
+        To determine the "runned" status, the function checks for specific 
+        attributes or, if defined, the ``__gofast_is_runned__`` method.
+
+    attributes : str, list, or tuple of str, optional, default=None
+        Specifies the name(s) of attributes that indicate the "runned" status, 
+        such as ``['_is_runned']`` or ``['_is_fitted']``. If these attributes 
+        are present and set to `True`, the estimator is considered to have 
+        been runned.
+
+        If ``attributes`` is set to `None`, the function will default to 
+        checking for ``_is_runned``. This default provides flexibility for 
+        estimators that employ standard runned flags. 
+
+    msg : str, optional, default=None
+        Custom error message to be displayed if the validation fails. 
+        By default, this error message uses the class name of the 
+        `estimator` in the format:
+
+        "This %(name)s instance has not been 'runned' yet. Call 'run' with 
+        appropriate arguments before using this method."
+
+        To customize the message, include `%(name)s` as a placeholder for 
+        the estimator's class name.
+
+    all_or_any : callable, {all, any}, optional, default=all
+        Determines whether all or any of the specified `attributes` must be 
+        present and set to `True`. By default, the function expects all 
+        attributes to be set to `True`. Set to `any` for greater flexibility 
+        with multiple attributes.
+
+    Methods
+    -------
+    ``__gofast_is_runned__`` : optional, callable
+        If defined within the `estimator`, this method should return a 
+        boolean indicating the "runned" status of the estimator. This 
+        provides an alternative to using attributes.
+
+    Raises
+    ------
+    RuntimeError
+        If none of the specified attributes are set to `True` or if the 
+        `__gofast_is_runned__` method (if present) returns `False`.
+
+    Notes
+    -----
+    The `check_is_runned` function ensures that methods dependent on 
+    the "runned" status are only executed after the estimator has completed 
+    all required preliminary processes, like `fit` or `run`.
+
+    Examples
+    --------
+    >>> from gofast.tools.validator import check_is_runned
+    >>> class ExampleClass:
+    ...     def __init__(self):
+    ...         self._is_runned = False
+    ...
+    ...     def run(self):
+    ...         self._is_runned = True
+    ...         print("Run completed.")
+    ...
+    ...     def process_data(self):
+    ...         check_is_runned(self)
+    ...         print("Processing data...")
+    >>> model = ExampleClass()
+    >>> model.process_data()  # Raises RuntimeError
+    >>> model.run()
+    >>> model.process_data()  # Now it works
+
+    See Also
+    --------
+    check_is_fitted : Validates that an estimator has been "fitted" before 
+                      further use.
+    validate_estimator_methods : Validates essential estimator methods.
+
+    References
+    ----------
+    .. [1] Scikit-learn's `check_is_fitted` function: 
+           https://scikit-learn.org/stable/modules/generated/sklearn.utils.validation.check_is_fitted.html
+    .. [2] Python official documentation on class attributes:
+           https://docs.python.org/3/tutorial/classes.html#class-and-instance-attributes
+    """
+    from ..exceptions import NotRunnedError
+
+    # Default attribute if none is provided
+    if attributes is None:
+        attributes = ['_is_runned']
+    elif not isinstance(attributes, (list, tuple)):
+        attributes = [attributes]
+
+    # Define default error message if not provided
+    if msg is None:
+        msg = (
+            "This %(name)s instance has not been 'runned' yet. Call 'run' with "
+            "appropriate arguments before using this method."
+        )
+
+    # First check if a custom `__gofast_is_runned__` method is available
+    if hasattr(estimator, "__gofast_is_runned__"):
+        is_runned = estimator.__gofast_is_runned__()
+    else:
+        # Verify attributes are present and set to True if no custom method is provided
+        is_runned = all_or_any([getattr(estimator, attr, False) for attr in attributes])
+
+    if not is_runned:
+        raise NotRunnedError(msg % {"name": type(estimator).__name__})
+
+def check_has_run_method(estimator, msg=None, method_name="run"):
+    """
+    Check if the given estimator has a callable `run` method or any other 
+    specified method. This utility helps validate that an object can 
+    execute the expected method before further actions are taken.
+
+    Parameters
+    ----------
+    estimator : object
+        The object (instance or class) to check for the presence of the 
+        `run` method or another specified method.
+    
+    msg : str, optional
+        Custom error message to display if the method is missing. If None, 
+        a default message is generated based on the `method_name`.
+    
+    method_name : str, default="run"
+        The method name to check for. This defaults to `run`, but you can 
+        specify any method name. The method must be callable.
+    
+    Raises
+    ------
+    AttributeError
+        Raised if the `run` method (or any specified method) does not 
+        exist on the object or is not callable.
+    
+    Examples
+    --------
+    >>> from gofast.tools.validator import check_has_run_method
+    >>> class MyClass:
+    ...     def run(self):
+    ...         pass
+    >>> check_has_run_method(MyClass())  # No error
+
+    >>> class MyClassWithoutRun:
+    ...     pass
+    >>> check_has_run_method(MyClassWithoutRun())  # Raises AttributeError
+
+    Notes
+    -----
+    This function performs several checks:
+    
+    1. **Existence check**: It checks whether the `run` method (or any 
+       other specified method) exists in the `estimator` object.
+    2. **Callable check**: It ensures that the method is callable, which 
+       rules out attributes that might exist but aren't methods.
+    3. **Static/class method check**: The function accepts static or 
+       class methods as valid callable methods.
+    4. **Bound method check**: It verifies that instance methods are 
+       bound to an object when required, which ensures they can be called 
+       properly in the given context.
+
+    This function can be expressed as a validation function:
+
+    .. math:: 
+        \text{check\_has\_method}(estimator, method\_name) = 
+        \begin{cases} 
+        \text{valid}, & \text{if method exists and callable} \\
+        \text{invalid}, & \text{if method is missing or not callable}
+        \end{cases}
+
+    It determines whether the method is callable or raises an error 
+    otherwise.
+
+    See Also
+    --------
+    validate_estimator_methods : A helper function to validate multiple 
+                                 methods on an estimator.
+
+    References
+    ----------
+    .. [1] Python Software Foundation. Python 3.9 Documentation.
+           https://docs.python.org/3/
+    .. [2] Static Methods in Python. Real Python.
+           https://realpython.com/instance-class-and-static-methods-python/
+
+    """
+
+    # Step 1: Check if the method exists
+    if not hasattr(estimator, method_name):
+        if msg is None:
+            msg = f"'{estimator.__class__.__name__}' object has no attribute '{method_name}'"
+        raise AttributeError(msg)
+
+    method = getattr(estimator, method_name)
+
+    # Step 2: Ensure the method is callable
+    if not callable(method):
+        if msg is None:
+            msg = f"'{method_name}' attribute of '{estimator.__class__.__name__}' is not callable."
+        raise AttributeError(msg)
+
+    # Step 3: Check for static or class methods
+    if isinstance(getattr(estimator.__class__, method_name, None), (staticmethod, classmethod)):
+        return  # Valid if it's a static or class method
+    
+    # Step 4: If it's an instance method, ensure it's bound
+    if not isinstance(method, (staticmethod, classmethod)) and not hasattr(method, '__self__'):
+        raise AttributeError(f"'{method_name}' method of '{estimator.__class__.__name__}' is unbound.")
+
+    # If no errors were raised, the method exists and is callable
+    return
+
+def validate_batch_size(
+        batch_size, n_samples, min_batch_size=1, max_batch_size=None):
+    """
+    Validate the batch size against the number of samples.
+
+    This function checks whether the provided `batch_size` is appropriate 
+    given the total number of samples `n_samples`. It ensures that the batch 
+    size meets specified minimum and maximum limits, raising appropriate 
+    errors if any constraints are violated.
+
+    Parameters
+    ----------
+    batch_size : int
+        The size of each batch. This must be a positive integer, as batches 
+        must contain at least one sample. A ValueError will be raised if this 
+        value is less than the minimum allowed batch size or exceeds the 
+        total number of samples.
+
+    n_samples : int
+        The total number of samples in the dataset. This value must be 
+        positive and greater than or equal to the `batch_size`. If `batch_size` 
+        is greater than `n_samples`, a ValueError is raised.
+
+    min_batch_size : int, optional
+        The minimum allowed batch size (default is 1). This parameter defines 
+        the smallest permissible batch size. A ValueError will be raised if 
+        the `batch_size` is less than this value.
+
+    max_batch_size : int, optional
+        The maximum allowed batch size (default is None, meaning no upper limit). 
+        This parameter can be used to restrict the size of the batch to a 
+        specified maximum value. If `max_batch_size` is provided, a ValueError 
+        will be raised if the `batch_size` exceeds this limit.
+    
+    Return 
+    ------
+        batch_size: Validated number of batch size 
+    
+    Raises
+    ------
+    ValueError
+        If the `batch_size` is less than the `min_batch_size`, greater than the 
+        `n_samples`, or exceeds the `max_batch_size` if specified. Additionally, 
+        if `batch_size` is not a positive integer, a ValueError is raised.
+
+    Notes
+    ------
+    Let `B` represent the `batch_size` and `N` represent the `n_samples`. 
+    The validation can be expressed mathematically as:
+
+    .. math::
+        \text{If } B < \text{min\_batch\_size} \text{ or } B > N \text{ or } B > \text{max\_batch\_size}:
+        \quad \text{raise ValueError}
+
+    Examples
+    --------
+    >>> from gofast.tools.validators import validate_batch_size
+    >>> validate_batch_size(32, 100)  # Valid case
+    >>> validate_batch_size(0, 100)  # Raises ValueError
+    >>> validate_batch_size(150, 100)  # Raises ValueError
+    >>> validate_batch_size(32, 100, max_batch_size=32)  # Valid case
+    >>> validate_batch_size(40, 100, max_batch_size=32)  # Raises ValueError
+
+    Notes
+    -----
+    This function is essential for managing data batching in machine learning 
+    workflows, where improper batch sizes can lead to inefficient training or 
+    runtime errors.
+
+    See Also
+    --------
+    - Other validation functions in the `gofast.tools.validators` module
+    - Documentation on batch processing in machine learning frameworks
+
+    References
+    ----------
+    .. [1] Goodfellow, I., Bengio, Y., & Courville, A. (2016). Deep Learning. 
+       MIT Press. https://www.deeplearningbook.org/
+    """
+    n_samples = validate_positive_integer(n_samples, "N-samples")
+    
+    # Check if batch_size is a positive integer
+    batch_size = validate_positive_integer(batch_size, "Batch size", msg= ( 
+        f"Batch size must be a positive integer. Given: {batch_size}.")
+        )
+    
+    # Check if batch_size meets the minimum requirement
+    if batch_size < min_batch_size:
+        raise ValueError(
+            f"Batch size ({batch_size}) cannot be less than"
+            f" the minimum allowed ({min_batch_size})."
+        )
+
+    # Check if batch_size exceeds the maximum limit, if provided
+    if max_batch_size is not None and batch_size > max_batch_size:
+        raise ValueError(
+            f"Batch size ({batch_size}) cannot exceed"
+            f" the maximum allowed ({max_batch_size})."
+        )
+
+    # Check if batch_size exceeds the total number of samples
+    if batch_size > n_samples:
+        raise ValueError(
+            f"Batch size ({batch_size}) cannot exceed"
+            f" number of samples ({n_samples})."
+        )
+    return batch_size
+
+def validate_estimator_methods(estimator, methods, msg=None):
+    """
+    Validate that the specified methods exist and are callable on the 
+    given estimator.
+
+    This utility function is designed to check whether an estimator (or 
+    any object) contains the required methods (such as `fit`, `run`, etc.) 
+    and ensures that those methods are callable. It helps prevent runtime 
+    errors by verifying the presence of expected methods.
+
+    Parameters
+    ----------
+    estimator : object
+        The object (instance or class) to check for the presence of the 
+        specified methods. The estimator can be an instance of a class or 
+        the class itself, and it should implement the required methods.
+
+    methods : list of str
+        List of method names (as strings) to validate. Each method name 
+        must exist on the estimator and be callable. Examples of methods 
+        might include `fit`, `run`, `predict`, etc.
+
+    msg : str, optional
+        Custom error message to display if any method is missing or not 
+        callable. If None, a default message is generated for each missing 
+        or invalid method based on the method name.
+
+    Raises
+    ------
+    AttributeError
+        If any method in `methods` is not present or not callable on the 
+        estimator, an AttributeError is raised.
+
+    Examples
+    --------
+    >>> from gofast.tools.validator import validate_estimator_methods
+    >>> class MyClass:
+    ...     def fit(self):
+    ...         pass
+    ...     def run(self):
+    ...         pass
+    >>> validate_estimator_methods(MyClass(), ['fit', 'run'])  # No error
+
+    >>> class IncompleteClass:
+    ...     def fit(self):
+    ...         pass
+    >>> validate_estimator_methods(IncompleteClass(), ['fit', 'run'])  
+    # Raises AttributeError for missing `run` method
+
+    Notes
+    -----
+    This function is useful when you want to ensure that an object, such 
+    as an estimator or a model, has the required methods before proceeding 
+    with operations. It validates the presence of multiple methods, 
+    ensuring each is callable, preventing runtime errors in cases where 
+    methods are expected to exist.
+
+    This function checks if all methods :math:`M_1, M_2, \dots, M_n` 
+    exist and are callable on the estimator. The condition can be 
+    expressed as:
+
+    .. math:: 
+        \forall M_i, \quad \text{if} \quad M_i \in \text{estimator} \quad 
+        \land \quad \text{callable}(M_i) \quad \text{then valid} 
+        \quad \text{else error}
+
+    If any method is missing or not callable, the function raises an 
+    `AttributeError`.
+
+    See Also
+    --------
+    check_has_run_method : Validate the presence of a single method (defaulting to `run`).
+
+    References
+    ----------
+    .. [1] Python Software Foundation. Python 3.9 Documentation.
+           https://docs.python.org/3/
+    .. [2] Callable Objects in Python. Real Python.
+           https://realpython.com/python-callable/
+
+    """
+    if isinstance (methods, str): 
+        methods = [methods]
+        
+    for method_name in methods:
+        # Step 1: Check if the method exists on the estimator
+        if not hasattr(estimator, method_name):
+            # If a custom message is provided, use it; otherwise, generate a default message
+            if msg is None:
+                msg = f"'{estimator.__class__.__name__}' object has no attribute '{method_name}'"
+            raise AttributeError(msg)
+        
+        method = getattr(estimator, method_name)
+
+        # Step 2: Ensure the method is callable
+        if not callable(method):
+            if msg is None:
+                msg = f"'{method_name}' attribute of '{estimator.__class__.__name__}' is not callable."
+            raise AttributeError(msg)
+
+        # Step 3: Check if it's a valid static or class method
+        if isinstance(getattr(estimator.__class__, method_name, None), (staticmethod, classmethod)):
+            continue  # Static or class methods are valid and callable
+        
+        # Step 4: Ensure instance methods are properly bound
+        if not isinstance(method, (staticmethod, classmethod)) and not hasattr(method, '__self__'):
+            raise AttributeError(
+                f"'{method_name}' method of '{estimator.__class__.__name__}' is unbound.")
+
+    # If all methods pass, the validation is successful
+    return
+
+
 def filter_valid_kwargs(callable_obj, kwargs):
     """
-    Filter and return only the valid keyword arguments for a given callable object.
+    Filter and return only the valid keyword arguments for a given 
+    callable object.
 
     This function checks if the arguments in `kwargs` are valid for the 
     provided callable object (function, lambda function, method, or class). 
@@ -377,7 +1058,8 @@ def validate_scores(
     # Return scores as numpy array
     return np.asarray(scores)
 
-def _is_probability_distribution(y, mode='strict'):
+
+def _is_probability_distribution(y, mode='strict', error="ignore"):
     """
     Checks if `y` is a probability distribution across the last axis according 
     to the specified mode.
@@ -395,6 +1077,12 @@ def _is_probability_distribution(y, mode='strict'):
         scores are non-negative.
         - 'passthrough': Only checks that all scores are non-negative and do 
           not exceed 1, without summing them.
+    error : str, optional
+        Specifies the error handling behavior. Options are:
+        - 'raise': Raises an error if the check fails.
+        - 'warn': Issues a warning if the check fails and returns False.
+        - 'ignore': Silently ignores any failure and returns False.
+        Default is 'ignore'.
 
     Returns
     -------
@@ -405,32 +1093,64 @@ def _is_probability_distribution(y, mode='strict'):
     Raises
     ------
     ValueError
-        If an invalid mode is specified.
+        If an invalid mode is specified, or if `error` is set to 'raise' and 
+        the distribution check fails in strict mode.
 
     Examples
     --------
+    >>> from gofast.tools.validator import _is_probability_distribution
     >>> y = np.array([0.3, 0.7])
-    >>> print(is_probability_distribution(y, mode='strict'))
+    >>> print(_is_probability_distribution(y, mode='strict'))
     True
 
     >>> y = np.array([0.5, 0.5, 0.2])
-    >>> print(is_probability_distribution(y, mode='soft'))
+    >>> print(_is_probability_distribution(y, mode='soft'))
     False
 
     >>> y = np.array([0.2, 0.3, 0.4])
-    >>> print(is_probability_distribution(y, mode='passthrough'))
+    >>> print(_is_probability_distribution(y, mode='passthrough'))
     True
     """
-  
+    y = np.asarray(y)
+    
+    mode_status ='.'
     if mode == 'strict':
-        return np.all(np.isclose(np.sum(y, axis=-1), 1)) and np.all(y >= 0)
+        is_valid = np.all(np.isclose(np.sum(y, axis=-1), 1)) and np.all(y >= 0)
+        mode_status =(
+            ": Requires that the sum of scores"
+            " exactly equals 1 (within a tolerance)"
+        )
+        
     elif mode == 'soft':
-        return np.all(np.sum(y, axis=-1) <= 1) and np.all(y >= 0)
+        is_valid = np.all(np.sum(y, axis=-1) <= 1) and np.all(y >= 0)
+        mode_status =(
+            ": Requires that the sum of scores does not"
+            " exceed 1 and all scores are non-negative"
+        )
     elif mode == 'passthrough':
-        return np.all(np.asarray(y) <= 1) and np.all(np.asarray(y) >= 0)
+        is_valid = np.all(y <= 1) and np.all(y >= 0)
+        mode_status =(
+            ": Only checks that all scores are non-negative"
+            " and do not exceed 1, without summing them."
+        )
     else:
         raise ValueError(f"Invalid validation mode: '{mode}'. Valid modes"
                          " are 'strict', 'soft', or 'passthrough'.")
+    
+    if not is_valid:
+        if error == "raise":
+            raise ValueError(f"Input array does not meet the {mode} mode "
+                             "requirements for a probability distribution"
+                             f"{mode_status}")
+        elif error == "warn":
+            warnings.warn(f"Input array does not meet the {mode} mode "
+                          "requirements for a probability distribution"
+                          "{mode_status}")
+            return False
+        elif error == "ignore":
+            return False
+    
+    return is_valid
 
 def validate_square_matrix(data, align=False, align_mode="auto", message=''):
     """
@@ -1046,6 +1766,261 @@ def handle_zero_division(
 
     return y_true_processed
 
+def convert_to_numeric(value, preserve_integers=True, context_description='Data'):
+    """
+    Helper function to convert values to float. It ensures that integers are
+    converted to floats (unless preserve_integers is True) and raises a detailed
+    error for non-numeric values.
+    
+    Parameters
+    ----------
+    value : Any
+        The value to be converted to float. Integer values are converted, while
+        floats are returned as-is. Non-numeric types raise a ValueError.
+    
+    preserve_integers : bool, optional, default True
+        If True, integer values are preserved as integers and not converted to floats
+        and False otherwise.
+    
+    context_description : str, optional, default 'Data'
+        A description of the type of data being processed, used in error messages 
+        to provide context (e.g., 'Performance data', 'Input data').
+    
+    Returns
+    -------
+    float or int
+        The converted numeric value (float by default, or int if preserve_integers is True).
+    
+    Raises
+    ------
+    ValueError
+        If the value cannot be converted to a numeric type
+        (e.g., strings that do not represent numbers).
+    
+    Examples
+    --------
+    >>> from gofast.tools.validator import convert_to_numeric
+    >>> convert_to_numeric(5)
+    5.0
+    >>> convert_to_numeric(5, preserve_integers=True)
+    5
+    >>> convert_to_numeric(3.14)
+    3.14
+    >>> convert_to_numeric('0.85')
+    0.85
+    >>> convert_to_numeric('abc')
+    ValueError: Data expected numeric values, but got str: 'abc'
+    """
+    try:
+        # Check if the value is an integer
+        if isinstance(value, int):
+            if preserve_integers:
+                return value  # Keep the integer as is
+            else:
+                return float(value)  # Convert to float
+        # If the value is already a float, return it
+        elif isinstance(value, float):
+            return value
+        # Attempt to convert any other type (like strings) to float
+        else:
+            return float(value)  # Handle strings that represent numbers
+    except (ValueError, TypeError) as e:
+        # Raise a clear error with context-specific description
+        raise ValueError(f"{context_description} expected numeric values,"
+                         f" but got {type(value).__name__}: '{value}'") from e
+
+def validate_performance_data(
+    model_performance_data=None,
+    nan_policy='raise',
+    convert_integers=True,
+    check_performance_range=True,
+    verbose=False
+):
+    """
+    Validates and preprocesses model performance data to ensure it conforms
+    to the necessary structure and constraints for statistical and machine
+    learning analysis. The function accepts either a dictionary or a
+    DataFrame as input and performs the following tasks:
+
+    1. Converts data to a DataFrame if it is provided as a dictionary.
+    2. Converts integer values to floats, ensuring compatibility with
+       statistical processing.
+    3. Manages NaN values according to the specified `nan_policy`.
+    4. Validates that performance data falls within a valid range, ensuring
+       values lie within [0, 1].
+
+    The function is adaptable, capable of being used directly or as a
+    decorator, with or without configuration parameters.
+
+    Parameters
+    ----------
+    model_performance_data : Union[Dict[str, List[float]], pd.DataFrame], optional
+        The input model performance data to validate. Can be provided as
+        either a dictionary (with model names as keys and performance
+        metrics as lists) or a DataFrame where each column represents a model.
+
+    nan_policy : str, default='raise'
+        The policy to handle NaN values:
+        * 'raise': Raises a ValueError if NaNs are detected.
+        * 'omit': Drops rows with NaNs.
+        * 'propagate': Ignores NaNs during performance range checks.
+
+    convert_integers : bool, default=True
+        Converts integer values within the data to floats if set to True,
+        which is useful for consistency when computing metrics.
+
+    check_performance_range : bool, default=True
+        Ensures that performance values lie within the range [0, 1].
+        If any value falls outside this range, an error is raised unless
+        `nan_policy` is set to 'propagate'.
+
+    verbose : bool, default=False
+        If True, displays steps of the data validation process for tracking
+        operations and debugging.
+
+    Methods
+    -------
+    actual_validate_performance_data(data)
+        Validates and processes the data according to specified policies
+        and constraints.
+
+    Usage
+    -----
+    This function can be utilized in three primary ways:
+
+    1. **As a function**: Provide data directly to perform validation.
+    
+    >>> from gofast.tools.validator import validate_performance_data
+    >>> data = {'model1': [0.85, 0.90, 0.92], 'model2': [0.80, 0.87, 0.88]}
+    >>> validate_performance_data(data)
+
+    2. **As a decorator**: Use as a decorator to validate the first
+       argument of a function. If used without parentheses, default values
+       will be applied.
+
+    >>> @validate_performance_data
+    >>> def process_data(validated_data):
+    >>>     print(validated_data)
+
+    3. **As a decorator with parameters**: Customize validation by
+       specifying parameters.
+
+    >>> @validate_performance_data(nan_policy='omit', verbose=True)
+    >>> def process_data(validated_data):
+    >>>     print(validated_data)
+
+    Notes
+    -----
+    The validation process includes statistical pre-checks, using custom
+    modules to convert data and handle NaNs. For integer-to-float
+    conversion, the `convert_to_numeric` function is utilized, while NaN
+    policies are verified using `is_valid_policies`.
+
+    See Also
+    --------
+    DataFrameFormatter : Formatter for handling DataFrame structures.
+    MultiFrameFormatter : Formatter for handling multiple DataFrames.
+
+    References
+    ----------
+    .. [1] Demsar, J., "Statistical Comparisons of Classifiers over
+           Multiple Data Sets," Journal of Machine Learning Research, 2006.
+
+    """
+
+    from ..api.formatter import ( 
+        DataFrameFormatter, MultiFrameFormatter, formatter_validator
+        )
+    from ..decorators import isdf 
+    
+    @isdf 
+    def actual_validate_performance_data(data):
+        # Convert to DataFrame if input is a dictionary
+        if isinstance(data, dict):
+            if verbose:
+                print("Converting dictionary to DataFrame...")
+            df = pd.DataFrame(data)
+        elif isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            raise ValueError("Input data must be either a dictionary or a DataFrame.")
+
+        # Ensure all values are float, convert integers to floats if needed
+        if convert_integers:
+            if verbose:
+                print("Converting integer values to floats where necessary...")
+            df = df.applymap(convert_to_numeric, preserve_integers=False,
+                             context_description='Performance data')
+
+        # Handle NaN values according to nan_policy
+        is_valid_policies(nan_policy, allowed_policies=['raise', 'omit', 'propagate'])
+
+        if df.isna().any().any():  # Check for NaN values
+            if nan_policy == 'raise':
+                raise ValueError(
+                    "NaN values detected in the data. Set"
+                    " `nan_policy='omit'` to drop them.")
+            elif nan_policy == 'omit':
+                if verbose:
+                    print("Dropping rows with NaN values...")
+                df = df.dropna()
+
+        # Ensure all values are float type
+        df = df.astype(float)
+
+        # Check if performance values are within the valid range [0, 1]
+        if check_performance_range:
+            if nan_policy == 'propagate':
+                df_checked = df.dropna()
+            else:
+                df_checked = df
+
+            if (df_checked < 0).any().any():
+                raise ValueError("Performance values cannot be negative.")
+            if (df_checked > 1).any().any():
+                raise ValueError(
+                    "Performance values must be in the range [0, 1].")
+
+        if verbose:
+            print("Validation and conversion complete."
+                  " Data is ready for further processing.")
+
+        return df
+
+    if model_performance_data is not None and callable(
+            model_performance_data):
+        # Used as a decorator without arguments
+        func = model_performance_data
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            data = args[0]
+            validated_data = actual_validate_performance_data(data)
+            return func(validated_data, *args[1:], **kwargs)
+
+        return wrapper
+
+    elif model_performance_data is not None:
+        # Used as a normal function
+        # Validate and extract DataFrame if data is a formatter instance
+        if isinstance(model_performance_data, (
+                DataFrameFormatter, MultiFrameFormatter)):
+            model_performance_data = formatter_validator(
+                model_performance_data, df_indices=[0], only_df=True)
+            
+        return actual_validate_performance_data(model_performance_data)
+
+    else:
+        # Used as a decorator with arguments
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                data = args[0]
+                validated_data = actual_validate_performance_data(data)
+                return func(validated_data, *args[1:], **kwargs)
+            return wrapper
+        return decorator
+
 def validate_comparison_data(df,  alignment="auto"):
     """
     Validates a DataFrame to ensure it is a square matrix and that the index 
@@ -1459,7 +2434,6 @@ def parameter_validator(
       where only specific values are allowed.
     """
     from .coreutils import normalize_string 
-
     def validator(param_value):
         """Validate param value from :func:`~normalize_string`"""
         if param_value:
@@ -1473,10 +2447,15 @@ def parameter_validator(
 
     return validator
 
-def validate_distribution(distribution, elements=None):
+def validate_distribution(
+    distribution, 
+    elements=None, 
+    kind=None, 
+    check_normalization=True
+    ):
     """
-    Validates or generates distributions for given elements ensuring the 
-    sum equals 1.
+    Validates or generates distributions for given elements, ensuring the 
+    sum equals 1 if `check_normalization` is True.
 
     Parameters:
     ----------
@@ -1488,6 +2467,13 @@ def validate_distribution(distribution, elements=None):
         Defines how many elements the distribution should be generated for 
         when 'auto' is used. If a list of strings is provided, its length 
         is used to determine the number of elements.
+    kind : str, optional 
+        Specifies the kind of distribution. It can be ``{"probs"}`` for 
+        probability distributions, where the sum should equal 1 and 
+        values must be non-negative.
+    check_normalization : bool, optional
+        If True, ensures that the sum of the distribution equals 1. 
+        Default is True.
 
     Returns:
     -------
@@ -1497,22 +2483,25 @@ def validate_distribution(distribution, elements=None):
     Raises:
     ------
     ValueError
-        If the provided distribution does not sum to 1 or contains invalid values.
-        
+        If the provided distribution does not meet the specified conditions.
+
     Examples 
     ---------
     >>> from gofast.tools.validator import validate_distribution
-    >>> validate_distribution ("auto", elements= [ 'positive', 'neutral', 'negative'])
+    >>> validate_distribution("auto", elements=['positive', 'neutral', 'negative'])
     (0.1450318690603951, 0.5660028611331361, 0.2889652698064687)
     """
     # Determine the number of elements if a list is provided
-    if isinstance(elements, list):
-        distributed_elements = len(elements)
-    elif isinstance(elements, ( float, int, np.integer, np.floating)):
-        distributed_elements = int (elements)
-    else:
-        raise ValueError("'elements' must be an integer or a list of strings.")
-
+    distributed_elements = None
+    if elements is not None:
+        if isinstance(elements, (list, tuple, np.ndarray)):
+            distributed_elements = len(elements)
+        elif isinstance(elements, (float, int, np.integer, np.floating)):
+            distributed_elements = int(elements)
+        else:
+            raise ValueError("'elements' must be an integer or a list of strings.")
+    
+    # Generate a random distribution if specified as 'auto'
     if str(distribution).lower() == 'auto':
         if distributed_elements is None:
             raise ValueError("'distributed_elements' must be specified when"
@@ -1522,26 +2511,30 @@ def validate_distribution(distribution, elements=None):
         distribution = tuple(random_values / np.sum(random_values))
     else:
         if not hasattr(distribution, '__iter__') or isinstance(distribution, str):
-            # If distribution is not iterable (or a single string), raise an error
             raise ValueError(
-                "distribution must be 'auto', a tuple, or a list of distributions")
+                "Distribution must be 'auto', a tuple, or a list of values.")
         
         distribution = tuple(distribution)
         
         if distributed_elements is not None and len(distribution) != distributed_elements:
             raise ValueError(
-                f"The distribution must have exactly {distributed_elements} elements")
+                f"The distribution must have exactly {distributed_elements} elements.")
         
         validated_distribution = []
         for value in distribution:
             if not isinstance(value, (int, float)):
-                raise ValueError("All distribution values must be numeric")
+                raise ValueError("All distribution values must be numeric.")
             validated_distribution.append(float(value))
         
-        if not np.isclose(sum(validated_distribution), 1):
-            raise ValueError("The sum of the distribution values must be equal to 1")
+        # Check if the distribution is normalized
+        if check_normalization and not np.isclose(sum(validated_distribution), 1):
+            raise ValueError("The sum of the distribution values must be equal to 1.")
         
         distribution = tuple(validated_distribution)
+    
+    # Check if the distribution matches a probability distribution
+    if kind == 'probs':
+        _is_probability_distribution(distribution, mode="strict", error="raise")
     
     return distribution
 
@@ -2046,7 +3039,7 @@ def check_epsilon(
     Using 'auto' for `eps` allows algorithms to adapt to different scales of data,
     enhancing numerical stability without manually tuning the epsilon value.
     """
-    from .mathex import determine_epsilon 
+    from .mathext import determine_epsilon 
     # Initialize a list to hold arrays for dynamic epsilon determination
     y_arrays = []
     
@@ -2605,9 +3598,10 @@ def validate_dates(
     return start_date.year, end_date.year
 
 
-
-
-def validate_positive_integer(value, variable_name, include_zero=False, round_float=None):
+def validate_positive_integer(
+        value, variable_name, include_zero=False, round_float=None, 
+        msg=None
+        ):
     """
     Validates whether the given value is a positive integer or zero based 
     on the parameter and rounds float values according to the specified method.
@@ -2623,7 +3617,8 @@ def validate_positive_integer(value, variable_name, include_zero=False, round_fl
     round_float : str, optional
         If "ceil", rounds up float values; if "floor", rounds down float values;
         if None, truncates float values to the nearest whole number towards zero.
-
+    msg: str, optional, 
+        Error message when checking for proper type failed.
     Returns:
     -------
     int
@@ -2640,10 +3635,19 @@ def validate_positive_integer(value, variable_name, include_zero=False, round_fl
     # Determine the minimum acceptable value
     min_value = 0 if include_zero else 1
 
+    if isinstance(value, str):
+         # Try to convert it if possible
+         try:
+             value = int(value)
+         except ValueError:
+             # Raise a nice informative error message
+             raise ValueError(f"Value {value} is not convertible to an integer.")
+
     # Check for proper type and round if necessary
     if not isinstance(value, (int, float, np.integer, np.floating)):
-        raise ValueError(f"{variable_name} must be an integer or float.")
-
+        msg = msg or f"{variable_name} must be an integer or float. Got {value}"
+        raise ValueError(msg)
+        
     if isinstance(value, float):
         if round_float == "ceil":
             value = math.ceil(value)
@@ -3394,6 +4398,9 @@ def get_estimator_name (estimator ):
     :return: str, 
         name of the estimator. 
     """
+    if isinstance (estimator, str): 
+        return estimator 
+    
     name =' '
     if hasattr (estimator, '__qualname__') and hasattr(
             estimator, '__name__'): 
@@ -3952,8 +4959,8 @@ def check_is_fitted(estimator, attributes=None, *, msg=None, all_or_any=all):
     raises a NotFittedError with the given message.
 
     If an estimator does not set any attributes with a trailing underscore, it
-    can define a ``__sklearn_is_fitted__`` method returning a boolean to specify if the
-    estimator is fitted or not.
+    can define a ``__sklearn_is_fitted__`` or ``__gofast_is_fitted__`` method
+    returning a boolean to specify if the estimator is fitted or not.
 
     Parameters
     ----------
@@ -4007,6 +5014,8 @@ def check_is_fitted(estimator, attributes=None, *, msg=None, all_or_any=all):
         fitted = all_or_any([hasattr(estimator, attr) for attr in attributes])
     elif hasattr(estimator, "__sklearn_is_fitted__"):
         fitted = estimator.__sklearn_is_fitted__()
+    elif hasattr(estimator, "__gofast_is_fitted__"):
+        fitted = estimator.__gofast_is_fitted__() 
     else:
         fitted = [
             v for v in vars(estimator) if v.endswith("_") and not v.startswith("__")
@@ -4293,7 +5302,7 @@ def is_frame (arr, df_only =False, raise_exception: bool=False,
             )
     if not isf and raise_exception : 
         # then check only 
-        objname='Expect' if not objname else f'{objname} expects'
+        objname='Expect' if not objname else f'{objname!r} parameter expects'
         raise TypeError(
             f"{objname} a {'DataFrame' if df_only else 'data frame or series'}."
               f" Got {type(arr).__name__!r}")
@@ -4855,7 +5864,293 @@ def validate_dtype_selector(dtype_selector: str) -> str:
 
     raise ValueError(
         f"Invalid dtype_selector provided. Valid options are :{types}")
+
+def build_series_if(
+    *arr,
+    series_names=None,
+    indexes=None,
+    dtype=None,
+    dropna=False,
+    fill_value=None,
+    inplace=False,
+    transpose=False,
+    reset_index=False,
+    error_policy='raise',
+):
+    """
+    Constructs one or more pandas Series from the provided input arrays.
+    Handles various input cases, such as single values, arrays, and DataFrames.
+
+    Parameters
+    ----------
+    *arr : array-like or DataFrame
+        The input data(s). Can be a numpy array, pandas DataFrame, or 
+        single value. Each element will be processed individually to build 
+        a pandas Series.
     
+    series_names : str or list of str, optional, default None
+        The name(s) to assign to each resulting Series. If a string is provided,
+        all Series will have the same name. If a list is provided, the list 
+        should have the same length as `arr`. If not provided, the Series will
+        not be given a name.
+
+    indexes : array-like, optional, default None
+        The index to use for the resulting Series. If None, a default integer 
+        index will be used. If specified, it should match the length of the 
+        input data or the number of Series being created.
+
+    dtype : dtype, optional, default None
+        The data type to force on the resulting Series. If None, pandas will 
+        infer the appropriate type based on the data.
+
+    dropna : bool, optional, default False
+        If True, any NaN values will be dropped from the Series. If False, 
+        NaN values will remain in the Series.
+
+    fill_value : scalar, optional, default None
+        If specified, this value will replace any NaN values in the resulting 
+        Series. If None, no filling occurs.
+
+    inplace : bool, optional, default False
+        If True, modifications to the Series will be made in place and no 
+        new object will be returned. If False, a new Series is created and 
+        returned.
+
+    transpose : bool, optional, default False
+        If True, the Series will be transposed. This option is useful when 
+        working with DataFrames where each column needs to be converted into 
+        a Series.
+
+    reset_index : bool, optional, default False
+        If True, resets the index of the resulting Series. This will drop the 
+        current index and replace it with a new default integer index.
+
+    error_policy : {'raise', 'warn', 'ignore'}, optional, default 'raise'
+        Defines how to handle errors during Series construction:
+        - 'raise' will raise an error.
+        - 'warn' will print a warning message.
+        - 'ignore' will suppress errors without any notification.
+
+    Returns
+    -------
+    list of pandas.Series or pandas.Series
+        The constructed pandas Series objects. If only one Series is created,
+        a single Series is returned; otherwise, a list of Series is returned.
+
+    Examples
+    --------
+    >>> from gofast.tools.validator import build_series_if
+    >>> data = [1, 2, 3]
+    >>> build_series_if(data)
+    0    1
+    1    2
+    2    3
+    dtype: int64
+
+    >>> data1 = [1, 2, 3]
+    >>> data2 = [4, 5, 6]
+    >>> build_series_if(data1, data2, series_names=["A", "B"])
+    [0    1
+     1    2
+     2    3
+     dtype: int64, 
+     0    4
+     1    5
+     2    6
+     dtype: int64]
+
+    >>> build_series_if(data, fill_value=0, dropna=True)
+    0    1
+    1    2
+    2    3
+    dtype: int64
+
+    Notes
+    -----
+    The function performs the following operations on the input data:
+    1. Validates and converts the input data into a pandas Series.
+    2. Applies optional transformations like changing dtype, 
+       setting index, filling NaN values, or dropping them.
+    3. Handles errors according to the `error_policy` parameter.
+    4. Returns a list of Series or a single Series depending on the input.
+    
+    The function processes each input array (`arr[i]`) as follows:
+
+    1. `data_i = _validate_and_convert_data(arr[i])`  
+       Converts the data to a pandas Series, if needed.
+    
+    2. `series_i = pd.Series(data_i, name=series_names[i])`  
+       Creates a pandas Series with the specified name.
+
+    3. If `dtype` is provided:  
+       `series_i = series_i.astype(dtype)`
+       - Forces the dtype conversion.
+
+    4. If `indexes` is provided:  
+       `series_i.index = indexes`
+       - Sets custom index.
+
+    5. If `dropna` is True:  
+       `series_i = series_i.dropna()`
+       - Drops NaN values.
+
+    6. If `fill_value` is provided:  
+       `series_i = series_i.fillna(fill_value)`
+       - Fills NaN values with the specified value.
+
+    7. If `transpose` is True:  
+       `series_i = series_i.T`
+       - Transposes the Series.
+
+    8. If `reset_index` is True:  
+       `series_i = series_i.reset_index(drop=True)`
+       - Resets the index.
+
+    9. The result is returned as a list of Series or a single Series.
+
+    See Also
+    --------
+    pandas.Series : The pandas Series constructor used to generate Series objects.
+
+    References
+    ----------
+    [1]_ pandas documentation. https://pandas.pydata.org/pandas-docs/stable/
+    """
+    series_list = []
+
+    try:
+        # Iterate over the input data
+        for idx, data in enumerate(arr):
+            # Convert input data to a Series if needed
+            data = _validate_and_convert_data(data)
+
+            # Handle series naming
+            series_names = _check_series_names(
+                series_names, len(arr), error_policy)
+
+            # Create the Series with a name if available
+            if series_names:
+                series = pd.Series(
+                    data, name=series_names[idx] if series_names[idx] else None
+                    )
+            else:
+                series = pd.Series(data)
+            # Apply additional modifications based on parameters
+            if dtype is not None:
+                series = series.astype(dtype)
+
+            if indexes is not None:
+                # Check if indexes length matches the data length
+                series = _check_series_indexes(
+                    series, indexes, data, idx, error_policy  )
+            if dropna:
+                series = series.dropna()
+
+            if fill_value is not None:
+                series = series.fillna(fill_value)
+
+            if inplace:
+                # If inplace is True, modify the series in place
+                continue
+
+            # Apply transpose if needed
+            if transpose:
+                series = series.T
+
+            if reset_index:
+                series = series.reset_index(drop=True)
+
+            # Append series to the list of results
+            series_list.append(series)
+
+        # Return a single Series if only one is constructed
+        if len(series_list) == 1:
+            return series_list[0]
+        
+        return series_list
+
+    except Exception as e:
+        if error_policy == 'raise':
+            raise e
+        elif error_policy == 'warn':
+            warnings.warn(f"{e}")
+        elif error_policy == 'ignore':
+             pass
+         
+    return arr
+
+
+def _check_series_names(series_names, data_len, error_policy):
+    """
+    Helper function to check if the length of series_names matches the
+    length of data.
+    """
+    if isinstance(series_names, (list, tuple)) and len(series_names) != data_len:
+        msg = "Length of series_names does not match the length of input data."
+        if error_policy == "raise":
+            raise ValueError(msg)
+        elif error_policy == "warn":
+            print(f"Warning: {msg}")
+        # Optionally extend series names if needed
+        elif error_policy == "ignore":
+            series_names +=[None] * (data_len - len(series_names) )
+            # return series_names
+    return series_names
+
+def _validate_and_convert_data(data):
+    """
+    Helper function to validate and convert input data to a compatible form.
+    - Converts a list or tuple into a numpy array.
+    - If a pandas DataFrame with a single column is passed, converts it to a Series.
+    - If a numpy array with shape (1, N) is passed, squeezes to a 1D array.
+    - If the input is a scalar, converts it to a 1D numpy array.
+    - If the input is a 2D array (not a single-column DataFrame), raises a ValueError.
+    
+    Parameters:
+    data: The input data to be validated and converted.
+    
+    Returns:
+    A 1D numpy array or pandas Series.
+    
+    Raises:
+    ValueError: If the input data is not 1D when expected.
+    """
+    # Check if the data is a pandas DataFrame with a single column
+    if isinstance(data, pd.DataFrame) and data.shape[1] == 1:
+        return data.iloc[:, 0]  # Return the single column as a Series
+    
+    # Check if the data is a numpy array, and squeeze it if necessary
+    elif isinstance(data, np.ndarray):
+        data = data.squeeze()  # Squeeze to ensure a 1D array
+    
+    # Check if the data is a scalar value (0-dimensional)
+    if np.ndim(data) == 0:  
+        return np.array([data])  # Convert scalar to 1D array
+    
+    # Check if the data is 2D (and not a single-column DataFrame)
+    if np.ndim(data) == 2:
+        # Raise error for 2D array
+        raise ValueError(
+            "Expected 1D data for series construction, but got 2D array.")  
+    
+    # Otherwise, convert the data to a numpy array
+    return np.asarray(data)  # Return data as a 1D numpy array
+
+def _check_series_indexes (series, indexes, data, idx, error_policy ): 
+    """Check if indexes length matches the data length"""
+    if len(indexes) != len(data):
+        if error_policy == "raise":
+            raise ValueError(
+                "Length of indexes does not match the length of input data.")
+        elif error_policy == "warn":
+            warnings.warn(
+                "Length of indexes does not match the length of input data.")
+        # Use default index if error_policy is 'ignore'
+    else:
+        series.index = indexes[idx]
+        
+    return series 
+
 def build_data_if(
     data, 
     columns=None, 

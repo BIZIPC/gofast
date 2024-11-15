@@ -3,11 +3,11 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """ Optimization search"""
-
+from abc import abstractmethod
 import random
+
 import numpy as np 
 
-from abc import abstractmethod
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection._search import BaseSearchCV
 from sklearn.base import  clone

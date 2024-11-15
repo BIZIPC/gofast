@@ -15,7 +15,7 @@ from sklearn.linear_model import  LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder
 
-from gofast.tools.coreutils import is_module_installed
+from gofast.tools.depsutils import is_module_installed
 from gofast.transformers.feature_engineering import ( 
     StratifyFromBaseFeature,
     CategoryBaseStratifier, 
@@ -70,14 +70,24 @@ from gofast.transformers.image import (
 # 
 # 
 # install scikit-image 
+SKLIM_AVAILABLE =False 
 try: 
     from skimage.transform import resize # noqa 
 except: 
-    from gofast.tools.funcutils import install_package 
+    from gofast.tools.depsutils import ensure_module_installed 
     if not is_module_installed("skimage", distribution_name='scikit-image'): 
-        install_package('skimage', dist_name='scikit-image', 
-                        infer_dist_name= True )
-        
+        SKLIM_AVAILABLE =ensure_module_installed(
+            'skimage', 
+            dist_name='scikit-image', 
+            auto_install=True
+        )
+else:
+    SKLIM_AVAILABLE =True 
+
+if SKLIM_AVAILABLE: 
+    from skimage.transform import resize # noqa 
+    
+
 def test_text_vectorizer_initialization():
     transformer = TextToVectorTransformer()
     assert transformer.columns == 'auto'

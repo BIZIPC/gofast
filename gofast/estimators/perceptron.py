@@ -3,13 +3,14 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-`perceptron` contains a collection of estimators implementing various
+Contains a collection of estimators implementing various
 machine learning algorithms based on perceptron and gradient descent
 techniques. The implementations are designed to provide robust and flexible
 models for both classification and regression tasks. 
 """
 
 from __future__ import annotations 
+
 import numpy as np
 from tqdm import tqdm
 
@@ -17,7 +18,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.preprocessing import LabelBinarizer 
 from sklearn.metrics import accuracy_score, r2_score
 
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 from ..tools.validator import check_X_y, check_array 
 from ..tools.validator import check_is_fitted
 from ._neural import BaseFuzzyNeuralNet, BaseNeuroFuzzy, BaseGD 

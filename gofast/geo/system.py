@@ -2,7 +2,7 @@
 #   Licence:BSD 3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 """
-The GeoIntelligentSystem class is a  tool designed for advanced analysis 
+GeoIntelligentSystem class is a  tool designed for advanced analysis 
 and manipulation of geographical data. This class forms part of the 
 'gofast' library's experimental suite, offering cutting-edge functionalities 
 for geospatial intelligence, including data loading, transformation, impact 
@@ -45,19 +45,21 @@ Note:
   class and other experimental features.
 
 """
-import threading
 import time
+import threading
+
 try :import geopandas as gpd
 except : pass 
 import numpy as np 
 import pandas as pd 
 import matplotlib.pyplot as plt 
+
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 
 from ..exceptions import NotFittedError
-from ..tools.funcutils import ensure_pkg
+from ..tools.depsutils import ensure_pkg
 
 __all__= ["GeoIntelligentSystem"]
 

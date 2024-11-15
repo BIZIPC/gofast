@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abc import ABCMeta
 from abc import abstractmethod
 import numpy as np 
 from tqdm import tqdm
@@ -11,6 +10,7 @@ from sklearn.preprocessing import LabelBinarizer, StandardScaler, OneHotEncoder
 from sklearn.neural_network import MLPRegressor, MLPClassifier
 from sklearn.utils import shuffle as skl_shuffle
 
+from ..api.property import LearnerMeta 
 from ..tools.validator import check_X_y, check_array, check_is_fitted
 from .util import activator
 try: 
@@ -19,7 +19,7 @@ try:
 except: pass 
 
 
-class BaseGD(BaseEstimator, metaclass=ABCMeta):
+class BaseGD(BaseEstimator, metaclass=LearnerMeta):
     """
     Base class for Gradient Descent optimization.
 
@@ -474,7 +474,7 @@ class BaseGD(BaseEstimator, metaclass=ABCMeta):
         else:
             return proba / proba.sum(axis=1, keepdims=True)
 
-class BaseNeuroFuzzy(BaseEstimator, metaclass=ABCMeta):
+class BaseNeuroFuzzy(BaseEstimator, metaclass=LearnerMeta):
     """
     NeuroFuzzyBase is a base class for neuro-fuzzy network-based models that 
     integrate fuzzy logic and neural networks to perform classification or 
@@ -1101,7 +1101,7 @@ class BaseNeuroFuzzy(BaseEstimator, metaclass=ABCMeta):
         y_proba = self.mlp_.predict_proba(X_scaled)
         return y_proba
 
-class BaseFuzzyNeuralNet(BaseEstimator, metaclass=ABCMeta):
+class BaseFuzzyNeuralNet(BaseEstimator, metaclass=LearnerMeta):
     """
     FuzzyNeuralNetBase is a base class for ensemble neuro-fuzzy network-based 
     models that integrates fuzzy logic and neural networks to perform 

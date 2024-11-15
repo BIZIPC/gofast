@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-# @author: LKouadio~ @Daniel
+# License: BSD-3-Clause
+# Author: LKouadio (a.k.a. @Daniel) <etanoyau@gmail.com>
 
 """
-BaseBackend Usage Documentation
--------------------------------
-
 The BaseBackend module serves as the foundation for the computational backends
 in gofast, offering a unified interface for a wide range of computational tasks 
 across different environments (CPU, GPU, distributed systems). It abstracts the 
@@ -61,8 +59,11 @@ gofast ensures that users can easily switch between backends without significant
 changes to their code, enhancing productivity and facilitating experimentation
 with different computational strategies.
 """
+from ..api.property import BaseClass 
 
-class BaseBackend:
+__all__=["BaseBackend"]
+
+class BaseBackend(BaseClass):
     """
     Base class for all computational backends in gofast.
     This class defines a common interface for backend operations, ensuring 

@@ -3,27 +3,42 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-load different data as a function. 
-Inspired from the machine learning popular dataset loading 
+Provides functions for loading various datasets commonly used in machine 
+learning and data science. Datasets include utilities for handling structure, 
+validating data, and converting to dataframes. Inspired by popular dataset 
+loading functions in machine learning libraries.
 """
-import warnings
+
 import os
 import random
-import joblib
-from importlib import resources 
+import warnings
+from importlib import resources
 from importlib.resources import files
-import numpy as np
-import pandas as pd 
 
-from ..api.structures import Boxspace  
-from ..tools.baseutils import fancier_downloader, check_file_exists 
-from ..tools.coreutils import  to_numeric_dtypes, smart_format, get_valid_key
-from ..tools.coreutils import  random_sampling, assert_ratio, key_checker 
-from ..tools.coreutils import  format_to_datetime, is_in_if, validate_feature
-from ..tools.coreutils import convert_to_structured_format, resample_data
-from ..tools.coreutils import split_train_test_by_id
-from .io import csv_data_loader, _to_dataframe, DMODULE 
-from .io import description_loader, DESCR, RemoteDataURL  
+import joblib
+import numpy as np
+import pandas as pd
+
+from ..api.structures import Boxspace
+from ..tools.baseutils import ( 
+    check_file_exists, 
+    fancier_downloader, 
+    update_df
+    )
+from ..tools.coreutils import (
+    assert_ratio,
+    convert_to_structured_format,
+    format_to_datetime,
+    is_in_if,
+    smart_format,
+    split_train_test_by_id,
+    to_numeric_dtypes,
+    validate_feature
+)
+from ..tools.ioutils import get_valid_key, key_checker
+from .io import DMODULE, RemoteDataURL, _to_dataframe, csv_data_loader
+from .io import DESCR, description_loader
+
 
 __all__= [ "load_iris",  "load_hlogs",  "load_nansha", "load_forensic", 
           "load_jrs_bet", "load_statlog", "load_hydro_metrics", "load_mxs", 
@@ -593,6 +608,7 @@ To focus on specific targets 'pumping_level' and 'aquifer_thickness':
 >>> list(b.columns[-2:])
 ['pumping_level', 'aquifer_thickness']
 """
+
 def load_nansha (
     *,  return_X_y=False, 
     as_frame =False, 
@@ -608,7 +624,8 @@ def load_nansha (
     shuffle =False, 
     **kws
     ): 
-
+    from ..tools.datautils import random_sampling 
+    
     drop_display_rate = kws.pop("drop_display_rate", True)
     key = key or 'b0' 
     # assertion error if key does not exist. 
@@ -679,12 +696,13 @@ def load_nansha (
         
     # read dataframe and separate data to target. 
     frame, data, target = _to_dataframe(
-        data, feature_names = feature_names, target_names = target_names, 
+        data, feature_names = feature_names, 
+        target_names = target_names, 
         target=data[target_names].values 
         )
-    # for consistency, re-cast values to numeric 
+    # for consistency, re-cast values to numeric
     frame = to_numeric_dtypes(frame)
-        
+
     if split_X_y: 
         return _split_X_y(frame,target_columns, as_frame=as_frame, 
                           test_ratio=test_ratio)
@@ -834,9 +852,11 @@ def load_bagoue(
     target_column = [
         "flow",
     ]
+
     frame, data, target = _to_dataframe(
         data, feature_names = feature_names, target_names = target_column, 
         target=target)
+
     frame = to_numeric_dtypes(frame)
 
     if split_X_y: 
@@ -1058,9 +1078,12 @@ def load_mxs (
     target_names = None , 
     data_names=None, 
     split_X_y=False, 
+    drop_observations=False, 
+    drop_nan_columns=True, 
     seed = None, 
     shuffle=False,
-    test_ratio=.2,  
+    test_ratio=.2, 
+    
     **kws):
     """
     Load the dataset after implementing the mixture learning strategy (MXS).
@@ -1121,6 +1144,9 @@ def load_mxs (
     drop_observations: bool, default='False'
         Drop the ``remark`` column in the logging data if set to ``True``. 
         
+    drop_nan_columns : bool, default=True
+        If True, drops columns filled entirely with NaN values.
+        
     seed: int, array-like, BitGenerator, np.random.RandomState, \
         np.random.Generator, optional
        If int, array-like, or BitGenerator, seed for random number generator. 
@@ -1170,49 +1196,72 @@ def load_mxs (
      
     Examples
     --------
-    >>> from gofast.datasets.dload import load_mxs  
+    >>> from gofast.datasets.load import load_mxs  
     >>> load_mxs (return_X_y= True, key ='sparse', samples ='*')
     (<1038x21 sparse matrix of type '<class 'numpy.float64'>'
      	with 8298 stored elements in Compressed Sparse Row format>,
      array([1, 1, 1, ..., 5, 5, 5], dtype=int64))
     
     Load the entire dataset as a pandas DataFrame:
-    >>> df = load_mxs_dataset(as_frame=True)
+    >>> df = load_mxs(as_frame=True)
     
     Load the dataset, split into training and testing sets:
     >>> X_train, X_test, y_train, y_test = load_mxs_dataset(split_X_y=True, 
                                                             return_X_y=True)
     """
-  
-    drop_observations = kws.pop("drop_observations", False)
+    from ..tools.datautils import resample_data 
+    
     target_map = {0: '1', 1: '11*', 2: '2', 3: '2*', 4: '3', 5: '33*'}
     
     # Handling the 'key' parameter and validating against available options
     key = key or 'data'
     key = 'pp' if key.lower() in ('pp', 'preprocessed') else key.lower()
     available_dict = _validate_key(key)
-
     data_file = 'mxs.joblib'
     with resources.path(DMODULE, data_file) as p:
         data_file = str(p)
     data_dict = joblib.load(data_file)
     samples = ( None if samples =="*" else samples) or .5 # 50%
-    data, frame,feature_names, target_names = _prepare_common_dataset(
-        data_dict["data"], drop_observations, target_names,  samples, seed, shuffle)
+    #XXX
+    # data is processed data then feature_data 
+    # frame is a combined data 
+    data, frame, feature_names, target_names = _prepare_common_dataset(
+        data_dict["data"], 
+        drop_observations,
+        target_names,  
+        samples, 
+        seed, 
+        shuffle, 
+        drop_nan_columns, 
+    )
     # Processing based on the specified 'key'
     if key in available_dict:
         Xy = _get_mxs_X_y(available_dict[key], data_dict)
         if Xy:
-            Xy = resample_data(*Xy, samples=samples, random_state=seed, shuffle=shuffle)
-            if split_X_y and key == 'pp':
+            Xy = resample_data(
+                *Xy, samples=samples, 
+                random_state=seed,
+                shuffle=shuffle
+            )
+  
+            if (split_X_y and key == 'pp') or return_X_y:
                 return Xy
             elif split_X_y:
-                return _split_and_convert(Xy, test_ratio, seed, shuffle, as_frame)
+                return _split_and_convert(
+                    Xy, test_ratio, seed, 
+                    shuffle, as_frame
+                    )
+  
     elif split_X_y:
         return _split_X_y(frame, target_names, test_ratio, as_frame)
+
+    if return_X_y: 
+        return data, frame[target_names]
     
-    return (data, frame[target_names]) if return_X_y else frame if as_frame else\
-        Boxspace(
+    if as_frame: 
+        return frame 
+    
+    return Boxspace(
             data=np.array(data),
             target=np.array(frame[target_names]),
             frame=data,
@@ -1261,6 +1310,7 @@ def _get_mxs_X_y(key_Xy: tuple, data_dict: dict):
     if key_Xy is None: 
         return 
     Xy = list(data_dict.get(k) for k in key_Xy)
+
     return Xy
        
 def _validate_key(key: str):
@@ -1276,9 +1326,13 @@ def _validate_key(key: str):
         
     return available_data
 
-def _prepare_common_dataset(data, drop_observations, target_names, samples, seed, shuffle):
+def _prepare_common_dataset(
+        data, drop_observations, target_names, samples, seed, shuffle, 
+        drop_nan_columns):
     # Process the common dataset: handling dropping columns, sampling,
     # and converting to DataFrame
+    from ..tools.datautils import random_sampling 
+    
     if drop_observations:
         data = data.drop(columns="remark")
     feature_names = list(data.columns [:13] ) 
@@ -1291,7 +1345,19 @@ def _prepare_common_dataset(data, drop_observations, target_names, samples, seed
     frame, processed_data, target = _to_dataframe(
         sampled_data, target_names, list(data.columns [:13] ),
         target=sampled_data[target_names].values)
-    return processed_data, to_numeric_dtypes(frame), feature_names, target_names
+    
+    combined_frame = to_numeric_dtypes(
+        frame, drop_nan_columns=drop_nan_columns
+        )
+    if drop_nan_columns:
+        # dr
+        feature_names= list(
+            set(feature_names).intersection(combined_frame.columns)) 
+        target_names = list(
+            set(target_names).intersection(combined_frame.columns))
+        
+    return processed_data, combined_frame, feature_names, target_names
+
 
 def _split_and_convert(Xy, test_ratio, seed, shuffle, as_frame):
     # Split data into training and testing sets and optionally convert
@@ -1303,6 +1369,9 @@ def _split_and_convert(Xy, test_ratio, seed, shuffle, as_frame):
         return convert_to_structured_format(X_train, X_test, y_train, y_test,
                                             as_frame=True)
     return X_train, X_test, y_train, y_test
+
+
+
 
 def _get_subsidence_data (
         data_file, /, 

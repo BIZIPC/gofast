@@ -144,6 +144,80 @@ class SimulationMetadata:
 
 
 DESCR_METADATA={
+    "simulate_telecom_data": 
+    {
+    "overview": (
+        "The dataset simulates telecommunications signal transmission over a "
+        "specified duration, capturing various signal distortions and dynamic "
+        "behavior. Each record represents a specific time point in the "
+        "transmission, including features that influence signal quality, such as "
+        "amplitude, frequency, phase shift, interference, and signal-to-noise "
+        "ratio (SNR). The dataset also includes a target variable, 'received_quality', "
+        "which reflects the combined effects of distortions and noise, providing "
+        "a measure of the signal's clarity at the receiver. Designed for tasks "
+        "like signal classification, noise reduction, and distortion correction, "
+        "this dataset serves as a useful tool for modeling dynamic telecommunications "
+        "systems in both educational and research contexts. The detailed simulation "
+        "captures complexities inherent in signal transmission, making it suitable "
+        "for testing and developing advanced telecommunications models, particularly "
+        "those based on dynamic systems and time-series analysis."
+    ), 
+    "features": {
+        "time": (
+            "The time at each observation point, in seconds, representing the "
+            "progression of the signal over the specified duration."
+        ),
+        "amplitude": (
+            "The amplitude of the signal at each time point, reflecting the "
+            "strength of the signal, which varies over time due to dynamic "
+            "modulation and attenuation."
+        ),
+        "frequency": (
+            "The frequency of the signal at each time point in Hz, simulating "
+            "frequency modulation and shifts during transmission."
+        ),
+        "snr": (
+            "Signal-to-noise ratio (SNR) in decibels (dB), which measures the "
+            "clarity of the signal relative to noise. Higher values indicate "
+            "better signal quality."
+        ),
+        "bandwidth": (
+            "The bandwidth of the transmission at each time point, in Hz, "
+            "indicating the range of frequencies occupied by the signal, which "
+            "can fluctuate due to transmission conditions."
+        ),
+        "phase_shift": (
+            "Phase shift at each time point in radians, showing how the phase of "
+            "the signal changes dynamically, influenced by both linear and "
+            "nonlinear factors in transmission."
+        ),
+        "interference": (
+            "Simulated interference from external sources at each time point, "
+            "measured as a high-frequency component affecting signal quality."
+        ),
+        "data_rate": (
+            "Data rate in Mbps, representing the simulated rate of data "
+            "transmission at each time point, which can vary due to network "
+            "conditions like congestion and signal strength."
+        ),
+        "input_signal": (
+            "The original input signal, calculated based on varying amplitude "
+            "and frequency, before applying transmission effects like attenuation "
+            "and distortion."
+        ),
+        "output_signal": (
+            "The signal after linear attenuation, nonlinear distortion, and noise "
+            "addition, representing the received signal with potential distortions "
+            "and reduced clarity."
+        ),
+        "received_quality": (
+            "The target variable, representing the quality of the received signal "
+            "after accounting for all factors, including noise, interference, "
+            "and other distortions. Higher values indicate clearer signal reception."
+        )
+    }
+},
+
     "simulate_landfill_capacity": {
         "overview": (
             "This dataset simulates daily landfill capacity measurements across "
@@ -2157,7 +2231,506 @@ DESCR_METADATA={
             "and understanding the thermal properties of the subsurface environment."
         )
     }
-  }
+  }, 
+   
+   "simulate_stock_prices": {
+    "overview": (
+        "This dataset simulates daily stock price data for multiple companies"
+        " over a specified time period. Each record represents a day's data for"
+        " a specific company, including stock prices influenced by market trends,"
+        " economic factors, and company performance. The dataset provides a"
+        " realistic representation of stock market dynamics, making it ideal for"
+        " tasks such as predicting stock prices, analyzing market trends, and"
+        " developing trading algorithms. Designed for educational purposes and as"
+        " a testbed for financial models, this dataset captures the volatility and"
+        " complexity of the stock market, offering valuable insights for researchers,"
+        " analysts, and investors."
+    ),
+    "features": {
+        "company_id": (
+            "A unique identifier for each company, enabling precise tracking"
+            " and analysis of stock price data specific to each company."
+        ),
+        "date": (
+            "The date of the record, essential for temporal analysis and"
+            " understanding trends in stock prices over time."
+        ),
+        "price": (
+            "The stock price of the company on the given date, reflecting the"
+            " market value of the company's shares."
+        )
+    }
+   },
+   
+   "simulate_climate_data": {
+    "overview": (
+        "This dataset simulates yearly climate data for multiple locations over"
+        " a specified number of years. Each record represents a year's data for"
+        " a specific location, including various climate metrics influenced by"
+        " natural factors and environmental changes. The dataset provides a"
+        " realistic representation of long-term climate trends, making it ideal for"
+        " tasks such as predicting climate patterns, analyzing environmental impact,"
+        " and developing climate models. Designed for educational purposes and as"
+        " a testbed for environmental studies, this dataset captures the complexities"
+        " and variability of climate data, offering valuable insights for researchers,"
+        " environmental scientists, and policymakers."
+    ),
+    "features": {
+        "location_id": (
+            "A unique identifier for each location, enabling precise tracking"
+            " and analysis of climate data specific to each geographical area."
+        ),
+        "year": (
+            "The year of the record, essential for temporal analysis and"
+            " understanding trends in climate data over time."
+        ),
+        "avg_temp": (
+            "The average temperature for the location in the given year, providing"
+            " an overall measure of the climate's warmth."
+        ),
+        "min_temp": (
+            "The minimum temperature recorded for the location in the given year,"
+            " reflecting the lowest point of temperature during the year."
+        ),
+        "max_temp": (
+            "The maximum temperature recorded for the location in the given year,"
+            " indicating the highest point of temperature during the year."
+        ),
+        "precipitation": (
+            "The total precipitation for the location in the given year, measured"
+            " in millimeters, which includes rain, snow, and other forms of precipitation."
+        ),
+        "humidity": (
+            "The average relative humidity for the location in the given year, providing"
+            " an indication of the moisture level in the air."
+        ),
+        "wind_speed": (
+            "The average wind speed for the location in the given year, measured"
+            " in meters per second, indicating the general wind conditions."
+        ),
+        "wind_direction": (
+            "The predominant wind direction for the location in the given year, measured"
+            " in degrees, indicating the common direction from which the wind blows."
+        ),
+        "cloud_cover": (
+            "The average cloud cover for the location in the given year, measured"
+            " as a percentage, indicating the extent of cloudiness throughout the year."
+        ),
+        "pressure": (
+            "The average atmospheric pressure for the location in the given year, measured"
+            " in hPa (hectopascals), reflecting the atmospheric conditions."
+        )
+    }
+  }, 
+   "simulate_weather_data": {
+    "overview": (
+        "This dataset simulates daily weather data for multiple locations over"
+        " a specified time period. Each record represents a day's data for"
+        " a specific location, including various weather metrics influenced by"
+        " natural factors and environmental changes. The dataset provides a"
+        " realistic representation of daily weather patterns, making it ideal for"
+        " tasks such as predicting weather conditions, analyzing environmental impact,"
+        " and developing weather models. Designed for educational purposes and as"
+        " a testbed for environmental studies, this dataset captures the complexities"
+        " and variability of weather data, offering valuable insights for researchers,"
+        " meteorologists, and data scientists."
+    ),
+    "features": {
+        "location_id": (
+            "A unique identifier for each location, enabling precise tracking"
+            " and analysis of weather data specific to each geographical area."
+        ),
+        "date": (
+            "The date of the record, essential for temporal analysis and"
+            " understanding trends in weather data over time."
+        ),
+        "temperature": (
+            "The temperature for the location on the given date, providing"
+            " a measure of the warmth or coldness of the environment."
+        ),
+        "humidity": (
+            "The relative humidity for the location on the given date, providing"
+            " an indication of the moisture level in the air."
+        ),
+        "precipitation": (
+            "The total precipitation for the location on the given date, measured"
+            " in millimeters, which includes rain, snow, and other forms of precipitation."
+        ),
+        "wind_speed": (
+            "The wind speed for the location on the given date, measured"
+            " in meters per second, indicating the strength of the wind."
+        ),
+        "wind_direction": (
+            "The wind direction for the location on the given date, measured"
+            " in degrees, indicating the direction from which the wind is blowing."
+        ),
+        "cloud_cover": (
+            "The cloud cover for the location on the given date, measured"
+            " as a percentage, indicating the extent of cloudiness."
+        ),
+        "pressure": (
+            "The atmospheric pressure for the location on the given date, measured"
+            " in hPa (hectopascals), reflecting the atmospheric conditions."
+        ),
+        "visibility": (
+            "The visibility for the location on the given date, measured"
+            " in kilometers, indicating the distance one can clearly see."
+        ),
+        "dew_point": (
+            "The dew point for the location on the given date, indicating the"
+            " temperature at which air becomes saturated with moisture and dew forms."
+        ),
+        "uv_index": (
+            "The UV index for the location on the given date, providing a measure"
+            " of the strength of ultraviolet radiation from the sun."
+        )
+    }
+}, 
+   "simulate_clinical_trials": {
+    "overview": (
+        "This dataset simulates clinical trial data for multiple patients over"
+        " a specified time period. Each record represents a day's data for"
+        " a specific patient, including various health metrics, treatment details,"
+        " and outcomes influenced by medical interventions and patient characteristics."
+        " The dataset provides a realistic representation of clinical trial scenarios,"
+        " making it ideal for tasks such as predicting treatment effectiveness,"
+        " analyzing patient responses, and developing medical models. Designed for"
+        " educational purposes and as a testbed for clinical studies, this dataset"
+        " captures the complexities and variability of patient data, offering valuable"
+        " insights for researchers, clinicians, and data scientists."
+    ),
+    "features": {
+        "patient_id": (
+            "A unique identifier for each patient, enabling precise tracking"
+            " and analysis of clinical trial data specific to each individual."
+        ),
+        "date": (
+            "The date of the record, essential for temporal analysis and"
+            " understanding trends in patient data over time."
+        ),
+        "age": (
+            "The age of the patient, providing important demographic information"
+            " that can influence treatment outcomes and health metrics."
+        ),
+        "gender": (
+            "The gender of the patient, providing essential demographic information"
+            " that can impact medical research and treatment responses."
+        ),
+        "height": (
+            "The height of the patient in centimeters, used to calculate the BMI"
+            " and assess physical health."
+        ),
+        "weight": (
+            "The weight of the patient in kilograms, used to calculate the BMI"
+            " and monitor changes in physical health."
+        ),
+        "smoking_status": (
+            "The smoking status of the patient, categorized as 'never', 'former',"
+            " or 'current', providing insight into lifestyle factors affecting health."
+        ),
+        "medication": (
+            "The type of medication given to the patient, which could be 'placebo',"
+            " 'drug_a', or 'drug_b', indicating the treatment being tested."
+        ),
+        "ethnicity": (
+            "The ethnicity of the patient, providing important demographic information"
+            " for analyzing treatment responses across different population groups."
+        ),
+        "pre_existing_conditions": (
+            "Any pre-existing conditions the patient has, such as 'none', 'diabetes',"
+            " 'hypertension', 'heart disease', or 'asthma', which can affect treatment outcomes."
+        ),
+        "blood_pressure": (
+            "The blood pressure of the patient, an important health metric monitored"
+            " during the clinical trial."
+        ),
+        "cholesterol": (
+            "The cholesterol level of the patient, providing information on cardiovascular health."
+        ),
+        "bmi": (
+            "The Body Mass Index of the patient, calculated from height and weight,"
+            " used to assess overall health."
+        ),
+        "heart_rate": (
+            "The heart rate of the patient, measured in beats per minute, indicating"
+            " cardiovascular health."
+        ),
+        "blood_sugar": (
+            "The blood sugar level of the patient, an important metric for patients"
+            " with diabetes or those at risk."
+        ),
+        "adverse_events": (
+            "Any adverse events experienced by the patient, categorized as 'none',"
+            " 'mild', 'moderate', or 'severe', indicating side effects of the treatment."
+        ),
+        "treatment_effectiveness": (
+            "The effectiveness of the treatment, measured on a scale and indicating"
+            " how well the patient responds to the medication."
+        ),
+        "quality_of_life": (
+            "A measure of the patient's quality of life, indicating overall well-being"
+            " and satisfaction with life during the clinical trial."
+        ),
+        "survival_rate": (
+            "The survival rate of the patient, indicating the likelihood of survival"
+            " during the clinical trial period."
+        )
+    }
+ }, 
+   "simulate_patient_data": {
+    "overview": (
+        "This dataset simulates daily health data for multiple patients over"
+        " a specified time period. Each record represents a day's data for"
+        " a specific patient, including various health metrics influenced by"
+        " lifestyle factors and medical conditions. The dataset provides a"
+        " realistic representation of patient health trends, making it ideal for"
+        " tasks such as predicting health outcomes, analyzing patient data,"
+        " and developing medical models. Designed for educational purposes and"
+        " as a testbed for healthcare studies, this dataset captures the complexities"
+        " and variability of patient data, offering valuable insights for researchers,"
+        " healthcare providers, and data scientists."
+    ),
+    "features": {
+        "patient_id": (
+            "A unique identifier for each patient, enabling precise tracking"
+            " and analysis of health data specific to each individual."
+        ),
+        "date": (
+            "The date of the record, essential for temporal analysis and"
+            " understanding trends in patient data over time."
+        ),
+        "age": (
+            "The age of the patient, providing important demographic information"
+            " that can influence health metrics and outcomes."
+        ),
+        "gender": (
+            "The gender of the patient, providing essential demographic information"
+            " that can impact medical research and health metrics."
+        ),
+        "height": (
+            "The height of the patient in centimeters, used to calculate the BMI"
+            " and assess physical health."
+        ),
+        "weight": (
+            "The weight of the patient in kilograms, used to calculate the BMI"
+            " and monitor changes in physical health."
+        ),
+        "smoking_status": (
+            "The smoking status of the patient, categorized as 'never', 'former',"
+            " or 'current', providing insight into lifestyle factors affecting health."
+        ),
+        "blood_pressure": (
+            "The blood pressure of the patient, an important health metric monitored"
+            " regularly."
+        ),
+        "cholesterol": (
+            "The cholesterol level of the patient, providing information on cardiovascular health."
+        ),
+        "bmi": (
+            "The Body Mass Index of the patient, calculated from height and weight,"
+            " used to assess overall health."
+        ),
+        "heart_rate": (
+            "The heart rate of the patient, measured in beats per minute, indicating"
+            " cardiovascular health."
+        ),
+        "blood_sugar": (
+            "The blood sugar level of the patient, an important metric for patients"
+            " with diabetes or those at risk."
+        )
+    }
+  }, 
+   
+   "simulate_transactions": {
+    "overview": (
+        "This dataset simulates financial transaction data for multiple accounts over"
+        " a specified time period. Each record represents a day's transactions for"
+        " a specific account, including various financial metrics influenced by"
+        " account activities and economic factors. The dataset provides a"
+        " realistic representation of financial transaction patterns, making it ideal for"
+        " tasks such as predicting account balances, analyzing transaction trends,"
+        " and developing financial models. Designed for educational purposes and"
+        " as a testbed for financial studies, this dataset captures the complexities"
+        " and variability of transaction data, offering valuable insights for researchers,"
+        " financial analysts, and data scientists."
+    ),
+    "features": {
+        "account_id": (
+            "A unique identifier for each account, enabling precise tracking"
+            " and analysis of transaction data specific to each account."
+        ),
+        "date": (
+            "The date of the transaction, essential for temporal analysis and"
+            " understanding trends in transaction data over time."
+        ),
+        "transaction_type": (
+            "The type of transaction, categorized as 'debit' or 'credit', indicating"
+            " whether the transaction was a withdrawal or a deposit."
+        ),
+        "amount": (
+            "The amount of the transaction, measured in the account's currency, reflecting"
+            " the value of the transaction."
+        ),
+        "balance": (
+            "The account balance after the transaction, indicating the total amount of money"
+            " available in the account."
+        )
+    }
+  }, 
+   "make_control_system_dynamics": 
+{
+    "overview": (
+        "The dataset simulates the dynamic behavior of a control system over a "
+        "specified period, modeling how the system responds to input signals and "
+        "external disturbances. Each record represents the system's response at "
+        "a specific time point, including features that describe the input, output, "
+        "control effort, stability, and error. The dataset is designed to help "
+        "analyze and optimize control systems, such as automated vehicles or "
+        "industrial processes, by capturing both linear and nonlinear responses. "
+        "It is ideal for tasks like response prediction, stability analysis, and "
+        "system tuning, serving as a valuable resource for research and development "
+        "in control systems engineering. The dataset's detailed simulation allows "
+        "for a comprehensive study of control system dynamics, making it suitable "
+        "for developing advanced models focused on system identification, dynamics, "
+        "and time-series behavior in control systems."
+    ), 
+    "features": {
+        "time": (
+            "The time at each observation point, in seconds, representing the "
+            "progression of the control system response over the specified period."
+        ),
+        "input_signal": (
+            "The input signal applied to the control system at each time point, "
+            "modeled as a sinusoidal function with added noise to simulate real-world "
+            "input variability."
+        ),
+        "linear_output": (
+            "The system's response after applying linear gain to the input signal, "
+            "capturing the linear transformation before any additional effects."
+        ),
+        "response_output": (
+            "The final output of the control system after applying nonlinear "
+            "distortions and adding control noise, representing the system's "
+            "actual behavior at each time point."
+        ),
+        "control_effort": (
+            "The level of control effort exerted on the system to achieve the "
+            "desired response, calculated as the product of system gain and the "
+            "absolute value of the input signal."
+        ),
+        "error_signal": (
+            "The difference between the input signal and the response output, "
+            "indicating the error at each time point, which can be used for "
+            "feedback analysis and tuning purposes."
+        ),
+        "power_consumption": (
+            "The estimated power consumption of the control system, calculated as "
+            "the square of the control effort, providing insight into the energy "
+            "required to maintain system performance."
+        ),
+        "response_rate": (
+            "The rate of change in the system's response output over time, capturing "
+            "the speed at which the system reacts to input changes, which is valuable "
+            "for analyzing system agility and responsiveness."
+        ),
+        "stability_metric": (
+            "A measure of system stability, calculated as one minus the absolute "
+            "difference between the nonlinear response and the linear output, helping "
+            "to identify periods of instability or oscillations in the system."
+        ),
+        "output": (
+            "The target variable representing the final observed output of the "
+            "control system, after accounting for input, control noise, and response "
+            "characteristics. This target is useful for supervised learning models "
+            "designed to predict system behavior."
+        )
+    }
+}, 
+    "make_financial_market_trends": 
+    {
+        "overview": (
+            "The dataset simulates dynamic behaviors in financial markets over a "
+            "specified period, capturing the impact of market trends, volatility, "
+            "and other financial indicators on stock prices. Each record represents "
+            "the market's state at a specific time point, including features that "
+            "reflect price trends, returns, volatility, stability, and momentum. "
+            "The dataset is designed to help analyze and forecast stock market "
+            "movements by modeling both linear and nonlinear relationships that "
+            "influence future prices or trends. It is ideal for tasks such as "
+            "price prediction, volatility analysis, and financial risk management, "
+            "providing a comprehensive tool for research and development in "
+            "financial modeling. The detailed simulation captures complexities "
+            "inherent in stock market behaviors, making it suitable for developing "
+            "advanced models for financial forecasting and time-series analysis."
+        ), 
+        "features": {
+            "time": (
+                "The time at each observation point, in trading days or specific dates, "
+                "representing the progression of the stock market dynamics over the "
+                "specified period."
+            ),
+            "price_trend": (
+                "The base price trend influenced by general market factors, modeled as "
+                "a sinusoidal function with added noise to simulate real-world market "
+                "fluctuations."
+            ),
+            "market_trend": (
+                "The linear market trend component representing market sensitivity, "
+                "reflecting general upward or downward movement in prices over time."
+            ),
+            "price_response": (
+                "The final stock price after applying both linear market trends and "
+                "nonlinear economic shifts, incorporating market sensitivity and "
+                "volatility factors at each time point."
+            ),
+            "daily_return": (
+                "The daily return rate, representing the percentage change in price "
+                "from one time point to the next. It is a critical indicator in "
+                "financial modeling, used to analyze profitability and trends."
+            ),
+            "moving_average": (
+                "The 20-day moving average of the stock price, used to smooth out "
+                "short-term fluctuations and highlight longer-term trends, which is "
+                "valuable in identifying buy and sell signals."
+            ),
+            "price_volatility": (
+                "The 20-day rolling standard deviation of the stock price, representing "
+                "market volatility over time, used to assess risk and market stability."
+            ),
+            "stability_metric": (
+                "A measure of price stability, calculated as one minus the relative "
+                "difference between the nonlinear response and the market trend. This "
+                "metric helps to identify periods of high stability or volatility."
+            ),
+            "relative_strength_index": (
+                "The 14-day relative strength index (RSI), a momentum indicator that "
+                "measures the speed and change of price movements, often used to identify "
+                "overbought or oversold conditions in the market."
+            ),
+            "exponential_moving_average": (
+                "The 20-day exponential moving average (EMA) of the stock price, giving "
+                "more weight to recent prices and providing a more responsive trend line "
+                "compared to the simple moving average."
+            ),
+            "upper_band": (
+                "The upper Bollinger Band, set at two standard deviations above the "
+                "20-day moving average, indicating potential overbought conditions "
+                "when the price approaches this level."
+            ),
+            "lower_band": (
+                "The lower Bollinger Band, set at two standard deviations below the "
+                "20-day moving average, indicating potential oversold conditions "
+                "when the price approaches this level."
+            ),
+            "price_output": (
+                "The target variable representing the final observed stock price, "
+                "incorporating all market trends, economic shifts, and volatility "
+                "factors. This target is useful for supervised learning models designed "
+                "to predict stock prices or market behavior."
+            )
+        }
+    }
+
 
 }
 

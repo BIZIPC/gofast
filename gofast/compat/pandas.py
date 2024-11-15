@@ -1,3 +1,81 @@
+# -*- coding: utf-8 -*-
+#   License: BSD-3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
+
+"""
+Provides compatibility utilities for different versions of pandas.
+This module includes functions and feature flags to ensure smooth
+operation across various pandas versions, handling breaking changes
+and deprecated features.
+
+Key functionalities include:
+- DataFrame and Series assertion utilities
+- Resampling and validation utilities
+- Compatibility checks for different pandas versions
+- Utility functions for working with DataFrames and Series
+
+The module ensures compatibility with pandas versions less than
+2.2.0, 2.1.0, 2.0.0, 1.4.0, and 1.0.0.
+
+Attributes
+----------
+version : packaging.version.Version
+    The installed pandas version.
+PD_LT_2_2_0 : bool
+    True if the installed pandas version is less than 2.2.0.
+PD_LT_2_1_0 : bool
+    True if the installed pandas version is less than 2.1.0.
+PD_LT_2_0_0 : bool
+    True if the installed pandas version is less than 2.0.0.
+PD_LT_1_0_0 : bool
+    True if the installed pandas version is less than 1.0.0.
+PD_LT_1_4 : bool
+    True if the installed pandas version is less than 1.4.0.
+PD_LT_2 : bool
+    True if the installed pandas version is less than 2.0.
+
+Functions
+---------
+assert_frame_equal
+    Check if two DataFrame objects are equal.
+assert_index_equal
+    Check if two Index objects are equal.
+assert_series_equal
+    Check if two Series objects are equal.
+describe_dataframe
+    Describe a DataFrame with compatibility for pandas versions <2 and >=2.
+data_klasses
+    A tuple of pandas data structures (Series, DataFrame).
+frequencies
+    Date offset aliases for frequencies.
+is_numeric_dtype
+    Check if the dtype is numeric.
+testing
+    pandas testing utilities.
+cache_readonly
+    Decorator to cache readonly properties.
+deprecate_kwarg
+    Decorator to deprecate a keyword argument.
+Appender
+    Decorator to append an addendum to a docstring.
+Substitution
+    Decorator to perform string substitution on a docstring.
+is_int_index
+    Check if an index is of integer type.
+is_float_index
+    Check if an index is of float type.
+make_dataframe
+    Create a sample DataFrame.
+to_numpy
+    Convert a DataFrame or Series to a numpy array.
+get_cached_func
+    Get a cached function.
+get_cached_doc
+    Get a cached docstring.
+call_cached_func
+    Call a cached function.
+"""
+
 from typing import Optional
 
 import numpy as np
@@ -17,6 +95,7 @@ __all__ = [
     "data_klasses",
     "frequencies",
     "is_numeric_dtype",
+    "describe_dataframe", 
     "testing",
     "cache_readonly",
     "deprecate_kwarg",
@@ -42,6 +121,7 @@ version = parse(pd.__version__)
 
 PD_LT_2_2_0 = version < Version("2.1.99")
 PD_LT_2_1_0 = version < Version("2.0.99")
+PD_LT_2_0_0 = version < Version("2.0.0")
 PD_LT_1_0_0 = version < Version("0.99.0")
 PD_LT_1_4 = version < Version("1.3.99")
 PD_LT_2 = version < Version("1.9.99")
@@ -66,6 +146,112 @@ except ImportError:
 assert_frame_equal = testing.assert_frame_equal
 assert_index_equal = testing.assert_index_equal
 assert_series_equal = testing.assert_series_equal
+
+
+def describe_dataframe(
+        df, numeric_only=True, include_all=False, percentiles=None, 
+        datetime_is_numeric=True):
+    """
+    Describe a DataFrame with compatibility for pandas versions <2 and >=2.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to describe. This parameter accepts any
+        DataFrame object containing the data you wish to
+        summarize. Each column in the DataFrame will be 
+        described based on its type and the options selected.
+        
+    numeric_only : bool, optional
+        Whether to include only numeric columns. If `True`, 
+        the description will only include numeric columns.
+        If `False`, all columns will be included in the 
+        description, including non-numeric columns.
+        Default is `True`.
+    
+    include_all : bool, optional
+        If `True`, include all columns regardless of their
+        data type. Overrides `numeric_only`. Default is `False`.
+
+    percentiles : list-like of numbers, optional
+        The percentiles to include in the output. All should
+        fall between 0 and 1. By default, [0.25, 0.5, 0.75]
+        are included if not provided.
+
+    datetime_is_numeric : bool, optional
+        Whether to treat datetime columns as numeric. This is
+        only applicable for pandas versions >= 2.0.0. Default is `True`.
+
+    Returns
+    -------
+    pd.DataFrame
+        The description of the DataFrame. The returned DataFrame
+        contains summary statistics for each column of the input
+        DataFrame. For numeric columns, this includes metrics 
+        such as count, mean, standard deviation, min, and max.
+        For non-numeric columns, this includes metrics such as
+        count, unique, top, and frequency.
+
+    Notes
+    -----
+    The `describe_dataframe` function provides a flexible way to
+    generate summary statistics for a DataFrame, ensuring
+    compatibility across different versions of pandas. For pandas
+    versions >= 2.0.0, the function includes the `datetime_is_numeric`
+    parameter to handle datetime columns as numeric types. For 
+    versions < 2.0.0, this parameter is omitted to maintain 
+    compatibility.
+
+    The mathematical formulations used in the summary statistics
+    are as follows:
+
+    .. math::
+
+        \text{mean} = \frac{1}{n} \sum_{i=1}^n x_i
+
+        \text{std} = \sqrt{\frac{1}{n-1} \sum_{i=1}^n (x_i - \text{mean})^2}
+
+    where :math:`x_i` are the data points, :math:`n` is the number of 
+    data points, :math:`\text{mean}` is the average value, and 
+    :math:`\text{std}` is the standard deviation.
+
+    Examples
+    --------
+    >>> from gofast.compat.pandas import describe_dataframe
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'A': [1, 2, 3, 4],
+    ...     'B': [4, 3, 2, 1],
+    ...     'C': pd.date_range('20230101', periods=4)
+    ... })
+    >>> df_descr = describe_dataframe(df, numeric_only=False)
+    >>> print(df_descr)
+
+    See Also
+    --------
+    pandas.DataFrame.describe : Generate descriptive statistics 
+        for a DataFrame.
+
+    References
+    ----------
+    .. [1] pandas.DataFrame.describe documentation. 
+       https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.describe.html
+    """
+    if include_all:
+        include = 'all'
+    else:
+        include = 'all' if not numeric_only else None
+
+    if percentiles is None:
+        percentiles = [0.25, 0.5, 0.75]
+    
+    if PD_LT_2_0_0:
+        df_descr = df.describe(include=include, percentiles=percentiles, 
+                               datetime_is_numeric=datetime_is_numeric)
+    else:
+        df_descr = df.describe(include=include, percentiles=percentiles)
+    
+    return df_descr
 
 
 def is_int_index(index: pd.Index) -> bool:

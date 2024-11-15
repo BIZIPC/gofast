@@ -39,12 +39,20 @@ from sklearn.datasets import make_moons
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
 
-from gofast.tools.funcutils import install_package 
-try:from lifelines import KaplanMeierFitter
-except: 
-    install_package("lifelines")
-    from lifelines import KaplanMeierFitter
-    
+from gofast.tools.depsutils import ensure_module_installed 
+
+LF_INSTALLED = ensure_module_installed (
+    "lifelines",
+    version=">0.26", 
+    auto_install=True, 
+    extra_install_args=["--upgrade"]
+)
+if LF_INSTALLED: 
+    try: 
+        from lifelines import KaplanMeierFitter
+    except: 
+        LF_INSTALLED=False 
+  
 from gofast.stats.descriptive import mean, median, mode, std, var
 from gofast.stats.descriptive import get_range, quartiles, quantile 
 from gofast.stats.descriptive import corr, z_scores, iqr, describe   
@@ -67,7 +75,6 @@ from gofast.stats.relationships import perform_spectral_clustering
 
 from gofast.stats.survival_reliability import kaplan_meier_analysis 
 from gofast.stats.survival_reliability import dca_analysis   
-
 
 STATSMODELS_INSTALLED = is_statsmodels_installed()
 SKBIO_INSTALLED = is_skbio_installed() 
@@ -885,7 +892,8 @@ def test_input_validation():
     with pytest.raises(ValueError):
         # Assuming the function raises ValueError for invalid data types
         bootstrap(data="invalid", n=10)  
-
+        
+@pytest.mark.skipif (not LF_INSTALLED, "Module `lifelines` not available." )
 def test_kaplan_meier_with_numpy():
     durations = np.array([5, 6, 6, 2.5, 4, 4])
     event_observed = np.array([1, 0, 0, 1, 1, 1])
@@ -894,6 +902,7 @@ def test_kaplan_meier_with_numpy():
     assert isinstance(kmf, KaplanMeierFitter), ( 
         "The function should return a KaplanMeierFitter instance") 
 
+@pytest.mark.skipif (not LF_INSTALLED, "Module `lifelines` not available." )
 def test_kaplan_meier_with_dataframe():
     df = pd.DataFrame({'duration': [5, 6, 6, 2.5, 4, 4], 'event': [1, 0, 0, 1, 1, 1]})
     kmf = kaplan_meier_analysis(df['duration'], df['event'], view=False)

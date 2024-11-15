@@ -10,7 +10,7 @@ import time
 import pandas as pd
 import numpy as np
 from unittest.mock import patch,  Mock, call
-from gofast.tools.funcutils import install_package, ensure_pkg 
+from gofast.tools.depsutils import install_package, ensure_pkg 
 from gofast.tools.funcutils import merge_dicts, timeit_decorator 
 from gofast.tools.funcutils import flatten_list  
 from gofast.tools.funcutils import retry_operation, batch_processor

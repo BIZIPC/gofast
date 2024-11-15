@@ -7,15 +7,15 @@
 
 from __future__ import annotations
 from numbers import Integral, Real
+
 import numpy as np
 
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.utils._param_validation import Interval, StrOptions
 
+from ..tools.validator import check_array, check_is_fitted
 from ._tree import  BaseDTB, BaseWeightedTree 
-from ..tools.validator import check_array 
-from ..tools.validator import check_is_fitted
 
 __all__=[ "DTBRegressor", "DTBClassifier", 
          "WeightedTreeClassifier", "WeightedTreeRegressor",]

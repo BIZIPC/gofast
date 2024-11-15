@@ -29,7 +29,7 @@ except :
 from ..api.types import Optional, Tuple, Any, List, Union, Callable, NDArray 
 from ..api.types import Dict, ArrayLike, DataFrame, Series, SparseMatrix
 from ..tools.coreutils import is_iterable, make_obj_consistent_if
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 from ..tools.validator import _is_cross_validated, validate_yy, validate_keras_model
 from ..tools.validator import assert_xy_in, get_estimator_name, check_is_fitted
 from .utils import _set_sns_style, _make_axe_multiple

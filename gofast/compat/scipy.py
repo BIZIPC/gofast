@@ -1,6 +1,65 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+"""
+Provides compatibility utilities for different versions of SciPy.
+This module includes functions and feature flags to ensure smooth
+operation across various SciPy versions, handling breaking changes
+and deprecated features. It also sets up logging for the gofast 
+package.
+
+Key functionalities include:
+- Integration, optimization, and special functions from SciPy
+- Linear algebra utilities for matrix operations
+- Sparse matrix utilities
+- Compatibility checks for different SciPy versions
+
+The module ensures compatibility with SciPy versions less than
+1.7, 1.6, 1.5, and 0.15.
+
+Attributes
+----------
+scipy_version : packaging.version.Version
+    The installed SciPy version.
+SP_LT_1_7 : bool
+    True if the installed SciPy version is less than 1.7.
+SP_LT_1_6 : bool
+    True if the installed SciPy version is less than 1.6.
+SP_LT_1_5 : bool
+    True if the installed SciPy version is less than 1.5.
+SP_LT_0_15 : bool
+    True if the installed SciPy version is less than 0.15.
+
+Functions
+---------
+integrate_quad
+    Perform numerical integration.
+optimize_minimize
+    Perform optimization using different methods.
+special_jn
+    Calculate Bessel function of the first kind.
+linalg_inv
+    Compute the inverse of a matrix.
+linalg_solve
+    Solve a linear matrix equation.
+linalg_det
+    Compute the determinant of a matrix.
+sparse_csr_matrix
+    Create a compressed sparse row matrix.
+ensure_scipy_compatibility
+    Check and ensure compatibility with the current SciPy version.
+calculate_statistics
+    Compute various statistical measures.
+is_sparse_matrix
+    Check if a matrix is sparse.
+solve_linear_system
+    Solve a system of linear equations.
+check_scipy_interpolate
+    Check and import interpolation functions.
+get_scipy_function
+    Retrieve a specific SciPy function.
+"""
+
 from packaging.version import Version, parse
 import warnings
 # import logging

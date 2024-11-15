@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
+# License: BSD-3-Clause
+# Author: LKouadio (a.k.a. @Daniel) <etanoyau@gmail.com>
 
 """
-NumpyBackend Usage Documentation
---------------------------------
-
-The NumpyBackend module within the gofast computational framework provides 
+NumpyBackend module within the gofast computational framework provides 
 a comprehensive suite of array operations based on NumPy, the fundamental 
 package for scientific computing with Python. This backend serves as the 
 default computational backbone for gofast, offering a wide range of array 
@@ -59,6 +58,8 @@ processing tasks.
 """
 
 from .base import BaseBackend 
+
+__all__=["NumpyBackend"]
 
 class NumpyBackend(BaseBackend):
     """

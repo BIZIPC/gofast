@@ -7,7 +7,7 @@ from sklearn.svm import SVC
 from sklearn.linear_model import SGDClassifier
 from sklearn.tree import DecisionTreeClassifier
 from gofast.models.optimize import OptimizeHyperparams, Optimizer
-from gofast.models.optimize import Optimizer2, ParallelizeSearch, OptimizeSearch
+from gofast.models.optimize import ThreadedOptimizer, ParallelizeSearch, OptimizeSearch
 
 # Fixtures for data
 @pytest.fixture
@@ -62,7 +62,7 @@ def test_optimizer(data, estimators_and_param_grids):
 def test_optimizer2(data, estimators_and_param_grids):
     X_train, X_test, y_train, y_test = data
     estimators, param_grids = estimators_and_param_grids
-    optimizer = Optimizer2(estimators, param_grids, strategy='GSCV', n_jobs=1)
+    optimizer = ThreadedOptimizer(estimators, param_grids, strategy='GSCV', n_jobs=1)
     summary = optimizer.fit(X_train, y_train)
     assert summary is not None
     assert 'SVC' in summary.keys()

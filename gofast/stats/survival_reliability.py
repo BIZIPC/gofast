@@ -12,13 +12,14 @@ import matplotlib.pyplot as plt
 
 from ..api.types import Optional, List, Tuple
 from ..api.types import DataFrame, Array1D
-from ..tools.coreutils import to_series_if 
-from ..tools.funcutils import make_data_dynamic, ensure_pkg
+from ..tools.coreutils import to_series_if
+from ..tools.depsutils import ensure_pkg  
+from ..tools.funcutils import make_data_dynamic
 
 __all__= [ "kaplan_meier_analysis", "dca_analysis" ]
 
 @ensure_pkg(
-    "lifelines","The 'lifelines' package is required for this function to run.")
+    "lifelines","The 'lifelines' package is required for Kaplan-Meier Analysis.")
 @make_data_dynamic("numeric", capture_columns=True, dynamize=False)
 def kaplan_meier_analysis(
     durations: DataFrame | np.ndarray,
@@ -106,7 +107,7 @@ def kaplan_meier_analysis(
     
     return kmf
 
-@ensure_pkg("skbio", "'scikit-bio' package is required for `dca_analysis` to run.")
+@ensure_pkg("skbio", "'scikit-bio' package is required for `DCA analysis`.")
 @make_data_dynamic(capture_columns=True, dynamize=False)
 def dca_analysis(
     data,

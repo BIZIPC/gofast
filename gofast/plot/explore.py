@@ -3,10 +3,9 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-`explore` is a set of base plots for visualization, data exploratory and 
-analyses. E-E-Q Plots encompass the Exploratory plots
-( :class:`~gofast.plot.QuestPlotter`) and Quick analyses 
-(:class:`~gofast.plot.EasyPlotter`) visualization. 
+Set of base plots for visualization, data exploratory and  analyses. 
+E-E-Q Plots encompass the Exploratory plots ( :class:`~gofast.plot.QuestPlotter`)
+ and Quick analyses (:class:`~gofast.plot.EasyPlotter`) visualization. 
 """
 from __future__ import annotations 
 
@@ -27,11 +26,14 @@ from ..api.types import _F, Any, List,Dict,Optional,ArrayLike, DataFrame, Series
 from ..exceptions import PlotError, FeatureError, NotFittedError
 
 from ..tools._dependency import import_optional_dependency 
-from ..tools.coreutils import _assert_all_types , _isin,  repr_callable_obj 
-from ..tools.coreutils import smart_strobj_recognition, smart_format, reshape
-from ..tools.coreutils import  shrunkformat, exist_features  
-from ..tools.baseutils import is_readable, select_features, extract_target
-from ..tools.baseutils import generate_placeholders
+from ..tools.coreutils import ( 
+    _assert_all_types , _isin, smart_format, reshape, shrunkformat,
+    exist_features  
+)
+from ..tools.baseutils import ( 
+    is_readable, select_features, extract_target, generate_placeholders
+)
+
 from ..tools.validator import check_X_y 
 try: 
     import missingno as msno 
@@ -47,6 +49,8 @@ except: pass
 
  
 _logger=gofastlog.get_gofast_logger(__name__)
+
+__all__=["QuestPlotter", "EasyPlotter" ]
 
 #+++++++++++++++++++++++ add seaborn docs +++++++++++++++++++++++++++++++++++++ 
 _sns_params = dict( 
@@ -118,7 +122,7 @@ _param_docs = DocstringComponents.from_nested_components(
     )
 #++++++++++++++++++++++++++++++++++ end +++++++++++++++++++++++++++++++++++++++
 
-class QuestPlotter (BasePlot): 
+class QuestPlotter(BasePlot): 
     """
     Exploratory plot for data analysis 
     
@@ -2621,26 +2625,7 @@ class EasyPlotter (BasePlot):
         
         return self 
     
-    def __repr__(self):
-        """ Pretty format for programmer guidance following the API... """
-        return repr_callable_obj  (self, skip ='y') 
-    
-       
-    def __getattr__(self, name):
-        if not name.endswith ('__') and name.endswith ('_'): 
-            raise NotFittedError (
-                f"{self.__class__.__name__!r} instance is not fitted yet."
-                " Call 'fit' method with appropriate arguments before"
-               f" retreiving the attribute {name!r} value."
-                )
-        rv = smart_strobj_recognition(name, self.__dict__, deep =True)
-        appender  = "" if rv is None else f'. Do you mean {rv!r}'
-        
-        raise AttributeError (
-            f'{self.__class__.__name__!r} object has no attribute {name!r}'
-            f'{appender}{"" if rv is None else "?"}'
-            )      
-       
+
     @property 
     def inspect (self): 
         """ Inspect object whether is fitted or not"""

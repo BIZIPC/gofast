@@ -3,11 +3,18 @@
 import pytest
 from gofast.experimental import enable_geo_intel_system # noqa 
 from gofast.geo.system import GeoIntelligentSystem
-from gofast.tools.funcutils import ensure_pkg, install_package 
+from gofast.tools.depsutils import ensure_pkg, ensure_module_installed 
 import pandas as pd
-try:import geopandas as gpd
+
+GPD_AVAILABLE =False 
+try:
+    import geopandas as gpd
 except: 
-    install_package("geopandas")
+    GPD_AVAILABLE =ensure_module_installed("geopandas", auto_install=True)
+    if GPD_AVAILABLE: 
+        import geopandas as gpd
+else:
+    GPD_AVAILABLE=True 
 
 @pytest.fixture
 def setup_geo_system():
@@ -46,8 +53,9 @@ def test_load_data(setup_geo_system, tmp_path):
     assert setup_geo_system.data is not None
     assert len(setup_geo_system.data) > 0
     assert 'name' in setup_geo_system.data.columns
-    
+ 
 @ensure_pkg("folium", auto_install= True, verbose =True )
+@pytest.mark.skipif (not GPD_AVAILABLE, "Geopandas is expected to proceeed.")
 def test_visualize_data(setup_geo_system):
     # Assuming the GeoIntelligentSystem class has been set up with a 
     # valid GeoDataFrame `self.data`
@@ -86,6 +94,7 @@ def test_recommend_actions(setup_geo_system):
     assert not recommendations.empty
 
 @ensure_pkg("folium", auto_install= True, verbose =True )
+@pytest.mark.skipif (not GPD_AVAILABLE, "Geopandas is expected to proceeed.")
 def test_interactive_query(setup_geo_system):
     import folium
     # Setup: Create a mock GeoDataFrame for the interactive query test

@@ -32,6 +32,7 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from .._gofastlog import gofastlog 
 from ..api.types import _F, Union, Optional
 from ..exceptions import EstimatorError, NotFittedError 
+from ..tools.baseutils import detect_categorical_columns 
 from ..tools.coreutils import  parse_attrs, assert_ratio, validate_feature
 from ..tools.coreutils import  ellipsis2false, to_numeric_dtypes, is_iterable
 from ..tools.coreutils import exist_features, type_of_target
@@ -1134,7 +1135,8 @@ class KMeansFeaturizer(BaseEstimator, TransformerMixin):
     
         See Also
         --------
-        sklearn.cluster.KMeans : The underlying KMeans implementation used by this transformer.
+        sklearn.cluster.KMeans : 
+            The underlying KMeans implementation used by this transformer.
 
         """
         # Check if the model is fitted
@@ -1209,78 +1211,156 @@ class KMeansFeaturizer(BaseEstimator, TransformerMixin):
     
         return X_transformed
 
+
 class CategoricalEncoder2(BaseEstimator, TransformerMixin):
     """
-    CategoricalEncoder is a transformer that encodes categorical variables in
-    a DataFrame or numpy array using various encoding strategies such as label
-    encoding, one-hot encoding, bin-counting, frequency encoding, and mean-target
-    encoding.
+    CategoricalEncoder2 is a versatile transformer for encoding categorical 
+    variables using various strategies including label encoding, one-hot 
+    encoding, bin-counting, frequency encoding, and mean-target encoding.
+
+    It can automatically detect categorical columns in the input data based 
+    on the data type, or the user can specify the columns manually. This 
+    transformer is useful for handling categorical features in machine learning 
+    models where encoding is required.
 
     Parameters
     ----------
-    encoding : {'label', 'onehot', 'bin-counting', 'frequency', 'mean_target'}, default='label'
-        Encoding strategy for categorical variables:
-        - 'label': Label encoding of the categorical variables.
-        - 'onehot': One-hot encoding of the categorical variables.
-        - 'bin-counting': Probabilistic bin-counting encoding.
-        - 'frequency': Frequency encoding of the categorical variables.
-        - 'mean_target': Mean target encoding based on target values provided during fit.
+    encoding : {'label', 'onehot', 'bin-counting', 'frequency', 'mean_target'},\
+        default='label'
+        The encoding strategy to apply on the categorical variables:
+        - 'label': Label encoding where categories are replaced with integer 
+          values.
+        - 'onehot': One-hot encoding where each category is represented as a 
+          binary vector.
+        - 'bin-counting': Probabilistic bin-counting encoding where categories 
+          are replaced with their probability estimates.
+        - 'frequency': Categories are replaced with their relative frequency 
+          counts.
+        - 'mean_target': Categories are encoded based on the mean target value 
+          associated with each category.
+          
     target : array-like of shape (n_samples,), default=None
-        Target values (class labels in classification, real numbers in regression).
-        Required if `encoding='mean_target'`.
+        The target values used for mean-target encoding. It is only used when 
+        `encoding='mean_target'`, and it should be provided during the fitting 
+        stage to compute mean target values for each category.
+
+    detect_integer_as_categorical : bool, optional, default=True
+        If True, integer columns in the input data are treated as categorical 
+        features and are encoded based on the chosen encoding strategy.
+
+    detect_float_ending_with_zero : bool, optional, default=True
+        If True, float columns that contain values ending in `.0` (effectively 
+        representing integers) are treated as categorical variables.
+
+    min_unique_values : int or None, optional
+        The minimum number of unique values a column must have to be considered 
+        categorical. If None, no minimum threshold is applied.
+
+    max_unique_values : int or None, optional
+        The maximum number of unique values a column can have to be considered 
+        categorical. If None, no maximum threshold is applied.
 
     Attributes
     ----------
     label_encoders_ : dict
-        Dictionary of label encoders for each categorical variable.
+        A dictionary of `LabelEncoder` instances for each categorical variable. 
+        This is created during the fitting stage and is used for label encoding 
+        of the categorical features.
 
+    categorical_columns_ : list
+        A list of columns detected or specified as categorical in the input data.
+    
     Examples
     --------
-    >>> from gofast.transformers.feature_engineering import CategoricalEncoder
+    >>> from gofast.transformers.feature_engineering import CategoricalEncoder2
     >>> import pandas as pd
     >>> data = {'category': ['a', 'b', 'a', 'c'], 'value': [1, 2, 3, 4]}
     >>> df = pd.DataFrame(data)
-    >>> encoder = CategoricalEncoder(encoding='onehot')
+    >>> encoder = CategoricalEncoder2(encoding='onehot')
     >>> encoder.fit(df)
     >>> df_encoded = encoder.transform(df)
     >>> print(df_encoded)
 
+    In this example, the 'category' column is one-hot encoded. The result is a 
+    transformed DataFrame with binary columns representing the original 
+    categories.
+
+    Methods
+    -------
+    fit(X, y=None)
+        Fit the CategoricalEncoder2 to the data by detecting the categorical 
+        columns and applying the chosen encoding strategy.
+
+    transform(X)
+        Transform the input data by encoding the categorical features based on 
+        the specified encoding strategy.
+
     Notes
     -----
-    The `fit` method detects categorical variables in the input data. If the input
-    is a DataFrame, it identifies columns of type `object` or `category`. If the
-    input is a numpy array, it identifies floating-point columns that should be
-    considered as categorical.
-
-    The mathematical formulation of encoding strategies are as follows:
+    CategoricalEncoder2 supports different encoding strategies that transform 
+    categorical features into numeric representations. Depending on the `encoding`
+    parameter, it applies one of the following transformations:
 
     - Label Encoding:
-        Assigns a unique integer to each category.
+        Assigns a unique integer to each category. This method is useful for 
+        ordinal categorical features.
+
     - One-hot Encoding:
-        .. math:: X_{ij} = \begin{cases} 1 & \text{if category is present}\\
-            \\ 0 & \text{otherwise} \end{cases}
+        Converts each category into a binary vector where one value is set to 
+        1 and the others are set to 0, representing the presence of a category.
+
+        .. math:: X_{ij} = \begin{cases} 
+        1 & \text{if category is present}\\ 
+        0 & \text{otherwise} \end{cases}
+    
     - Bin-counting:
-        Converts categories into probabilities based on their frequency.
+        Converts categories into probabilistic values based on their frequency 
+        in the dataset. This is useful for high-cardinality categorical features.
+
     - Frequency Encoding:
+        Replaces each category with its relative frequency count.
+
         .. math:: X_{ij} = \frac{\text{count of category j}}{\text{total count}}
+
     - Mean-target Encoding:
+        Encodes categories based on the mean of the target values associated 
+        with each category. This is useful for categorical features in regression 
+        tasks where the relationship between the category and target variable 
+        is important.
+
         .. math:: X_{ij} = \frac{\sum y_j}{\text{count of category j}}
 
     See Also
     --------
-    sklearn.preprocessing.LabelEncoder : Encode labels with value between 0 and n_classes-1.
-    pandas.get_dummies : Convert categorical variable(s) into dummy/indicator variables.
+    sklearn.preprocessing.LabelEncoder : 
+        A utility for encoding categorical labels with integer values.
+    pandas.get_dummies : 
+        Converts categorical variables into dummy/indicator variables.
 
     References
     ----------
     .. [1] Micci-Barreca, D. (2001). "A preprocessing scheme for high-cardinality
-          categorical attributes in classification and prediction problems". 
-          ACM SIGKDD Explorations Newsletter, 3(1), 27-32.
+       categorical attributes in classification and prediction problems". 
+       ACM SIGKDD Explorations Newsletter, 3(1), 27-32.
     """
 
-    def __init__(self, encoding='label', target=None):
+    def __init__(
+        self, 
+        encoding='label', 
+        target=None, 
+        detect_integer_as_categorical=True,
+        detect_float_ending_with_zero=True,
+        min_unique_values=None,
+        max_unique_values=None
+        ):
+        
         self.encoding = encoding
         self.target = target
+        self.detect_integer_as_categorical = detect_integer_as_categorical
+        self.detect_float_ending_with_zero = detect_float_ending_with_zero
+        self.max_unique_values = max_unique_values
+        self.min_unique_values = min_unique_values
+
         
     def fit(self, X, y=None):
         """
@@ -1354,6 +1434,7 @@ class CategoricalEncoder2(BaseEstimator, TransformerMixin):
             Convert categorical variable(s) into dummy/indicator variables.
  
         """
+        self.categorical_columns_ = [] 
         self.label_encoders_ = {}
         if isinstance(X, pd.DataFrame):
             self._fit_dataframe(X, y)
@@ -1366,7 +1447,16 @@ class CategoricalEncoder2(BaseEstimator, TransformerMixin):
         return self
 
     def _fit_dataframe(self, X, y=None):
-        for col in X.select_dtypes(['object', 'category']).columns:
+        
+        self.categorical_columns_= detect_categorical_columns(
+            X, 
+            detect_integer_as_categorical=self.detect_integer_as_categorical, 
+            detect_float_ending_with_zero=self.detect_float_ending_with_zero, 
+            max_unique_values=self.max_unique_values, 
+            min_unique_values=self.min_unique_values
+        )
+
+        for col in self.categorical_columns_:
             le = LabelEncoder()
             le.fit(X[col])
             self.label_encoders_[col] = le
@@ -1484,6 +1574,9 @@ class CategoricalEncoder2(BaseEstimator, TransformerMixin):
         return X_encoded
 
     def _transform_array(self, X):
+        if self.categorical_columns_:
+            float_columns= self.categorical_columns_
+            
         float_columns = self._get_float_columns(X)
         X_encoded = X.copy()
 
@@ -1680,7 +1773,7 @@ class StratifyFromBaseFeature(BaseEstimator, TransformerMixin):
 
     def _categorize_feature(self, X):
         """Categorizes the numerical feature."""
-        # Implement logic to categorize 'base_feature' here
+ 
         from ..tools.mlutils import discretize_categories
         X = discretize_categories(X, in_cat=self.base_feature, 
             new_cat="class_label", divby =self.threshold_operator,
@@ -3592,7 +3685,6 @@ class DimensionalityReducer(BaseEstimator, TransformerMixin):
         """
         return self.reducer.transform(X)
 
-
 class BaseCategoricalEncoder(BaseEstimator, TransformerMixin):
     """
     Encode categorical features as a one-hot numeric array.
@@ -3679,21 +3771,50 @@ class BaseCategoricalEncoder(BaseEstimator, TransformerMixin):
         """
         return self.encoder.transform(X)
 
+
 class CategoricalEncoder(BaseEstimator, TransformerMixin):
     """
-    Encode categorical features as a one-hot numeric array.
+    Encode categorical features as a one-hot numeric array or a sparse matrix.
 
     This transformer should be applied to categorical features in a dataset 
-    before applying it to a machine learning model.
+    before using it in a machine learning model. It supports automatic detection
+    of categorical features, including integer and float columns (when values 
+    end with `.0`), or a user can specify the categorical columns.
 
     Parameters
     ----------
-    categorical_features : list of str, 
-        List of column names to be considered as categorical features.
-        If None, features should be detected automatically.
-
+    categorical_features : list of str or None, optional
+        List of column names to be considered as categorical features. If None, 
+        categorical features will be detected automatically based on data types 
+        (including integers and floats ending with .0).
+    
     drop : {'first', 'if_binary', None}, default=None
         Specifies a methodology to use to drop one of the categories per feature.
+        - 'first' : drop the first category.
+        - 'if_binary' : drop one category if it is binary.
+        - None : keep all categories.
+    
+    detect_integer_as_categorical : bool, optional, default=True
+        Whether integer columns should be detected as categorical features.
+    
+    detect_float_ending_with_zero : bool, optional, default=True
+        Whether float columns ending with `.0` (i.e., integers in float form)
+        should be detected as categorical features.
+    
+    min_unique_values : int or None, optional
+        The minimum number of unique values a column must have to be considered 
+        categorical. If None, no minimum threshold is applied.
+    
+    max_unique_values : int or None, optional
+        The maximum number of unique values a column can have to be considered 
+        categorical. If None, no maximum threshold is applied.
+    
+    return_type : {'array', 'sparse', 'df'}, default='array'
+        The format of the returned transformed data:
+        - 'array' : returns the transformed data as a NumPy array.
+        - 'sparse' : returns the transformed data as a sparse matrix.
+        - 'df' : returns the transformed data as a pandas DataFrame with
+          appropriate column names for one-hot encoded features.
 
     Attributes
     ----------
@@ -3702,15 +3823,16 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
 
     Examples
     --------
-    >>> from sklearn.compose import ColumnTransformer
-    >>> transformer = ColumnTransformer(transformers=[
-    ...     ('cat', CategoricalEncoder(categorical_features=['color', 'brand']),
-             ['color', 'brand'])
-    ... ])
-    >>> X = pd.DataFrame({'color': ['red', 'blue', 'green'],
-                          'brand': ['ford', 'toyota', 'bmw']})
-    >>> transformer.fit_transform(X)
-
+    >>> from gofast.transformers.feature_engineering import CategoricalEncoder
+    >>> import pandas as pd
+    >>> data = pd.DataFrame({
+            'color': ['red', 'blue', 'green'],
+            'brand': ['ford', 'toyota', 'bmw'],
+            'year': [2010, 2015, 2020]
+        })
+    >>> encoder = CategoricalEncoder(return_type='df')
+    >>> encoder.fit_transform(data)
+    
     Methods
     -------
     fit(X, y=None)
@@ -3720,58 +3842,94 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
     transform(X, y=None)
         Transform categorical features into one-hot numeric arrays.
 
+    Notes
+    -----
+    The transformer allows automatic detection of categorical features, 
+    including integer and float columns that behave categorically. This can 
+    be especially useful in machine learning pipelines where features might 
+    not be explicitly marked as categorical.
+
+    For a given categorical feature :math:`x`, the one-hot encoding process 
+    transforms each unique category into a binary vector where:
+
+    .. math:: 
+        y_i = [0, 0, ..., 1, ..., 0]
+
+    where :math:`y_i` is the encoded vector for the :math:`i`-th category. 
+    For example, the category 'blue' might be encoded as [0, 1, 0] for the 
+    'color' feature if there are three categories: 'red', 'blue', and 'green'.
+
+    See Also
+    --------
+    - sklearn.preprocessing.OneHotEncoder : Provides the underlying one-hot 
+      encoding mechanism.
+    - gofast.tools.baseutils.detect_categorical_columns : 
+      Automatically detects categorical columns in a DataFrame.
+    
+    References
+    ----------
+    .. [1] Pedregosa, F., et al. (2011). "Scikit-learn: Machine Learning in 
+           Python." JMLR, 12, 2825-2830.
     """
-    def __init__(self, categorical_features=None, drop=None):
-        """
-        Initialize the CategoricalEncoder2.
 
-        Parameters
-        ----------
-        categorical_features : list of str
-            List of column names to be considered as categorical features.
-
-        drop : {'first', 'if_binary', None}, default=None
-            Specifies a methodology to use to drop one of the categories 
-            per feature.
-
-        """
+    def __init__(
+        self, 
+        categorical_features=None, 
+        drop=None, 
+        detect_integer_as_categorical=True, 
+        detect_float_ending_with_zero=True, 
+        max_unique_values=None, 
+        min_unique_values=None, 
+        return_type="array"
+    ):
         self.categorical_features = categorical_features
         self.drop = drop
-        
+        self.detect_integer_as_categorical = detect_integer_as_categorical
+        self.detect_float_ending_with_zero = detect_float_ending_with_zero
+        self.max_unique_values = max_unique_values
+        self.min_unique_values = min_unique_values
+        self.return_type = return_type
         
     def fit(self, X, y=None):
         """
-        Fit the transformer to the data using OneHotEncoder for each
-        specified categorical feature.
+        Fit the transformer to the data using OneHotEncoder for each specified
+        categorical feature.
 
         Parameters
         ----------
-        X : DataFrame, shape (n_samples, n_features)
-            Training data containing the categorical features to be encoded.
+        X : pandas.DataFrame, shape (n_samples, n_features)
+            The input data containing categorical features.
         
-        y : array-like, shape (n_samples,)
-            Target values. Not used in this transformer.
+        y : None
+            Ignored in this transformer.
 
         Returns
         -------
         self : object
-            Returns the instance itself.
-
+            Fitted transformer instance.
         """
-        is_frame(X, df_only= True, raise_exception=True,
-                 objname="CategoricalEncoder")
+        is_frame(X, df_only=True, raise_exception=True, objname="CategoricalEncoder")
         
+        # Automatically detect categorical features if none are provided
         if self.categorical_features is None: 
-            *_, self.categorical_features = to_numeric_dtypes(
-                X, return_feature_types= True )
-            
-        self.encoders_ = {
-            feature: OneHotEncoder(drop=self.drop) 
-            for feature in self.categorical_features}
+            self.categorical_features = detect_categorical_columns(
+                X, 
+                detect_integer_as_categorical=self.detect_integer_as_categorical, 
+                detect_float_ending_with_zero=self.detect_float_ending_with_zero, 
+                max_unique_values=self.max_unique_values, 
+                min_unique_values=self.min_unique_values
+            )
         
+        # Create encoders for each categorical feature
+        self.encoders_ = {
+            feature: OneHotEncoder(drop=self.drop, sparse=(self.return_type == 'sparse')) 
+            for feature in self.categorical_features
+        }
+        
+        # Fit encoders for each feature
         for feature in self.categorical_features:
             self.encoders_[feature].fit(X[[feature]])
-            
+        
         return self
     
     def transform(self, X, y=None):
@@ -3780,22 +3938,43 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : DataFrame, shape (n_samples, n_features)
+        X : pandas.DataFrame, shape (n_samples, n_features)
             Input DataFrame containing the categorical features to be encoded.
         
-        y : array-like, shape (n_samples,)
-            Target values. Not used in this transformer.
+        y : None
+            Ignored in this transformer.
 
         Returns
         -------
-        X_encoded : array-like, shape (n_samples, n_encoded_features)
+        X_encoded : array-like, sparse matrix, or pandas.DataFrame
             Transformed data with one-hot encoding for categorical features.
-
+            The format of the return is determined by the `return_type` parameter.
         """
+        is_frame(X, df_only=True, raise_exception=True, objname="CategoricalEncoder")
+        
+        # Check if categorical features exist
+        if not self.categorical_features:
+            return X
+        
+        # Collect transformed outputs
         outputs = []
         for feature in self.categorical_features:
-            outputs.append(self.encoders_[feature].transform(X[[feature]]))
-        return np.hstack(outputs)
+            transformed_feature = self.encoders_[feature].transform(X[[feature]])
+            outputs.append(transformed_feature)
+        
+        # Concatenate transformed columns
+        if self.return_type == 'sparse':
+            return np.hstack(outputs)
+        elif self.return_type == 'df':
+            encoded_df = pd.DataFrame(
+                np.hstack(outputs), 
+                columns=[f"{feature}_{category}" for feature in self.categorical_features 
+                         for category in self.encoders_[feature].categories_[0]],
+                index=X.index
+            )
+            return pd.concat([X.drop(columns=self.categorical_features), encoded_df], axis=1)
+        else:
+            return np.hstack(outputs)
 
 class FeatureScaler(BaseEstimator, TransformerMixin):
     """
@@ -4451,13 +4630,6 @@ class CategoryFrequencyEncoder(BaseEstimator, TransformerMixin):
             X_transformed[feature] = X[feature].map(self.frequency_maps_[feature])
         return X_transformed
 
-    
-    
-    
-    
-    
-    
-    
     
     
     

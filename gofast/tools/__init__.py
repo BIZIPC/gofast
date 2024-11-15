@@ -10,6 +10,7 @@ are facilitated by :mod:`~gofast.tools.mlutils` and
 
 import importlib
 
+
 MODULE_MAPPING = {
     'baseutils': [
          'array2hdf5',
@@ -17,6 +18,7 @@ MODULE_MAPPING = {
          'categorize_target',
          'category_count',
          'denormalizer',
+         'detect_categorical_columns', 
          'extract_target',
          'fancier_downloader',
          'fillNaN',
@@ -38,25 +40,41 @@ MODULE_MAPPING = {
          'speed_rowwise_process'
     ],
     'coreutils': [
-        'cleaner', 
-        'extract_coordinates',
         'features_in', 
         'find_features_in',
-        'parallelize_jobs',
+        'split_train_test',
+        'split_train_test_by_id',
+    ],
+    'datautils': [ 
+        'cleaner', 
         'pair_data',
-        'projection_validator',
         'random_sampling', 
         'random_selector',
         'replace_data', 
         'resample_data', 
+        
+    ], 
+    'ioutils':[ 
+        'deserialize_data', 
+        'extract_tar_with_progress', 
+        'fetch_tgz_from_url', 
+        'fetch_tgz_locally', 
+        'fetch_json_data_from_url',
+        'load_serialized_data',
+        'load_csv', 
+        'parse_csv',
+        'parse_json',
+        'parse_md',
+        'parse_yaml',
         'save_job',
-        'smart_label_classifier', 
-        'split_train_test',
-        'split_train_test_by_id',
+        'save_path',
+        'serialize_data',
         'store_or_write_hdf5',
-    ],
-    'mathex': [
-        'adaptive_moving_average', 
+        'to_hdf5',
+        'zip_extractor'
+        
+    ], 
+    'mathext': [
         'adjust_for_control_vars',
         'calculate_adjusted_lr', 
         'calculate_binary_iv', 
@@ -72,21 +90,17 @@ MODULE_MAPPING = {
         'compute_youdens_index',
         'cubic_regression', 
         'exponential_regression', 
-        'get_bearing', 
-        'get_distance',
+        'get_time_steps', 
         'infer_sankey_columns', 
         'label_importance',
         'linear_regression',
         'linkage_matrix', 
         'logarithmic_regression',
-        'make_mxs', 
         'minmax_scaler',
-        'moving_average',
         'normalize',
         'optimized_spearmanr', 
         'quadratic_regression', 
         'rank_data', 
-        'savgol_filter', 
         'sinusoidal_regression',
         'standard_scaler', 
         'step_regression',
@@ -96,12 +110,11 @@ MODULE_MAPPING = {
         'bi_selector', 
         'bin_counting', 
         'build_data_preprocessor',
-        'deserialize_data',
         'display_feature_contributions', 
         'discretize_categories', 
         'evaluate_model',
         'fetch_model', 
-        'fetch_tgz', 
+        'get_batch_size', 
         'get_correlated_features',
         'get_feature_contributions',
         'get_global_score',
@@ -109,15 +122,14 @@ MODULE_MAPPING = {
         'laplace_smoothing', 
         'laplace_smoothing_categorical',
         'laplace_smoothing_word', 
-        'load_csv', 
         'load_model',
         'make_pipe', 
         'one_click_prep',
-        'process_df', 
+        'process_data_types', 
         'resampling',
         'save_dataframes', 
         'select_feature_importances', 
-        'serialize_data', 
+        'smart_label_classifier', 
         'smart_split',
         'soft_encoder', 
         'soft_data_split', 
@@ -125,7 +137,15 @@ MODULE_MAPPING = {
         'soft_scaler', 
         'stats_from_prediction',
         'stratify_categories'
-    ]
+    ], 
+    'sysutils': [
+        'WorkflowOptimizer',
+        'parallelize_jobs', 
+        'safe_optimize', 
+        ], 
+    'contextual': [ 
+        'WorkflowManager', 
+        ]
 }
 
 # Lazy loader function

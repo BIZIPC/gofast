@@ -1,28 +1,42 @@
 # -*- coding: utf-8 -*-
 #   Licence:BSD 3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
+
 """
-Steps behing the principal component analysis (PCA) and matrices decomposition 
+Provides essential functions and utilities for performing matrix 
+decomposition techniques, including Principal Component Analysis (PCA) and 
+linear transformations. Functions enable extraction of eigenvalues, computation 
+of variance ratios, and transformation of data into principal components. 
+Visualization tools for decision regions are also included.
 """
 
-from warnings import warn 
-import numpy as np 
-import matplotlib.pyplot as plt 
-from matplotlib.colors import ListedColormap 
-from sklearn.preprocessing import StandardScaler 
-from sklearn.model_selection import train_test_split 
-from sklearn.decomposition import PCA 
+from warnings import warn
 
-from ..api.docstring import _core_docs 
-from ..backends.selector import BackendSelector 
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
+
+from ..api.docstring import _core_docs
+from ..backends.selector import BackendSelector
 from ..tools.coreutils import _assert_all_types
-from ..tools.validator import validate_positive_integer 
-from ..tools.validator import check_array, parameter_validator   
+from ..tools.validator import (
+    validate_positive_integer,
+    check_array,
+    parameter_validator
+)
 
-__all__=["get_eigen_components", "plot_decision_regions", 
-    "transform_to_principal_components", "get_total_variance_ratio" , 
-    "linear_discriminant_analysis", "get_transformation_matrix"
-    ]
+__all__ = [
+    "get_eigen_components",
+    "plot_decision_regions",
+    "transform_to_principal_components",
+    "get_total_variance_ratio",
+    "linear_discriminant_analysis",
+    "get_transformation_matrix"
+]
+
 
 def get_eigen_components(
         X, scale: bool = True, method: str = 'covariance', backend: str='numpy'):

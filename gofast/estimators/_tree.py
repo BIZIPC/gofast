@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from numbers import Integral, Real
 import numpy as np
 from tqdm import tqdm
 from scipy.sparse import issparse
-from sklearn.base import BaseEstimator
 
-from ..tools.validator import check_array, check_is_fitted
+from sklearn.base import BaseEstimator
 from sklearn.utils._param_validation import Interval, StrOptions
-#from ..tools._param_validation import Interval, StrOptions
+
+from ..api.property import LearnerMeta 
+from ..tools.validator import check_array, check_is_fitted
 from .util  import validate_fit_weights, validate_positive_integer
 
-class BaseWeightedTree(BaseEstimator, metaclass=ABCMeta):
+class BaseWeightedTree(BaseEstimator, metaclass=LearnerMeta):
     """
     Base class for Weighted Tree models.
     
@@ -509,7 +510,7 @@ class BaseWeightedTree(BaseEstimator, metaclass=ABCMeta):
         """Update sample weights."""
         return np.exp(-weight * y * y_pred)
     
-class BaseDTB(BaseEstimator, metaclass=ABCMeta):
+class BaseDTB(BaseEstimator, metaclass=LearnerMeta):
     """
     Base class for Decision Tree-Based Ensembles.
 

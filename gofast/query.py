@@ -12,13 +12,15 @@ import re
 import pandas as pd
 
 from .api.types import Optional, DataFrame
+from .api.property import BaseClass
 from .exceptions import NotFittedError 
-from .tools._dependency import import_optional_dependency
 from .tools.coreutils import normalize_string
+from .tools.depsutils import import_optional_dependency
+
  
 __all__= ['DBAnalysis']
 
-class DBAnalysis:
+class DBAnalysis(BaseClass):
     """
     A class for performing various data analysis tasks using SQL.
     
@@ -164,12 +166,21 @@ class DBAnalysis:
         
         self._setup_connection()
         
+        self.engine_ =None
+        _use_sqlalchemy=False  # flag to use sqlalchemy to store data
         if hasattr(self.connection_, 'execute'):
             # Using sqlalchemy to store data
-            data.to_sql(table_name, self.engine_, if_exists='replace', index=False)
-        else:
+            try:
+                data.to_sql(
+                    table_name, self.engine_, if_exists='replace', index=False)
+                _use_sqlalchemy=True 
+            except : 
+                pass 
+                 
+        if not _use_sqlalchemy:
             # Using sqlite3 to store data
-            data.to_sql(table_name, self.connection_, if_exists='replace', 
+            data.to_sql(table_name, self.connection_,
+                        if_exists='replace', 
                         index=False, method='multi')
     
         return self

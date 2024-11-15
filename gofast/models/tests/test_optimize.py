@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 
 from gofast.api import testing 
 from gofast.models.optimize import optimize_hyperparams, parallelize_search
-from gofast.models.optimize import optimize_search, optimize_search2
+from gofast.models.optimize import optimize_search, optimize_search_in
 
 X, y = load_iris(return_X_y=True)
 
@@ -58,12 +58,12 @@ def test_optimize_search_mismatched_keys(iris_data):
     with pytest.raises(ValueError):
         optimize_search(estimators, param_grids, X, y)
 
-# Test optimize_search2 with a simple scenario
-def test_optimize_search2_simple(iris_data):
+# Test optimize_search_in with a simple scenario
+def test_optimize_search_in_simple(iris_data):
     X, y = iris_data
     estimators = [RandomForestClassifier()]
     param_grids = [{'n_estimators': [100, 200], 'max_depth': [10, 20]}]
-    result = optimize_search2(estimators, param_grids, X, y)
+    result = optimize_search_in(estimators, param_grids, X, y)
     expected_output = ['RandomForestClassifier', 'Tuning Results',
                        'Best estimator', 'Best parameters']                           
     testing.assert_model_summary_results(result, expected_output)

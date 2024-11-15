@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt  
 from sklearn.base import BaseEstimator,TransformerMixin 
 
-from ..tools._dependency import import_optional_dependency 
+from ..tools.depsutils import import_optional_dependency 
 
 EMSG = (
         "`scikit-image` is needed for this transformer. Note `skimage`is "

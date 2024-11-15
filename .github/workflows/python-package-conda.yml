@@ -24,7 +24,10 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install "numpy<2" cython
+        # conda install numpy<2 cython
+        # source activate gofast-0.1.0  # Ensure Conda environment is activated
+        # python -m pip install "numpy<2" cython
+        python -m pip install --user "numpy<2" cython
 
     - name: Compile Cython modules
       run: |
@@ -48,8 +51,9 @@ jobs:
 
     - name: Test with pytest
       run: |
-        python -m pip install pytest
-        pytest
+        python -m pip install pytest pytest-xdist
+        pytest -n auto  # Automatically uses all available CPU cores
+        # pytest
 
     - name: Debugging Information
       if: failure() # This step runs only if the previous steps fail

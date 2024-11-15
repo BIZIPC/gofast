@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
+# License: BSD-3-Clause
+# Author: LKouadio <etanoyau@gmail.com>
 
-from numbers import Integral, Real
-from abc import ABCMeta
 from abc import abstractmethod
+from numbers import Integral, Real
 
 from sklearn.base import BaseEstimator, clone
 from sklearn.utils._param_validation import Hidden, HasMethods 
 from sklearn.utils._param_validation  import Interval, StrOptions
+
+from ..api.property import LearnerMeta 
 from ..tools.validator import check_is_fitted
-from ..transformers import KMeansFeaturizer
 from .util import fit_with_estimator, select_best_model 
 
-class BaseKMF(BaseEstimator, metaclass=ABCMeta):
+class BaseKMF(BaseEstimator, metaclass=LearnerMeta):
     """
     Base class for KMeansFeaturizer estimators.
 
@@ -468,7 +470,10 @@ class BaseKMF(BaseEstimator, metaclass=ABCMeta):
         .. [1] Kouadio, K.L., Liu, J., Liu, R., Wang, Y., Liu, W., 2024. 
                K-Means Featurizer: A booster for intricate datasets. Earth Sci. 
                Informatics 17, 1203–1228. https://doi.org/10.1007/s12145-024-01236-3
+               
         """
+        from ..transformers import KMeansFeaturizer
+        
         self.featurizer_ = KMeansFeaturizer(
             n_clusters=self.n_clusters,
             target_scale=self.target_scale,

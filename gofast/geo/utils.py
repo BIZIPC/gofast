@@ -3,13 +3,13 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-Is a set of utilities that deal with geological rocks, strata and 
+Set of utilities that deal with geological rocks, strata and 
 stratigraphic details for log construction. 
 """
 from __future__ import annotations 
-
-import warnings
 import copy 
+import warnings
+
 import numpy as np
 import pandas as pd 
 from scipy.optimize import curve_fit
@@ -18,11 +18,11 @@ import matplotlib.pyplot as plt
 from ..api.types import  Tuple,  Any, Optional, Union 
 from ..api.types import  _F, ArrayLike, DataFrame 
 from ..exceptions import  DepthError 
-from ..api.property import Config 
-from ..tools.coreutils import  convert_value_in, ellipsis2false
-from ..tools.mathex import find_closest 
+from ..api.property import GeoscienceProperties 
+from ..tools.coreutils import convert_value_in, ellipsis2false, find_closest 
 from ..tools.validator import  assert_xy_in  
 from .gisutils import utm_to_ll, project_point_utm2ll # HAS_GDAL 
+
 from .._gofastlog import gofastlog 
 _logger = gofastlog().get_gofast_logger(__name__ )
 
@@ -595,7 +595,7 @@ def find_similar_structures(
     
     #---------------------------
     # make array of names structures names and values 
-    dict_conf =  Config().geo_rocks_properties 
+    dict_conf =  GeoscienceProperties().geo_rocks_properties 
     stc_values = np.array (list( dict_conf.values()))
     stc_names = np.array ( list(dict_conf.keys() ))
 

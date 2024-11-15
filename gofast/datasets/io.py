@@ -83,7 +83,7 @@ def _to_dataframe(data, target_names=None, feature_names=None, target=None):
     ----------
     data : str, path-like object, DataFrame, or array-like
         Source data, which can be a file path, a DataFrame, or an array-like object.
-    tnames : list of str, optional
+    target_names : list of str, optional
         Column names in `data` designated as targets. If specified, these columns
         are separated into the target DataFrame `y`.
     feature_names : list of str, optional
@@ -91,7 +91,7 @@ def _to_dataframe(data, target_names=None, feature_names=None, target=None):
         all columns except those specified in `tnames` are used.
     target : ndarray, pd.Series, pd.DataFrame, or None, optional
         Explicit target data. If provided, this will be used as the target DataFrame `y`,
-        potentially in addition to any targets specified in `tnames`.
+        potentially in addition to any targets specified in `target_names`.
 
     Returns
     -------
@@ -136,20 +136,25 @@ def _to_dataframe(data, target_names=None, feature_names=None, target=None):
         except: data =pd.DataFrame(data )
         
     if target_names is not None: 
-        target_names = is_iterable (target_names, exclude_string=True, transform=True)
+        target_names = is_iterable (
+            target_names, exclude_string=True, transform=True)
         
-    feature_data = data.drop(columns=target_names, errors='ignore') if target_names else data
+    feature_data = data.drop(
+        columns=target_names, errors='ignore') if target_names else data
     try:
         exist_features(data, target_names) # check whether tnames is on data 
-    except: target_from_data= pd.DataFrame()
+    except:
+        target_from_data= pd.DataFrame()
     else: 
         target_from_data = data[target_names] if target_names else pd.DataFrame()
 
     if target is not None:
         if isinstance(target, (pd.Series, pd.DataFrame, np.ndarray)):
             if isinstance(target, np.ndarray):
-                target = pd.DataFrame(target, columns=target_names
-                                      ) if target_names else pd.DataFrame(target)
+                target = pd.DataFrame(
+                    target, columns=target_names
+                    ) if target_names else pd.DataFrame(target)
+   
             elif isinstance(target, pd.Series):
                 target = pd.DataFrame(target)
             # No need to filter out duplicates here, as we've preemptively handled them.
@@ -178,15 +183,17 @@ def _to_dataframe(data, target_names=None, feature_names=None, target=None):
                             " pd.Series, pd.DataFrame, or None.")
     else:
         target = target_from_data
-        
+
     # for consistency, recheck the feature data. 
-    feature_data = feature_data [
-        feature_names] if feature_names is not None else feature_data 
+    feature_data =( 
+        feature_data [feature_names] 
+        if feature_names is not None else feature_data 
+        )
     # Ensure that `target` is either a DataFrame or None for 
     # consistent return types
     target = target if not target.empty else None
-    combined = pd.concat([feature_data, target], axis=1
-                         ) if target is not None else feature_data
+    combined = pd.concat(
+        [feature_data, target], axis=1) if target is not None else feature_data
 
     return combined, feature_data, target
 

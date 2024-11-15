@@ -101,7 +101,6 @@ def validate_parameter_constraints(parameter_constraints, params, caller_name):
                 f" {constraints_str}. Got {param_val!r} instead."
             )
 
-
 def make_constraint(constraint):
     """Convert the constraint into the appropriate Constraint object.
 

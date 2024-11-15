@@ -6,7 +6,6 @@ Optimize Base Classes
 """
 
 import joblib
-from abc import ABCMeta, abstractmethod
 from joblib import Parallel, delayed
 from tqdm import tqdm 
 import numpy as np 
@@ -16,13 +15,14 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.base import BaseEstimator
 
 from ..api.summary import ModelSummary, ResultSummary
+from ..api.property import BaseClass 
 from ..api.types import Any, Dict, List,Union, Tuple, Optional, ArrayLike
 from ..tools.coreutils import get_params, smart_format
 from ..tools.validator import filter_valid_kwargs, get_estimator_name
 from .utils import get_strategy_method, align_estimators_with_params
 
 
-class BaseOptimizer(metaclass=ABCMeta):
+class BaseOptimizer(BaseClass):
     """
     Base class for hyperparameter optimization of multiple estimators.
 
@@ -135,7 +135,6 @@ class BaseOptimizer(metaclass=ABCMeta):
            2825-2830.
     """
     
-    @abstractmethod
     def __init__(
         self, 
         estimators, 

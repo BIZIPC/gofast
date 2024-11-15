@@ -17,7 +17,7 @@ from ..api.property import BasePlot
 from ..exceptions import NotFittedError 
 from ..tools.baseutils import smart_rotation  
 from ..tools.coreutils import format_to_datetime
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 from ..tools.validator import is_time_series, build_data_if 
 
 __all__=["TimeSeriesPlotter"]

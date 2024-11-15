@@ -15,13 +15,15 @@ from ..api.types import Optional, List,  Union, Tuple
 from ..api.types import DataFrame, ArrayLike, Array1D, Series
 from ..decorators import DynamicMethod
 from ..tools.validator import check_consistent_length 
-from ..tools.coreutils import ensure_visualization_compatibility
-from ..tools.coreutils import to_series_if, ellipsis2false 
-from ..tools.coreutils import get_colors_and_alphas
+from ..tools.coreutils import ( 
+    ensure_visualization_compatibility, to_series_if, ellipsis2false, 
+    get_colors_and_alphas
+)
 from ..tools.funcutils import make_data_dynamic
-from ..tools.funcutils import flatten_data_if, update_series_index 
-from ..tools.funcutils import update_index, convert_and_format_data
-from ..tools.funcutils import series_naming 
+from ..tools.funcutils import ( 
+    flatten_data_if, update_series_index,update_index, 
+    convert_and_format_data, series_naming 
+)
 from .utils import validate_stats_plot_type, prepare_stats_plot
 
 __all__= [ 

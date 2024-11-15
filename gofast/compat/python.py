@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-This module provides compatibility tools for bridging differences between 
+Provides compatibility tools for bridging differences between 
 Python 2 and 3, enhancing cross-version code maintainability. It includes 
 utility functions for type conversions, list-producing versions of built-in 
 Python functions, and mechanisms for class creation with metaclasses across

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-A versatile module for environmental data processing and analysis, providing 
+Versatile module for environmental data processing and analysis, providing 
 functions for image handling, grid generation, and color mapping. This module 
 includes functionalities to decompose images into RGB values, define grids, 
 load images, map RGB values to real-world data, and process legend images.
@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from ..api.types import Tuple, Optional, List, Dict, Callable
 from ..decorators import EnsureFileExists 
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 from ..tools.validator import validate_positive_integer 
 
 __all__= [

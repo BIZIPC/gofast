@@ -2,7 +2,7 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 """
-Module for training and evaluating neural network models.
+Train and evaluate neural network models.
 
 Includes functions for calculating validation loss, cross-validating LSTM models, 
 evaluating models, making future predictions, plotting errors, training and 
@@ -25,7 +25,7 @@ from ..api.types import _History, _Callback, _Model
 from ..api.types import List, Optional, Union, Dict, Tuple
 from ..api.types import ArrayLike, Callable, Any, Generator
 from ..tools.coreutils import denormalize
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 from ..tools.validator import check_X_y, check_consistent_length
 from ..tools.validator import validate_keras_model
 
@@ -119,7 +119,7 @@ def plot_history(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import plot_history
+    >>> from gofast.nn.train import plot_history
     >>> history = model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=10)
     >>> ax_acc, ax_loss = plot_history(history)
     >>> ax_acc.set_title('Updated Accuracy Title')
@@ -221,7 +221,7 @@ def train_and_evaluate2(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import train_and_evaluate2
+    >>> from gofast.nn.train import train_and_evaluate2
     >>> model_config = {'units': 64, 'activation': 'relu', 'learning_rate': 0.001}
     >>> resource = 10  # Number of epochs
     >>> best_val_accuracy = train_and_evaluate2(model_config, resource)
@@ -313,7 +313,7 @@ def train_and_evaluate(model_config: Dict[str, Any], resource: int) -> float:
 
     Examples
     --------
-    >>> from gofast.models.deep_search import train_and_evaluate
+    >>> from gofast.nn.train import train_and_evaluate
     >>> model_config = {'units': 128, 'activation': 'relu', 'layers': 3}
     >>> resource = 20  # Train for 20 epochs
     >>> val_accuracy = train_and_evaluate(model_config, resource)
@@ -432,7 +432,7 @@ def train_epoch(
         
     Examples
     --------
-    >>> from gofast.models.deep_search import train_epoch
+    >>> from gofast.nn.train import train_epoch
     >>> import tensorflow as tf
     >>> model = tf.keras.models.Sequential([
     ...     tf.keras.layers.Dense(10, activation='relu', input_shape=(20,)),
@@ -556,7 +556,7 @@ def _custom_loss(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import custom_loss
+    >>> from gofast.nn.train import custom_loss
     >>> import tensorflow as tf
     >>> model = tf.keras.models.Sequential([
     ...     tf.keras.layers.Dense(10, activation='relu', input_shape=(20,)),
@@ -660,7 +660,7 @@ def calculate_validation_loss(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import calculate_validation_loss
+    >>> from gofast.nn.train import calculate_validation_loss
     >>> import tensorflow as tf
     >>> model = tf.keras.models.Sequential([
     ...     tf.keras.layers.Dense(10, activation='relu', input_shape=(20,)),
@@ -771,7 +771,7 @@ def _data_generator(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import data_generator
+    >>> from gofast.nn.train import data_generator
     >>> import numpy as np
     >>> X = np.random.rand(100, 10)  # 100 samples, 10 features
     >>> y_actual = np.random.rand(100, 1)
@@ -899,7 +899,7 @@ def evaluate_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import evaluate_model
+    >>> from gofast.nn.train import evaluate_model
     >>> model_path = 'path/to/your/model.h5'
     >>> x_test, y_test = load_your_test_data()  # Assume this loads your test data
     >>> test_metrics = evaluate_model(model_path, x_test, y_test, 
@@ -1045,7 +1045,7 @@ def train_model(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import train_model
+    >>> from gofast.nn.train import train_model
     >>> model = build_your_model()  # Assume a function to build your model
     >>> x_train, y_train_actual = load_your_data()  # Assume a function to load your data
     >>> train_losses, val_losses, checkpoint_dir = train_model(
@@ -1194,7 +1194,7 @@ def plot_predictions(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import plot_predictions
+    >>> from gofast.nn.train import plot_predictions
     >>> import numpy as np
     >>> predicted_custom = np.random.rand(100)
     >>> predicted_mse = np.random.rand(100)
@@ -1319,7 +1319,7 @@ def plot_errors(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import plot_errors
+    >>> from gofast.nn.train import plot_errors
     >>> import numpy as np
     >>> predicted_custom = np.random.rand(100)
     >>> predicted_mse = np.random.rand(100)
@@ -1452,7 +1452,7 @@ def make_future_predictions(
     Examples
     --------
     >>> import numpy as np 
-    >>> from gofast.models.deep_search import make_future_predictions
+    >>> from gofast.nn.train import make_future_predictions
     >>> from sklearn.preprocessing import MinMaxScaler
     >>> model = YourModel()
     >>> scaler = MinMaxScaler()
@@ -1593,7 +1593,7 @@ def cross_validate_lstm(
     >>> from keras.layers import Dense, LSTM
     >>> from sklearn.model_selection import TimeSeriesSplit
     >>> from sklearn.preprocessing import MinMaxScaler
-    >>> from gofast.models.deep_search import cross_validate_lstm
+    >>> from gofast.nn.train import cross_validate_lstm
     >>> model = Sequential([
     ...     LSTM(50, activation='relu', input_shape=(10, 1)),
     ...     Dense(1)

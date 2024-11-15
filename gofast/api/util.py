@@ -14,10 +14,10 @@ import warnings
 from collections.abc import Iterable
 import numpy as np 
 import pandas as pd
-from .property import GofastConfig 
+from .property import Property 
 
 # Attempting to modify the property will raise an error
-GOFAST_ESCAPE= GofastConfig().WHITESPACE_ESCAPE 
+GOFAST_ESCAPE= Property().WHITESPACE_ESCAPE 
 
 __all__=[ 
      'TerminalSize',
@@ -3720,14 +3720,17 @@ def generate_legend(
         )
     return legend
 
-def to_snake_case(name):
+def to_snake_case(name, mode="standard"):
     """
-    Converts a string to snake_case using regex.
+    Converts a string to snake_case.
 
     Parameters
     ----------
     name : str
         The string to convert to snake_case.
+    mode : str, optional
+        If 'soft', extra whitespace and case inconsistencies are
+        handled to produce clean snake_case.
 
     Returns
     -------
@@ -3735,10 +3738,22 @@ def to_snake_case(name):
         The snake_case version of the input string.
     """
     name = str(name)
-    name = re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()  # CamelCase to snake_case
-    name = re.sub(r'\W+', '_', name)  # Replace non-word characters with '_'
-    name = re.sub(r'_+', '_', name)  # Replace multiple '_' with single '_'
-    return name.strip('_')
+    
+    if mode == "soft":
+        # Convert to lowercase and replace multiple spaces 
+        # or non-word characters with a single underscore
+        name = re.sub(r'\W+', ' ', name)  # Replace non-word characters with spaces
+        name = re.sub(r'\s+', ' ', name).strip()  # Normalize whitespace
+        name = name.lower().replace(' ', '_')  # Convert spaces to underscores
+    
+    else:
+        # Standard snake_case conversion without additional processing
+        name = re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()  # Convert CamelCase to snake_case
+        name = re.sub(r'\W+', '_', name)  # Replace non-word characters with '_'
+        name = re.sub(r'_+', '_', name)  # Replace multiple underscores with a single '_'
+    
+    return name.strip('_')  # Remove any leading or trailing underscores
+
 
 def generate_column_name_mapping(columns):
     """

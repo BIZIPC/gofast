@@ -1,23 +1,22 @@
 # -*- coding: utf-8 -*-
-# @author: LKouadio~ @Daniel
-"""
-SciPyBackend Usage Documentation
---------------------------------
+# License: BSD-3-Clause
+# Author: LKouadio (a.k.a. @Daniel) <etanoyau@gmail.com>
 
-The SciPyBackend module enriches the gofast computational framework with SciPy's
+"""
+ScipyBackend module enriches the gofast computational framework with SciPy's
 scientific computing capabilities. This backend is particularly designed for tasks
 requiring advanced mathematical operations such as optimization, root finding,
 numerical integration, solving differential equations, and curve fitting.
 
 Setup:
-To utilize the SciPyBackend, ensure SciPy is installed in your environment:
+To utilize the ScipyBackend, ensure SciPy is installed in your environment:
     pip install scipy
 
 Example Usage:
 
-1. Initializing SciPyBackend:
-    from gofast.backends.scipy import SciPyBackend
-    scipy_backend = SciPyBackend()
+1. Initializing ScipyBackend:
+    from gofast.backends.scipy import ScipyBackend
+    scipy_backend = ScipyBackend()
 
 2. Optimizing a Quadratic Function:
     result = scipy_backend.optimize_quadratic(a=1, b=-3, c=2, x0=[0])
@@ -46,18 +45,20 @@ Example Usage:
     print('Fitted parameters:', params)
 
 Note:
-- SciPyBackend facilitates the integration of SciPy's rich scientific computing
+- ScipyBackend facilitates the integration of SciPy's rich scientific computing
   tools into the gofast ecosystem, enhancing its capabilities for advanced
   mathematical and statistical operations.
-- While SciPyBackend covers a wide range of tasks, users are encouraged to
+- While ScipyBackend covers a wide range of tasks, users are encouraged to
   explore SciPy's documentation for more complex and specific use cases.
 
-The integration of SciPyBackend into gofast exemplifies the framework's flexibility
+The integration of ScipyBackend into gofast exemplifies the framework's flexibility
 and its capacity to adapt to various computational requirements, making it a
 powerful tool for scientific research and data analysis.
 """
 
 from .base import BaseBackend 
+
+__all__=["ScipyBackend"]
 
 class ScipyBackend(BaseBackend):
     """
@@ -85,7 +86,7 @@ class ScipyBackend(BaseBackend):
 
     Notes
     -----
-    SciPyBackend serves as a bridge between gofast and SciPy, enabling users
+    ScipyBackend serves as a bridge between gofast and SciPy, enabling users
     to seamlessly incorporate a wide range of scientific computing tools into
     their workflows. It particularly shines in tasks that require sophisticated
     mathematical computations, offering a rich set of algorithms for

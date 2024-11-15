@@ -135,7 +135,8 @@ from __future__ import annotations
 import numpy as np 
 from scipy import sparse 
 # if TYPE_CHECKING:
-from typing import (
+# gofast/api/types.py
+from ..compat.types import (
     List,
     Tuple,
     Sequence,
@@ -148,19 +149,19 @@ from typing import (
     Optional,
     Type,
     Mapping,
-    Text, 
+    Text,
     TypeVar,
     Iterator,
     SupportsInt,
     Set,
     ContextManager,
-    Deque, 
+    Deque,
     FrozenSet,
     NamedTuple,
-    NewType, 
-    TypeGuard, 
-    TypedDict, 
-    Generator
+    NewType,
+    TypedDict,
+    Generator,
+    TypeGuard
 )
 
 
@@ -433,15 +434,29 @@ class _NamedTuple(NamedTuple):
         >>> def check_named_tuple(nt: _NamedTuple[str, int]): ...
     """
 
-class _NewType(NewType, Generic[_T]):
+# Create a new type
+NewTypeWithBase = NewType('NewTypeWithBase', object)
+
+class _NewType(Generic[_T]):
     """
     Represents a new type, created from an existing type, used for type checking.
-
+    
     Example:
         >>> from typing import NewType
         >>> UserId = _NewType('UserId', int)
         >>> def check_user_id(user_id: UserId): ...
+        
     """
+    def __init__(self, value: _T):
+        self._value = value
+        self._wrapped_type = NewTypeWithBase(value)
+
+    def __repr__(self):
+        return f"_NewType({self._value!r})"
+
+    @property
+    def value(self) -> _T:
+        return self._value
 
 class _TypedDict(TypedDict):
     """

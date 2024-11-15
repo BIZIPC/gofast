@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 
 """
-The `hydro` module offers specialized tools for hydrogeology analysis.
+Offers specialized tools for hydrogeology analysis.
 """
 
 import math
-import pandas as pd
-import numpy as np
 from collections import Counter
-from ..api.types import Tuple, List, Union, Optional, DataFrame
 
+import numpy as np
+import pandas as pd
+
+from ..api.types import Tuple, List, Union, Optional, DataFrame
 from ..exceptions import StrataError 
 
 __all__=["get_depth_range", "reduce_samples", "calculate_K", "transmissivity", 

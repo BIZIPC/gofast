@@ -27,8 +27,9 @@ from sklearn.utils import resample
 from ..api.types import Optional, Tuple,  Union 
 from ..api.types import Dict, ArrayLike, DataFrame
 from ..api.property import BasePlot
-from ..tools.coreutils import _assert_all_types, is_iterable, str2columns 
-from ..tools.coreutils import is_in_if
+from ..tools.coreutils import ( 
+    _assert_all_types, is_iterable, str2columns, is_in_if
+)
 from ..tools.validator import  assert_xy_in
 from ._d_cms import D_COLORS, D_MARKERS, D_STYLES
 

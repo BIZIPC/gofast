@@ -18,12 +18,14 @@ from ..api.types import Optional, List, Dict, Union, Tuple, Callable
 from ..api.types import NumPyFunction, DataFrame, ArrayLike, Array1D, Series
 from ..decorators import DynamicMethod
 from ..tools.validator import assert_xy_in, is_frame, check_consistent_length 
-from ..tools.coreutils import process_and_extract_data, to_series_if 
-from ..tools.coreutils import get_colors_and_alphas, normalize_string 
-from ..tools.coreutils import smart_format, check_uniform_type
-from ..tools.funcutils import make_data_dynamic, ensure_pkg
-from ..tools.funcutils import convert_and_format_data
-
+from ..tools.coreutils import (
+    process_and_extract_data, to_series_if , get_colors_and_alphas,
+    normalize_string, smart_format, check_uniform_type
+)
+from ..tools.depsutils import ensure_pkg
+from ..tools.funcutils import (
+    make_data_dynamic, convert_and_format_data
+)
 from .utils import validate_stats_plot_type, fix_rm_anova_dataset
 
 __all__=[

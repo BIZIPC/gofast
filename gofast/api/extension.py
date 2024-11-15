@@ -2,9 +2,8 @@
 #   License: BSD-3-Clause
 #   Author: LKouadio <etanoyau@gmail.com>
 """
-The `extension` module provides extended utilities and classes for 
-cloning objects, fetching and resolving estimator names, and performing 
-introspection tasks.
+Provides extended utilities and classes for  cloning objects, fetching and 
+resolving estimator names, and performing introspection tasks.
 """
 
 import os 

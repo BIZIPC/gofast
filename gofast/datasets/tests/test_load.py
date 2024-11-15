@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-test_load.py 
-
-@author: LKouadio <etanoyau@gmail.com>
-"""
+# # -*- coding: utf-8 -*-
+# """
+# test_load.py 
+# @author: LKouadio <etanoyau@gmail.com>
+# """
 import pytest
 import scipy 
 from unittest.mock import patch
@@ -206,12 +205,12 @@ def _common_jrs_bet_tests(func, **kwargs):
         assert isinstance(y_train, (np.ndarray, pd.Series)), "y_train must be ndarray or Series"
         assert isinstance(y_test, (np.ndarray, pd.Series)), "y_test must be ndarray or Series"
 
-     # Validate the presence of description and feature 
-     # names for comprehensive configurations
+      # Validate the presence of description and feature 
+      # names for comprehensive configurations
     if not kwargs.get('split_X_y', False) and not kwargs.get(
             'return_X_y', False) and not kwargs.get("as_frame", False):
-         assert 'DESCR' in result, "Result must contain 'DESCR'"
-         assert 'feature_names' in result, "Result must contain 'feature_names'"
+          assert 'DESCR' in result, "Result must contain 'DESCR'"
+          assert 'feature_names' in result, "Result must contain 'feature_names'"
 
 def test_load_mxs():
     """

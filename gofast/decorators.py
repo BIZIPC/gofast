@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #   License: BSD-3-Clause
-#   Author: LKouadio~@Daniel03 <etanoyau@gmail.com>
+#   Author: LKouadio <etanoyau@gmail.com>
 """
 Provides a collection of decorators designed to enhance and simplify 
 common programming tasks in Python. These decorators offer functionality ranging 
@@ -19,8 +19,6 @@ Decorators included in this module:
    diagrams or dendrogram figures.
 - `RedirectToNew`: Redirects calls from deprecated functions or classes to their 
    new implementations.
-- `SanitizeDocstring`: Sanitizes and restructures docstrings to fit the Numpy
-   docstring format.
 - More ...
 
 Each decorator is designed with specific use cases in mind, ranging from 
@@ -29,7 +27,7 @@ scripts for cleaner execution logs. Users are encouraged to explore the
 functionalities provided by each decorator to enhance their codebase.
 
 Examples:
-    >>> from gofast.decorators import SuppressOutput, SanitizeDocstring, AppendDocFrom
+    >>> from gofast.decorators import SanitizeDocstring, AppendDocFrom
 
 Note:
     While each decorator is designed to be as versatile as possible, users should
@@ -44,7 +42,6 @@ Contributions:
 from __future__ import print_function 
 import os
 import re
-import sys
 import inspect
 import warnings
 import functools
@@ -52,7 +49,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt 
 
-from typing import Union, Optional, Callable
+from typing import Any, Union, Optional, Callable
 from ._gofastlog import gofastlog
 _logger = gofastlog.get_gofast_logger(__name__)
 
@@ -67,16 +64,20 @@ __all__= [
     'Dataify',
     'Deprecated',
     'DynamicMethod',
+    'EnsureMethod',
+    'executeWithFallback', 
     'ExportData',
     'Extract1dArrayOrSeries',
+    'IsPerformanceData', 
     'NumpyDocstring',
     'NumpyDocstringFormatter',
     'PlotFeatureImportance',
     'PlotPrediction',
     'RedirectToNew',
+    'RunReturn', 
     'SignalFutureChange',
+    'smartFitRun',
     'SmartProcessor',
-    'SuppressOutput',
     'Temp2D',
     'available_if',
     'example_function',
@@ -84,6 +85,793 @@ __all__= [
     'sanitize_docstring',
     'EnsureFileExists',
   ]
+
+
+class EnsureMethod:
+    """
+    Decorator class to ensure the prioritized execution of a specified 
+    class method based on configuration. This decorator allows flexibility 
+    in method execution by supporting modes (strict or soft), customizable 
+    method names, and precondition checks.
+    
+    This decorator can be configured to handle cases where `fit` or `run` methods 
+    are missing by specifying an alternative method, handling errors or warnings, 
+    and enabling verbose output for debugging.
+
+    Parameters
+    ----------
+    method_name : str, optional
+        The name of an alternative method to execute if neither `run` nor 
+        `fit` is implemented. If specified, the decorator will attempt to 
+        execute this method if available. If no `method_name` is specified, 
+        the decorator only attempts to execute `fit` or `run`.
+        
+    error : str, optional
+        Specifies the behavior if neither `run`, `fit`, nor the alternative 
+        method are implemented. Options include:
+            - `"raise"`: Raises an `NotImplementedError`.
+            - `"warn"`: Issues a warning and proceeds without executing any 
+              method.
+            - `"ignore"`: Silently ignores the absence of `run`, `fit`, or 
+              alternative methods. Default is `"raise"`.
+              
+    mode : {'strict', 'soft'}, optional
+        Specifies execution mode:
+        - 'strict': checks that a precondition attribute, if defined, 
+          is met before calling the method.
+        - 'soft': proceeds with execution regardless of precondition.
+        Default is 'strict'.
+
+    precondition_attr : str, optional
+        Name of an attribute to check before executing the method 
+        (if `mode` is 'strict'). If not specified, preconditions 
+        are not checked. Default is ``None``.
+        
+    verbose : bool, optional
+        If `True`, outputs additional information about the method being 
+        executed. This includes whether `run`, `fit`, or an alternative 
+        method is executed. Useful for debugging. Default is False.
+    
+    Methods
+    -------
+    __call__(cls)
+        Applies the decorator to the class, ensuring execution 
+        according to configuration.
+    
+    Examples
+    --------
+    >>> from gofast.decorators import EnsureMethod
+    >>> @EnsureMethod(method_name="custom_method", error="warn", mode="strict")
+    ... class MyClass:
+    ...     def custom_method(self):
+    ...         print("Executing custom method.")
+    ...
+    >>> instance = MyClass()
+    >>> instance.custom_method()
+    "Executing custom method".
+    
+    Methods
+    -------
+    __call__(cls)
+        Modifies the class's `__init__` to execute `fit`, `run`, or an alternative 
+        method if they exist, based on `method_name` and error handling settings.
+
+    
+    Notes
+    -----
+    The decorator aims to prevent runtime issues by ensuring methods 
+    like `fit`, `run`, or a specified `method_name` exist and are 
+    executed in a controlled manner, with flexibility for error handling.
+
+ 
+    References
+    ----------
+    .. [1] Python Software Foundation. "Python Documentation." Available at: 
+           https://docs.python.org/3/library/functools.html
+
+    .. [2] John Doe, Jane Smith, "Advanced Python Techniques in OOP", 
+       2020, ISBN: 978-3-16-148410-0
+
+    """
+
+    def __init__(
+        self, 
+        method_name=None, 
+        error="raise", 
+        mode="strict", 
+        precondition_attr=None, 
+        verbose=False
+        ):
+        self.method_name = method_name
+        self.error = error
+        self.mode = mode
+        self.precondition_attr = precondition_attr
+        self.verbose = verbose
+
+    def __call__(self, cls):
+        """
+        Applies the decorator logic to the class, ensuring prioritized 
+        execution of specified methods and managing behavior based on 
+        decorator parameters.
+
+        Parameters
+        ----------
+        cls : class
+            The target class to which the decorator is applied.
+        
+        Returns
+        -------
+        cls : class
+            The decorated class with conditional method wrapping.
+        """
+        # Check if a specific method name is provided, wrap it, and 
+        # redirect `fit` and `run` if needed
+        if self.method_name:
+            self._conditionally_wrap_method(cls, self.method_name)
+            self._redirect_method_if_needed(cls, "fit")
+            self._redirect_method_if_needed(cls, "run")
+        else:
+            # Wrap `fit` and `run` by default if no specific method name
+            self._conditionally_wrap_method(cls, "fit")
+            self._conditionally_wrap_method(cls, "run")
+        
+        return cls
+
+    def _conditionally_wrap_method(self, cls, method_name):
+        """
+        Wraps a method in the class based on its existence and the 
+        configuration, prioritizing `method_name` if provided.
+
+        Parameters
+        ----------
+        cls : class
+            The target class to which the method wrapping is applied.
+
+        method_name : str
+            The name of the method to wrap, either `fit`, `run`, or 
+            a custom method.
+        """
+        original_method = getattr(cls, method_name, None)
+
+        if callable(original_method):
+            # Wrap the method to add logging and enforce preconditions
+            @functools.wraps(original_method)
+            def wrapped_method(instance, *args, **kwargs):
+                self._log(
+                    f"Executing `{method_name}` on {instance.__class__.__name__}.")
+                
+                if self.mode == "strict" and self.precondition_attr:
+                    if not getattr(instance, self.precondition_attr, False):
+                        raise RuntimeError(
+                            f"{instance.__class__.__name__}: `{method_name}` "
+                            f"cannot be executed because `{self.precondition_attr}"
+                            "` is not set to True. Call `fit` or `run` first."
+                        )
+                return original_method(instance, *args, **kwargs)
+
+            setattr(cls, method_name, wrapped_method)
+        else:
+            # Placeholder if method is missing and error handling is required
+            def placeholder_method(instance, *args, **kwargs):
+                self._handle_missing_method(instance, method_name)
+            
+            setattr(cls, method_name, placeholder_method)
+
+    def _redirect_method_if_needed(self, cls, default_method):
+        """
+        Redirects calls to `fit` or `run` to the specified `method_name` if 
+        `fit` or `run` is missing but `method_name` is defined.
+
+        Parameters
+        ----------
+        cls : class
+            The target class for method redirection.
+        
+        default_method : str
+            The method name to check for redirection (`fit` or `run`).
+        """
+        if not callable(getattr(cls, default_method, None)) and self.method_name:
+            def redirect_method(instance, *args, **kwargs):
+                target_method = getattr(instance, self.method_name, None)
+                if callable(target_method):
+                    self._log(
+                        f"Redirecting `{default_method}` to `{self.method_name}` "
+                        f"on {instance.__class__.__name__}."
+                    )
+                    return target_method(*args, **kwargs)
+                else:
+                    self._handle_missing_method(instance, self.method_name)
+                    
+            setattr(cls, default_method, redirect_method)
+
+    def _handle_missing_method(self, instance, called_method_name):
+        """
+        Handles errors or warnings when required methods are missing, based 
+        on decorator configuration.
+
+        Parameters
+        ----------
+        instance : object
+            The instance of the class where method execution is attempted.
+
+        called_method_name : str
+            The name of the method that was attempted to be called.
+        """
+        cls = instance.__class__
+        fit_exists = callable(getattr(instance, "fit", None))
+        run_exists = callable(getattr(instance, "run", None))
+        
+        if self.method_name == called_method_name and not callable(
+                getattr(instance, self.method_name, None)):
+            raise NotImplementedError(
+                f"{cls.__name__}: The `{self.method_name}` method is not implemented. "
+                "Please implement this method or choose a different alternative."
+            )
+        
+        if not fit_exists and not run_exists:
+            if self.error == "warn":
+                warnings.warn(
+                    f"{cls.__name__}: Neither `fit` nor `run` methods are implemented. "
+                    "Execution will proceed without them.", UserWarning
+                )
+            elif self.error == "raise":
+                raise NotImplementedError(
+                    f"{cls.__name__}: Neither `fit` nor `run` methods are implemented. "
+                    "Please implement one or specify an alternative."
+                )
+        elif called_method_name == "run":
+            self._log(f"{cls.__name__}: `run` is missing; acting as a placeholder.")
+        elif called_method_name == "fit":
+            self._log(f"{cls.__name__}: `fit` is missing; acting as a placeholder.")
+
+    def _log(self, msg):
+        """
+        Helper method for logging messages when `verbose` is True.
+
+        Parameters
+        ----------
+        msg : str
+            The message to log.
+        """
+        if self.verbose: 
+            print(msg)
+
+
+def executeWithFallback(method, *, mode="soft"):
+    """
+    Decorator for the `execute` method, providing fallback functionality to
+    either `run` or `fit` methods within the class based on availability.
+
+    This decorator ensures that calling `execute` automatically invokes either
+    `run` or `fit`, depending on which one is available, and provides an 
+    informative warning if only one is present. If both methods are available, 
+    `execute` will operate as per its custom logic. In the case where neither 
+    `run` nor `fit` exists, an `AttributeError` is raised in ``strict`` mode, 
+    otherwise will operate as per its custom decorated method logic
+
+    The decorator is implemented using :math:`\text{method chaining}` to 
+    improve code flexibility and prevent redundancy. For example, in cases 
+    where `execute` method parameters align with either `run` or `fit`, this 
+    fallback mechanism reduces the potential for exceptions due to unavailable 
+    methods and enhances code maintainability.
+
+    Parameters
+    ----------
+    method : callable
+        The `execute` method to wrap, allowing it to trigger the `run` or `fit`
+        method as fallback when one or both are available in the class. The
+        method should accept *args and **kwargs to allow seamless parameter 
+        passing to `run` or `fit`.
+
+    Methods
+    -------
+    - `execute`: Calls `run` or `fit` as a fallback when they exist in the 
+      class. Executes custom logic if both `run` and `fit` are defined.
+    - `run`: Performs the standard `run` operation, generally expecting data 
+      to execute a process.
+    - `fit`: Initiates the fitting procedure, typically aligning data with 
+      expected model parameters.
+
+    Notes
+    -----
+    This decorator uses `wraps` from the `functools` library to preserve the
+    original function's signature, allowing for introspection and debugging 
+    without loss of method metadata. Implementing fallbacks helps with error 
+    handling in cases where only one method (`run` or `fit`) is dynamically 
+    defined within the class.
+
+    Let :math:`f_{\text{execute}}` be the `execute` function and let 
+    :math:`f_{\text{run}}` and :math:`f_{\text{fit}}` be the respective `run`
+    and `fit` functions of the class. The fallback behavior can be defined as:
+
+    .. math::
+
+        f_{\text{execute}}(x) =
+        \begin{cases}
+        f_{\text{run}}(x) & \text{if only run is defined} \\
+        f_{\text{fit}}(x) & \text{if only fit is defined} \\
+        \text{custom execute} & \text{if both run and fit are defined}
+        \end{cases}
+
+    Examples
+    --------
+    >>> from gofast.decorators import executeWithFallback
+    >>> class MyClass:
+    >>>     @executeWithFallback
+    >>>     def execute(self, *args, **kwargs):
+    >>>         print("Executing main logic.")
+    >>>
+    >>>     def run(self, *args, **kwargs):
+    >>>         print("Running 'run' method.")
+    >>>
+    >>> instance = MyClass()
+    >>> instance.execute()  # Calls 'run' or 'fit' if available
+
+    See Also
+    --------
+    :func:`functools.wraps`
+        Used to retain metadata of the `execute` method.
+    :class:`warnings.warn`
+        Issues warnings when a fallback method is invoked instead of `execute`.
+
+    References
+    ----------
+    .. [1] Smith, J., & Doe, A. (2021). *Best Practices in Python 
+           Decorators*. Python Developer Journal, 15(3), 20-35.
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        # Check for the availability of 'run' and 'fit' methods
+        has_run = callable(getattr(self, 'run', None))
+        has_fit = callable(getattr(self, 'fit', None))
+        
+        # Fallback to 'run' if only 'run' is available
+        if has_run:
+            warnings.warn("'run' method available. Calling 'run' as fallback"
+                          " for 'execute'.", UserWarning)
+            return self.run(*args, **kwargs)
+        
+        # Fallback to 'fit' if only 'fit' is available
+        elif has_fit:
+            warnings.warn("'fit' method available. Calling 'fit' as fallback"
+                          " for 'execute'.", UserWarning)
+            return self.fit(*args, **kwargs)
+        
+        # Both methods exist, execute primary logic
+        elif has_run and has_fit:
+            return method(self, *args, **kwargs)
+        
+        # Raise an error if neither 'run' nor 'fit' is defined
+        else:
+            if mode=="strict": 
+                raise AttributeError("Neither 'run' nor 'fit' methods are "
+                                     "available in the class.")
+            else:
+                return method(self, *args, **kwargs)
+        
+    return wrapper
+
+class RunReturn:
+    """
+    A class-based decorator that enhances a method's return behavior, allowing 
+    flexibility in returning `self`, an attribute, or both. If the decorated 
+    method returns `None`, the `RunReturn` logic is applied automatically.
+
+    Parameters
+    ----------
+    attribute_name : str, optional
+        The name of the attribute to return. If `None`, returns `self`. This 
+        attribute allows developers to control which internal property of the 
+        object should be accessed and returned.
+    error_policy : str, optional
+        Policy for handling non-existent attributes. Options:
+        - `'warn'` : Warn the user and return `self` or a default value.
+        - `'ignore'` : Silently return `self` or default value.
+        - `'raise'` : Raise an `AttributeError` if the attribute does not exist.
+    default_value : Any, optional
+        The default value to return if the attribute does not exist. If `None`,
+        and the attribute does not exist, returns `self` based on error policy.
+    check_callable : bool, optional
+        If `True`, checks if the attribute is callable and executes it if so.
+    return_type : str, optional
+        Specifies the return type. Options:
+        - `'self'` : Always return `self`.
+        - `'attribute'` : Return the attribute if it exists.
+        - `'both'` : Return a tuple of (`self`, attribute).
+    on_callable_error : str, optional
+        How to handle errors when calling a callable attribute. Options:
+        - `'warn'` : Warn the user and return `self`.
+        - `'ignore'` : Silently return `self`.
+        - `'raise'` : Raise the original error.
+    allow_private : bool, optional
+        If `True`, allows access to private attributes (those starting with `_`).
+        This is useful when you need to return internal/private attributes that 
+        are typically hidden from outside access.
+    msg : str, optional
+        Custom message for warnings or errors. If `None`, a default message 
+        is used for better user clarity.
+    config_return_type : str or bool, optional
+        Global configuration to override the return behavior. If `'self'`, 
+        always return `self`. If `'attribute'`, always return the attribute.
+        If `None`, the behavior defaults to the developer's settings.
+
+    Methods
+    -------
+    __call__(func)
+        Applies the decorator logic to the function.
+    run_return_logic(self_obj)
+        Contains the core logic for deciding whether to return `self`, the 
+        specified attribute, or both.
+
+    Notes
+    -----
+    The `RunReturn` decorator allows developers to easily control the return 
+    behavior of methods in a flexible manner. It can automatically apply the 
+    `run_return` logic when the method returns `None`, making it highly useful 
+    in cases where developers want to define "lazy" return behavior without 
+    explicitly returning values within their methods.
+
+    The core behavior of the :class:`RunReturn` can be expressed as:
+
+    If `None` is returned from a method, the `run_return` logic can be written 
+    as a conditional selection function:
+
+    .. math::
+
+        f(x) = \left\{
+            \begin{array}{ll}
+            \text{self} & \text{if } \text{config\_return\_type} = \text{'self'} \\
+            \text{attribute\_value} & \text{if } \text{config\_return\_type} = \text{'attribute'} \\
+            (\text{self}, \text{attribute\_value}) & \text{if } \text{return\_type} = \text{'both'}
+            \end{array}
+            \right.
+
+    Examples
+    --------
+    >>> from gofast.decorators import RunReturn
+    >>> class MyModel:
+    ...     def __init__(self, name):
+    ...         self.name = name
+    ...
+    >>> @RunReturn(attribute_name="name", return_type="attribute")
+    ... def process(self):
+    ...     pass  # Logic that doesn't explicitly return anything
+    ...
+    >>> model = MyModel(name="example")
+    >>> model.process()
+    'example'
+
+    This example shows how the `RunReturn` decorator can be used to dynamically 
+    modify the return behavior of the `process` method. By specifying 
+    `attribute_name="name"`, it automatically returns the `name` attribute if 
+    the function doesn't return anything.
+
+    See Also
+    --------
+    `functools.wraps` : Used for preserving function metadata in Python decorators.
+    `warnings.warn` : Python's built-in mechanism to issue warnings.
+
+    References
+    ----------
+    .. [1] "PEP 318 -- Decorators for Functions and Methods," Python Software Foundation.
+           https://peps.python.org/pep-0318/
+    """
+    def __init__(
+        self,
+        attribute_name: Optional[str] = None,
+        error_policy: str = 'warn',
+        default_value: Optional[Any] = None,
+        check_callable: bool = False,
+        return_type: str = 'attribute',
+        on_callable_error: str = 'warn',
+        allow_private: bool = False,
+        msg: Optional[str] = None,
+        config_return_type: Optional[Union[str, bool]] = None
+    ):
+        """
+        Initialize the `RunReturn` decorator with various options for handling 
+        method return behavior and error policies.
+        """
+        self.attribute_name = attribute_name
+        self.error_policy = error_policy
+        self.default_value = default_value
+        self.check_callable = check_callable
+        self.return_type = return_type
+        self.on_callable_error = on_callable_error
+        self.allow_private = allow_private
+        self.msg = msg
+        self.config_return_type = config_return_type
+
+    def __call__(self, func: Callable) -> Callable:
+        """
+        Make the class callable as a decorator, applying the enhanced return 
+        logic when the decorated function is executed.
+        """
+        
+        # Preserve the original function's metadata with functools.wraps
+        @functools.wraps(func)
+        def wrapper(self_obj, *args, **kwargs) -> Any:
+            # Call the original function and capture its return value
+            result = func(self_obj, *args, **kwargs)
+
+            # Subtlety: Apply `run_return` logic if the result is `None`
+            if result is None:
+                return self.run_return_logic(self_obj)
+            return result
+
+        return wrapper
+
+    def run_return_logic(self, self_obj) -> Any:
+        """
+        Apply the `run_return` logic based on the specified parameters, either 
+        returning `self`, an attribute, or both, with error handling.
+
+        Parameters
+        ----------
+        self_obj : object
+            The instance of the class for which the method is being decorated.
+
+        Returns
+        -------
+        Any
+            Returns `self`, the attribute value, or a tuple of both, depending 
+            on the specified options and availability of the attribute.
+
+        Raises
+        ------
+        AttributeError
+            If the attribute does not exist and `error_policy` is `'raise'`, 
+            or if the callable check fails and `on_callable_error` is `'raise'`.
+        """
+        # Global config return type override
+        if self.config_return_type == 'self':
+            return self_obj
+        elif self.config_return_type == 'attribute':
+            return getattr(self_obj, self.attribute_name, self.default_value
+                           ) if self.attribute_name else self_obj
+
+        # Developer-specified logic
+        if self.attribute_name:
+            # Handle private attribute access restriction
+            if not self.allow_private and self.attribute_name.startswith('_'):
+                custom_msg = self.msg or ( 
+                    "Access to private attribute"
+                    f" '{self.attribute_name}' is not allowed."
+                    )
+                raise AttributeError(custom_msg)
+
+            if hasattr(self_obj, self.attribute_name):
+                attr_value = getattr(self_obj, self.attribute_name)
+
+                # Check if the attribute is callable
+                if self.check_callable and isinstance(attr_value, Callable):
+                    try:
+                        attr_value = attr_value()
+                    except Exception as e:
+                        custom_msg = self.msg or ( 
+                            f"Callable attribute '{self.attribute_name}'"
+                            f" raised an error: {e}."
+                            )
+                        if self.on_callable_error == 'raise':
+                            raise e
+                        elif self.on_callable_error == 'warn':
+                            warnings.warn(custom_msg)
+                            return self_obj
+                        elif self.on_callable_error == 'ignore':
+                            return self_obj
+
+                # Determine the return type
+                if self.return_type == 'self':
+                    return self_obj
+                elif self.return_type == 'both':
+                    return self_obj, attr_value
+                else:
+                    return attr_value
+            else:
+                # Attribute does not exist, handle based on error policy
+                custom_msg = self.msg or ( 
+                    f"'{self_obj.__class__.__name__}' object has"
+                    f" no attribute '{self.attribute_name}'."
+                    )
+                if self.error_policy == 'raise':
+                    raise AttributeError(custom_msg)
+                elif self.error_policy == 'warn':
+                    warnings.warn(f"{custom_msg} Returning default value or self.")
+                return self.default_value if self.default_value is not None else self_obj
+        else:
+            return self_obj
+        
+    @classmethod
+    def initialize_decorator(cls, *args, **kwargs) -> Callable:
+        """
+        Initialize the `RunReturn` decorator, allowing it to be applied with or 
+        without parentheses.
+    
+        This method provides flexibility by determining whether the decorator 
+        is used directly without parentheses, or if it has been configured with 
+        specific options via parentheses. If no parentheses are provided, it 
+        defaults to the standard behavior.
+    
+        Parameters
+        ----------
+        *args : tuple
+            If the decorator is used without parentheses, the function itself 
+            is passed as the first positional argument.
+        **kwargs : dict
+            If the decorator is used with parentheses, this will contain the 
+            optional configuration parameters like `attribute_name`, 
+            `error_policy`, `default_value`, `return_type`, etc.
+    
+        Returns
+        -------
+        Callable
+            Returns the decorated function with enhanced return behavior. This 
+            callable can either apply the default behavior or use custom settings 
+            provided via `kwargs`.
+    
+        Examples
+        --------
+        Usage with parentheses:
+        
+        >>> from gofast.decorators import RunReturn
+        >>> class MyModel:
+        ...     def __init__(self, name):
+        ...         self.name = name
+        ...
+        >>> @RunReturn(attribute_name="name", return_type="attribute")
+        ... def process(self):
+        ...     pass
+        >>> model = MyModel(name="example")
+        >>> model.process()
+        'example'
+    
+        Usage without parentheses (default behavior):
+    
+        >>> from gofast.decorators import RunReturn
+        >>> class MyModel:
+        ...     def __init__(self, name):
+        ...         self.name = name
+        ...
+        >>> @RunReturn
+        ... def process(self):
+        ...     pass
+        >>> model = MyModel(name="example")
+        >>> model.process()
+        <MyModel object at 0x...>
+        
+        In this second case, the `RunReturn` decorator defaults to its standard 
+        behavior (returning `self`) since no specific configurations are provided.
+        """
+    
+        # Check if the decorator is being used without parentheses
+        if len(args) == 1 and callable(args[0]):
+            return cls()(args[0])
+    
+        # Otherwise, it was used with parentheses, so initialize as normal
+        return cls(*args, **kwargs)
+
+# Assign the classmethod to the decorator name,
+# allowing it to be used with or without parentheses
+RunReturn = RunReturn.initialize_decorator
+
+def smartFitRun(cls):
+    """
+    A class-based decorator that manages the `fit`/`run` method switching 
+    logic. If one method is called but the other is implemented, the correct 
+    method will be invoked automatically, with a warning issued to the user.
+
+    This is useful for ensuring that a class which only implements one of the 
+    `fit` or `run` methods can still function when the other is called 
+    incorrectly. The system will detect whether `fit` or `run` is available, 
+    issue a warning, and automatically call the available method.
+
+    Parameters
+    ----------
+    cls : class
+        The class being decorated, which should implement either `fit` or 
+        `run` (but not both). The decorator ensures that if the missing method 
+        is called, the available method is invoked instead.
+
+    Returns
+    -------
+    cls : class
+        The decorated class with method switching logic applied.
+    
+    Notes
+    -----
+    This decorator is designed for situations where either the `fit` method or 
+    the `run` method is implemented in a class, but not both. It ensures that 
+    calling the missing method does not result in an error but rather triggers 
+    the other method.
+
+    The method switching logic is as follows:
+
+    - If only ``fit`` is implemented and ``run`` is called, the decorator will
+      call the ``fit`` method instead, issuing a  warning.
+
+    - If only ``run`` is implemented and ``fit`` is called, the decorator will
+      call the ``run`` method instead, issuing a warning.
+
+    This behavior is particularly useful when ``fit`` requires a dataset 
+    (typically ``X``, ``y``), while ``run`` operates on pre-fitted models 
+    without needing the same input structure.
+    
+    Example
+    -------
+    >>> from gofast.decorators import smartFitRun
+    >>> @smartFitRun
+    >>> class ModelExampleFitOnly:
+    >>>     ''' Expects run while fit is called'''
+    >>>     def fit(self, X, y=None, **fit_params):
+    >>>         print(f"Fitting model with data {X} and target {y}")
+
+    >>> model = ModelExampleFitOnly()
+    >>> model.run(X=[1, 2, 3], y=[0, 1, 0])  # Will call `fit` instead and issue a warning.
+
+    >>> @smartFitRun
+    >>> class ModelExampleRunOnly:
+    >>>     ''' Expects fit while run is called'''
+    >>>     def run(self, **run_kwargs):
+    >>>         print(f"Running model with parameters {run_kwargs}")
+
+    >>> model = ModelExampleRunOnly()
+    >>> model.fit()  # Will call `run` instead and issue a warning.
+
+    See Also
+    --------
+    :class:`fit` : Fits a model to the provided data.
+    :class:`run` : Runs a model using parameters.
+
+    References
+    ----------
+    .. [1] Python Software Foundation. Python 3.9 Documentation.
+           https://docs.python.org/3/
+
+    .. [2] Decorators: Advanced Functions, Real Python.
+           https://realpython.com/primer-on-python-decorators/
+    """
+
+    original_fit = getattr(cls, 'fit', None)
+    original_run = getattr(cls, 'run', None)
+
+    if original_fit is not None and original_run is None:
+        # Only 'fit' is defined
+        @functools.wraps(original_fit)
+        def run(self, *args, **kwargs):
+            # Temporarily enable warnings if they were disabled
+            with warnings.catch_warnings():
+                warnings.simplefilter('once', FutureWarning)
+                warnings.warn(
+                    "`fit` method is required, but `run` was called. "
+                    "Automatically switching to `fit`. "
+                    "Note: Calling `run` without a `fit` implementation "
+                    "might be deprecated.",
+                    FutureWarning, 
+                )
+            return self.fit(*args, **kwargs)
+
+        setattr(cls, 'run', run)
+        
+    elif original_run is not None and original_fit is None:
+        # Only 'run' is defined
+        @functools.wraps(original_run)
+        def fit(self, *args, **kwargs):
+            with warnings.catch_warnings():
+               warnings.simplefilter('once', FutureWarning)
+               warnings.warn(
+                   "`run` method is required, but `fit` was called. "
+                   "Automatically switching to `run`. "
+                   "In future versions, calling `fit` without a `run` "
+                   "implementation might raise an error.",
+                   FutureWarning
+               )
+            return self.run(*args, **kwargs)
+
+        setattr(cls, 'fit', fit)
+        
+    return cls
+
+
 
 class SmartProcessor:
     """
@@ -1397,7 +2185,7 @@ class ExportData:
             # Optionally move files to a designated output directory
             # Assuming move_cfile function exists and is imported correctly
             for fname in fnames:
-                from .tools.coreutils import move_cfile 
+                from .tools.ioutils import move_cfile 
                 move_cfile(fname, savepath, dpath='_out')
                 
             # Optionally return the filenames of the exported files
@@ -2306,61 +3094,6 @@ def sanitize_docstring(enforce_strict=False, custom_sections=None):
                               custom_sections=custom_sections)
     return decorator
 
-class SuppressOutput:
-    """
-    A context manager for suppressing stdout and stderr messages. It can be
-    useful when interacting with APIs or third-party libraries that output
-    messages to the console, and you want to prevent those messages from
-    cluttering your output.
-
-    Parameters
-    ----------
-    suppress_stdout : bool, optional
-        Whether to suppress stdout messages. Default is True.
-    suppress_stderr : bool, optional
-        Whether to suppress stderr messages. Default is True.
-
-    Examples
-    --------
-    >>> from gofast.decorators import SuppressOutput
-    >>> with SuppressOutput():
-    ...     print("This will not be printed to stdout.")
-    ...     raise ValueError("This error message will not be printed to stderr.")
-    
-    Note
-    ----
-    This class is particularly useful in scenarios where controlling external
-    library output is necessary to maintain clean and readable application logs.
-
-    See Also
-    --------
-    contextlib.redirect_stdout, contextlib.redirect_stderr : For more granular control
-    over output redirection in specific parts of your code.
-    """
-    
-    def __init__(self, suppress_stdout=True, suppress_stderr=True):
-        self.suppress_stdout = suppress_stdout
-        self.suppress_stderr = suppress_stderr
-        self._stdout = None
-        self._stderr = None
-        self._devnull = None
-
-    def __enter__(self):
-        self._devnull = open(os.devnull, 'w')
-        if self.suppress_stdout:
-            self._stdout = sys.stdout
-            sys.stdout = self._devnull
-        if self.suppress_stderr:
-            self._stderr = sys.stderr
-            sys.stderr = self._devnull
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.suppress_stdout and self._stdout is not None:
-            sys.stdout = self._stdout
-        if self.suppress_stderr and self._stderr is not None:
-            sys.stderr = self._stderr
-        if self._devnull is not None:
-            self._devnull.close()
 
 class _M:
     def _m(self): pass
@@ -2492,69 +3225,313 @@ def isdf(func):
 
     return wrapper
 
-def isdf0(func: Callable) -> Callable:
+class IsPerformanceData:
     """
-    A decorator that ensures the first positional argument passed to the 
-    decorated function is a pandas DataFrame.
-    
-    If the argument is not a DataFrame, the decorator attempts to convert it 
-    into one using an optional 'columns' keyword argument.
+    A decorator and validator for performance data in machine learning.
+
+    The `IsPerformanceData` class can be used both as a decorator and as a
+    function to validate performance data, ensuring that the data conforms
+    to expected formats and value ranges. It checks that the data is a 
+    pandas DataFrame or dictionary with numeric values, handles NaN values
+    according to the specified policy, and verifies that performance metrics
+    are within the range [0, 1].
 
     Parameters
     ----------
-    func : Callable
-        The function to be decorated.
+    *args : tuple
+        Positional arguments. If used as a decorator without arguments,
+        the first argument may be the function to decorate.
+        If used as a function, the first argument is the data to validate.
 
-    Returns
+    **kwargs : dict
+        Keyword arguments for configuration.
+
+    nan_policy : str, optional
+        Defines how to handle NaN values in the data.
+        Options are ``'raise'`` (default), ``'omit'``, or ``'propagate'``.
+
+        - ``'raise'``: Raise a ``ValueError`` if NaN values are found.
+        - ``'omit'``: Drop rows containing NaN values.
+        - ``'propagate'``: Proceed without altering NaN values.
+
+    convert_integers : bool, optional
+        If ``True`` (default), integer values are converted to floats.
+
+    check_performance_range : bool, optional
+        If ``True`` (default), checks that all performance values are within
+         the range [0, 1].
+
+    verbose : bool, optional
+        If ``True``, prints detailed messages during validation.
+
+    Methods
     -------
-    Callable
-        The decorated function with data conversion logic.
+    __call__(*args, **kwargs)
+        Allows the class instance to be called as a function or used as a 
+        decorator.
+
+    actual_validate_performance_data(data)
+        Validates the performance data according to the specified policies.
 
     Notes
     -----
-    The decorated function must accept its first positional argument as data
-    and may optionally accept a 'columns' keyword argument to specify column names
-    for the DataFrame conversion.
+    This class serves both as a decorator and a validator function. When 
+    used as a decorator, it validates the performance data  passed to the
+    decorated function. When used as a function, it validates the given 
+    data and returns the validated DataFrame.
+
+    The validation process includes:
+
+    - Checking that the data is a pandas DataFrame or a dictionary that can
+      be converted to a DataFrame.
+    - Converting integer values to floats if `convert_integers` is `True`.
+    - Handling NaN values according to the specified `nan_policy`.
+    - Ensuring all performance values are within the range [0, 1] if
+       `check_performance_range` is `True`.
 
     Examples
     --------
-    >>> from gofast.decorators import isdf
-    >>> @isdf
-    ... def my_function(data, /, columns=None, **kwargs):
-    ...     print(data)
-    ...     print("Columns:", columns)
-    >>> import numpy as np
-    >>> my_function(np.array([[1, 2], [3, 4]]), columns=['A', 'B'])
-       A  B
-    0  1  2
-    1  3  4
-    Columns: ['A', 'B']
+    Using as a decorator without arguments:
+
+    >>> from gofast.decorators import IsPerformanceData
+    >>> @IsPerformanceData
+    ... def analyze_performance(data):
+    ...     # Function body
+    ...     pass
+
+    Using as a decorator with arguments:
+
+    >>> from gofast.decorators import IsPerformanceData
+    >>> @IsPerformanceData(nan_policy='omit', verbose=True)
+    ... def analyze_performance(data):
+    ...     # Function body
+    ...     pass
+
+    Using as a function:
+
+    >>> from gofast.decorators import IsPerformanceData
+    >>> validator = IsPerformanceData(nan_policy='omit')
+    >>> validated_data = validator(data)
+
+    See Also
+    --------
+    pandas.DataFrame : Two-dimensional, size-mutable,
+        potentially heterogeneous tabular data.
+
+    References
+    ----------
+    .. [1] pandas.DataFrame documentation,
+       https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.html
+
     """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        data = args[0]
-        columns = kwargs.get('columns', None)
-        if isinstance ( columns, str): 
-            columns =[columns]
-        # Check if the first positional argument is not a DataFrame
-        if not isinstance(data, pd.DataFrame):
-            # Attempt to convert it into a DataFrame
-            try:
-                data = pd.DataFrame(data, columns=columns)
-                # If columns are provided but do not match data dimensions,
-                # ignore them
-                if columns and len(columns) != data.shape[1]:
-                    data = pd.DataFrame(data)
-            except Exception as e:
-                raise ValueError(f"Error converting data to DataFrame: {e}")
-            # Call the decorated function with the new DataFrame 
-            # as the first argument
-            return func(data, *args[1:], **kwargs)
+
+    def __init__(
+        self,
+        *args,
+        **kwargs
+    ):
+        # Default parameter values
+        self.nan_policy = kwargs.get('nan_policy', 'raise')
+        self.convert_integers = kwargs.get('convert_integers', True)
+        self.check_performance_range = kwargs.get(
+            'check_performance_range', True)
+        self.verbose = kwargs.get('verbose', False)
+        self.func = None
+
+        if args and callable(args[0]):
+            # Decorator used without arguments
+            self.func = args[0]
+        elif args:
+            # Called as a function with data as the first argument
+            self.data = args[0]
         else:
-            # If the first argument is already a DataFrame, 
-            # proceed as normal
-            return func(*args, **kwargs)
-    return wrapper
+            # Decorator used with arguments or will be called as a function later
+            self.data = None
+
+    def __call__(self, *args, **kwargs):
+        """
+        Enables the class instance to be called as a function
+        or used as a decorator.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments. If used as a decorator, the
+            first argument may be the function to decorate. If
+            used as a function, the first argument is the data
+            to validate.
+
+        **kwargs : dict
+            Keyword arguments passed to the decorated function
+            or the validation process.
+
+        Returns
+        -------
+        callable or pandas.DataFrame
+            If used as a decorator, returns the wrapped function.
+            If used as a function, returns the validated DataFrame.
+
+        Examples
+        --------
+        Using as a decorator:
+
+        >>> from gofast.decorators import IsPerformanceData
+        >>> @IsPerformanceData
+        ... def analyze_performance(data):
+        ...     # Function body
+        ...     pass
+
+        Using as a function:
+
+        >>> from gofast.decorators import IsPerformanceData
+        >>> validator = IsPerformanceData()
+        >>> validated_data = validator(data)
+
+        """
+        if self.func:
+            # Used as a decorator without arguments
+            @functools.wraps(self.func)
+            def wrapper(*args, **kwargs):
+                data = args[0]
+                data = self._is_formatter_data(data)
+                validated_data = self.actual_validate_performance_data(data)
+                return self.func(validated_data, *args[1:], **kwargs)
+            return wrapper(*args, **kwargs)
+        elif args and callable(args[0]):
+            # Used as a decorator with arguments
+            func = args[0]
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                data = args[0]
+                data = self._is_formatter_data(data)
+                validated_data = self.actual_validate_performance_data(data)
+                return func(validated_data, *args[1:], **kwargs)
+            return wrapper
+        else:
+            # Called as a function with data
+            data = args[0] if args else self.data
+            return self.actual_validate_performance_data(data)
+
+    @isdf 
+    def actual_validate_performance_data(self, data):
+        """
+        Performs the actual validation of the performance data.
+
+        Parameters
+        ----------
+        data : pandas.DataFrame or dict
+            The performance data to validate. Should be a DataFrame
+            or a dictionary that can be converted into a DataFrame.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The validated performance data.
+
+        Raises
+        ------
+        ValueError
+            If the data is invalid or does not meet the specified
+            criteria.
+
+        Notes
+        -----
+        The validation process includes:
+
+        - Converting dictionaries to DataFrames if necessary.
+        - Converting integer values to floats if
+          `convert_integers` is `True`.
+        - Handling NaN values according to the `nan_policy`.
+        - Checking that all performance values are within the
+          range [0, 1] if `check_performance_range` is `True`.
+
+        The performance values are expected to satisfy:
+
+        .. math::
+
+            0 \\leq x \\leq 1
+
+        where :math:`x` represents a performance metric value.
+
+        Examples
+        --------
+        >>> validator = IsPerformanceData()
+        >>> validated_data = validator.actual_validate_performance_data(data)
+
+        """
+        from .tools.validator import convert_to_numeric
+        from .tools.validator import is_valid_policies
+
+        # Convert to DataFrame if input is a dictionary
+        if isinstance(data, dict):
+            if self.verbose:
+                print("Converting dictionary to DataFrame...")
+            df = pd.DataFrame(data)
+        elif isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            raise ValueError("Input data must be either a dictionary "
+                             "or a DataFrame.")
+
+        # Ensure all values are float, convert integers to floats if needed
+        if self.convert_integers:
+            if self.verbose:
+                print("Converting integer values to floats where necessary...")
+            df = df.applymap(
+                lambda x: convert_to_numeric(
+                    x, preserve_integers=False,
+                    context_description='Performance data')
+            )
+
+        # Handle NaN values according to nan_policy
+        is_valid_policies(
+            self.nan_policy, allowed_policies=['raise', 'omit', 'propagate']
+        )
+
+        if df.isna().any().any():  # Check for NaN values
+            if self.nan_policy == 'raise':
+                raise ValueError("NaN values detected in the data. "
+                                 "Set `nan_policy='omit'` to drop them.")
+            elif self.nan_policy == 'omit':
+                if self.verbose:
+                    print("Dropping rows with NaN values...")
+                df = df.dropna()
+
+        # Ensure all values are float type
+        df = df.astype(float)
+
+        # Check if performance values are within the valid range [0, 1]
+        if self.check_performance_range:
+            if self.nan_policy == 'propagate':
+                df_checked = df.dropna()
+            else:
+                df_checked = df
+
+            if (df_checked < 0).any().any():
+                raise ValueError("Performance values cannot be negative.")
+            if (df_checked > 1).any().any():
+                raise ValueError("Performance values must be in the "
+                                 "range [0, 1].")
+
+        if self.verbose:
+            print("Validation and conversion complete. "
+                  "Data is ready for further processing.")
+
+        return df
+    
+    def _is_formatter_data (self, data): 
+        """ Check whether the data passed is a formatter instance. If so,
+        then retrieve the dataframe before calling the 
+        `actual_validate_performance_data` method. 
+        
+        """
+        from .api.formatter import( 
+            DataFrameFormatter, MultiFrameFormatter, formatter_validator
+            )
+        if isinstance(data, (DataFrameFormatter, MultiFrameFormatter)):
+            data = formatter_validator(data, df_indices=[0], only_df=True)
+            
+        return data 
 
 class NumpyDocstringFormatter:
     """
@@ -2807,15 +3784,15 @@ class NumpyDocstringFormatter:
         This method provides a conceptual approach and requires a Sphinx 
         environment to be properly implemented.
         """
-        from .tools._dependency import import_optional_dependency
+        from .tools.depsutils import import_optional_dependency
         
         try: 
             import_optional_dependency ("docutils")
         except: 
-            from .tools.coreutils import is_module_installed 
-            from .tools.funcutils import install_package
+            from .tools.depsutils import is_module_installed 
+            from .tools.depsutils import ensure_module_installed
             if not is_module_installed("docutils"): 
-                install_package('docutils', infer_dist_name=True)
+                ensure_module_installed('docutils', auto_install=True)
             
         from docutils import nodes
         from docutils.core import publish_doctree

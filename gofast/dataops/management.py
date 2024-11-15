@@ -16,16 +16,17 @@ import pandas as pd
 import matplotlib.pyplot as plt 
 from tqdm import tqdm
 
-from ..api.property import  Config
+from ..api.property import  PandasDataHandlers
 from ..api.types import Any,  List,  DataFrame, Optional, Dict, Union
 from ..api.types import BeautifulSoupTag , Tuple, ArrayLike, Callable
 from ..api.util import get_table_size 
 from ..decorators import Deprecated, Dataify, EnsureFileExists 
 from ..exceptions import FileHandlingError 
 from ..tools.baseutils import save_or_load
-from ..tools.coreutils import is_iterable, ellipsis2false,smart_format, validate_url 
+from ..tools.coreutils import is_iterable, ellipsis2false, smart_format
 from ..tools.coreutils import to_numeric_dtypes
-from ..tools.funcutils import ensure_pkg
+from ..tools.depsutils import ensure_pkg
+ 
 from ..tools.validator import  parameter_validator  
 
 
@@ -344,7 +345,7 @@ def read_data(
             f = min_sanitizer (f)
         return  f 
     
-    cpObj= Config().parsers 
+    cpObj= PandasDataHandlers().parsers 
     f= _check_readable_file(f)
     _, ex = os.path.splitext(f) 
     if ex.lower() not in tuple (cpObj.keys()):
@@ -537,6 +538,8 @@ def get_remote_data(
         "2. The server is running, but the port is blocked by a firewall.\n"
         "3. A security program on the PC is blocking several ports."
     )
+    from ..tools.netutils import validate_url
+    
     validate_url(remote_file)
     print(f"---> Fetching {remote_file!r}...")
 

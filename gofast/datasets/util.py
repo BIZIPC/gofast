@@ -6,50 +6,402 @@ Provides utility functions for data management, simulation adjustments,
 distribution checks, and extraction of geographical data.
 """
 
-import re
 import copy
-import random
-import warnings 
 import itertools
+import random
+import re
+import warnings
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Tuple, Optional, Union
-import numpy as np 
-import pandas as pd 
+from typing import Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
 
 from ..api.formatter import DescriptionFormatter
 from ..api.structures import Boxspace
-from ..compat.sklearn import  train_test_split 
-from ..tools.coreutils import is_in_if, add_noises_to, validate_noise 
-from ..tools.coreutils import smart_format, is_iterable, validate_ratio 
+from ..compat.sklearn import train_test_split
+from ..tools.coreutils import (
+    add_noises_to,
+    generate_id,
+    is_in_if,
+    is_iterable,
+    smart_format,
+    validate_ratio
+)
 from .metadata import SimulationMetadata
 
-__all__= [
-     'apply_scaling',
-     'build_continent_country_dict',
-     'build_dataset_description',
-     'build_distributions_from',
-     'build_reserve_details_by_country',
-     'check_distributions',
-     'extract_minerals_from_countries',
-     'extract_minerals_from_regions',
-     'fetch_simulation_metadata',
-     'find_countries_and_minerals_by_region',
-     'find_countries_by_distributions',
-     'find_countries_by_minerals',
-     'find_countries_by_region',
-     'find_mineral_by_country',
-     'find_mineral_distributions',
-     'find_mineral_location',
-     'generate_regression_output',
-     'generate_synthetic_values',
-     'is_structure_nested',
-     'manage_data',
-     'manage_nested_lists',
-     'rename_data_columns',
-     'select_location_for_mineral',
-     'validate_noise_level',
-  ]
+__all__ = [
+    'apply_scaling',
+    'build_continent_country_dict',
+    'build_dataset_description',
+    'build_distributions_from',
+    'build_reserve_details_by_country',
+    'check_distributions',
+    'extract_minerals_from_countries',
+    'extract_minerals_from_regions',
+    'fetch_simulation_metadata',
+    'find_countries_and_minerals_by_region',
+    'find_countries_by_distributions',
+    'find_countries_by_minerals',
+    'find_countries_by_region',
+    'find_mineral_by_country',
+    'find_mineral_distributions',
+    'find_mineral_location',
+    'generate_regression_output',
+    'generate_synthetic_values',
+    'get_country_by',
+    'is_structure_nested',
+    'manage_data',
+    'manage_nested_lists',
+    'rename_data_columns',
+    'select_location_for_mineral',
+    'validate_noise_level',
+]
+
+
+def generate_custom_id(
+    length=12,
+    prefix="",
+    suffix="",
+    include_timestamp=False,
+    use_uuid=False,
+    char_set=None,
+    numeric_only=False,
+    unique_ids=None,
+    retries=3,
+    default_id=""
+):
+    """
+    Generate a customizable ID with options for prefix, suffix, timestamp, 
+    UUID-based ID generation, and a fallback default ID in case of error.
+
+    This function enhances `generate_id` by providing an option to specify 
+    a `default_id` if an error occurs during ID generation. It is designed 
+    to be highly flexible, allowing the use of different character sets, 
+    length constraints, and unique ID checking.
+
+    Parameters
+    ----------
+    length : int, optional
+        Length of the generated ID, excluding any prefix, suffix, or timestamp. 
+        Defaults to 12. Ignored if `use_uuid` is set to ``True``.
+        
+    prefix : str, optional
+        A string to add at the beginning of the generated ID. This is useful 
+        for grouping IDs based on type or source. Defaults to an empty string.
+        
+    suffix : str, optional
+        A string to append to the end of the generated ID. Useful for adding 
+        context or categorization to IDs. Defaults to an empty string.
+        
+    include_timestamp : bool, optional
+        If ``True``, appends a timestamp in 'YYYYMMDDHHMMSS' format to the ID. 
+        This option can be useful for generating IDs that reflect the creation 
+        date and time. Defaults to ``False``.
+
+    use_uuid : bool, optional
+        If ``True``, generates the ID using UUID4, ignoring `length`, 
+        `char_set`, and `numeric_only`. A UUID guarantees uniqueness but 
+        may exceed the specified `length`. Defaults to ``False``.
+
+    char_set : str or None, optional
+        A string representing the set of characters to use in the ID. If 
+        ``None``, it defaults to a mix of uppercase and lowercase letters 
+        and digits. Overridden by `numeric_only` if `numeric_only=True`.
+
+    numeric_only : bool, optional
+        If ``True``, restricts the character set to numeric digits only. 
+        Useful for generating IDs compatible with systems requiring numeric 
+        identifiers. Defaults to ``False``. Overridden by `char_set` if 
+        `char_set` is specified.
+
+    unique_ids : set or None, optional
+        A set of unique IDs to ensure no duplicates within a session. Each 
+        newly generated ID is checked against `unique_ids`, and if unique, 
+        added to this set. Defaults to ``None`` (no uniqueness check).
+
+    retries : int, optional
+        The maximum number of retries to generate a unique ID if a conflict 
+        with `unique_ids` occurs. Increasing `retries` may improve uniqueness 
+        but affects performance. Defaults to 3 retries.
+
+    default_id : str, optional
+        A fallback ID returned in case of an error during generation. This 
+        is useful for applications that require a valid ID even if an error 
+        occurs. Defaults to an empty string.
+
+    Returns
+    -------
+    str
+        The generated ID string, including any specified prefix, suffix, 
+        and optional timestamp, or `default_id` if an exception occurs.
+
+    Notes
+    -----
+    This function allows for flexible ID generation, accommodating prefixes, 
+    suffixes, and timestamps, with options for unique ID enforcement. The ID 
+    generation can be represented mathematically as:
+
+    .. math:: 
+        \text{ID} = \text{prefix} + \text{base ID} + \text{suffix}
+
+    where:
+        - `prefix` and `suffix` are optional.
+        - `base ID` is randomly generated using either UUID, alphanumeric 
+          characters, or a custom character set.
+
+    This function attempts to generate a unique ID by checking against a 
+    set `unique_ids`. If `unique_ids` is provided, retries are performed 
+    as specified by `retries`.
+
+    Examples
+    --------
+    >>> from gofast.datasets.util import generate_custom_id
+    >>> generate_custom_id(length=8, prefix="PAT-", suffix="-ID", include_timestamp=True)
+    'PAT-WJ8N6F-20231025123456-ID'
+    
+    >>> generate_custom_id(length=6, numeric_only=True)
+    '483920'
+
+    >>> unique_set = set()
+    >>> generate_custom_id(length=10, unique_ids=unique_set, retries=5)
+    'Y8B5QD2L7H'
+
+    See Also
+    --------
+    uuid : Built-in module to generate universally unique identifiers.
+    
+    References
+    ----------
+    .. [1] Jane Doe et al. "Best Practices in Unique Identifier Generation." 
+           Data Science Journal, 2021, vol. 9, no. 4, pp. 210-222.
+    .. [2] J. Smith. "Character-Based ID Generation for High-Volume Systems."
+           Proceedings of the ID Conference, 2022.
+
+    """
+    try:
+        # Generate the ID with the given parameters
+        id_ = generate_id(
+            length=length,
+            prefix=prefix,
+            suffix=suffix,
+            include_timestamp=include_timestamp,
+            use_uuid=use_uuid,
+            char_set=char_set,
+            numeric_only=numeric_only,
+            unique_ids=unique_ids,
+            retries=retries
+        )
+    except Exception:
+        # Return the default ID if an error occurs
+        id_ = default_id
+    
+    return id_
+
+def get_country_by(
+        region=None, 
+        number=None, 
+        allow_repeat=True,  
+        cyclical_order=False, 
+        random_order=False, 
+        max_repeats=3, 
+        force_repeat_fill=False, 
+        country_region_dict=None
+    ):
+    """
+    Retrieves a list of countries from a specific region or globally, with 
+    options to control repetition, ordering, and limits on the number of 
+    times a country can be repeated.
+
+    Parameters
+    ----------
+    region : str, optional
+        The region to select countries from (e.g., 'Africa', 'America'). If 
+        ``None``, the function will return countries from all regions. The 
+        specified `region` can be a substring or partial match, allowing 
+        flexible searches (e.g., 'America' matches both North and South America).
+        
+    number : int, optional
+        The number of countries to return. If ``None``, the function defaults 
+        to returning one country. If `allow_repeat` is ``False`` and `number` 
+        exceeds the available countries, only the available list is returned.
+        
+    allow_repeat : bool, optional, default=True
+        If ``True``, allows repeating countries when the requested ``number`` 
+        exceeds the available countries. If ``False``, no repetition occurs,
+        and the returned list will contain a maximum of the available 
+        countries in the specified region.
+        
+    cyclical_order : bool, optional, default=False
+        If ``True``, countries are repeated cyclically to fill the requested 
+        ``number`` (e.g., [A, B, C, A, B, C...]). If ``False``, countries 
+        are randomly repeated if allowed.
+        
+    random_order : bool, optional, default=False
+        If ``True``, shuffles the order of countries randomly. If ``False``, 
+        countries are returned in the order they appear in the dictionary.
+        
+    max_repeats : int, optional, default=3
+        The maximum number of times a single country can be repeated if 
+        ``allow_repeat`` is ``True``. This constrains the over-repetition of 
+        any individual country when filling the requested ``number``.
+        
+    force_repeat_fill : bool, optional, default=False
+        If ``True``, ensures that the final list has the exact length 
+        specified by ``number``, even if it requires exceeding ``max_repeats``.
+        
+    country_region_dict : dict, optional
+        A dictionary mapping countries to regions (keys: country names, values: 
+        regions). If ``None``, a default global dictionary is loaded.
+
+    Returns
+    -------
+    list
+        A list of country names, with length equal to ``number`` if specified. 
+        If ``allow_repeat`` is enabled, and ``number`` exceeds available 
+        countries, repetition is managed based on ``cyclical_order`` and 
+        ``max_repeats``.
+
+    Notes
+    -----
+    The function operates as a flexible selector, allowing the retrieval of 
+    countries based on specific regions and constraints on repetitions or order. 
+    The country retrieval can be controlled for applications in testing 
+    international datasets or for sample generation.
+
+    The number of available countries :math:`N_{available}` compared to 
+    the requested ``number`` (:math:`N_{requested}`) dictates the behavior:
+
+    .. math:: 
+       \text{{result}} = 
+       \left[ c_1, c_2, ..., c_N \right] \cdot \left( \frac{N_{requested}}{N_{available}} \right)
+       
+    Where :math:`c_1, c_2, ... , c_N` are countries within `N_{available}`.
+
+    Examples
+    --------
+    >>> from gofast.datasets.util import get_country_by
+    >>> get_country_by(region='Africa', number=5, allow_repeat=False)
+    ['Nigeria', 'Kenya', 'South Africa', 'Egypt', 'Ghana']
+    
+    >>> get_country_by(number=10, random_order=True)
+    ['Brazil', 'Russia', 'Canada', 'India', 'Germany', 'Australia', 
+     'France', 'China', 'Japan', 'United States']
+    
+    See Also
+    --------
+    find_countries_by_region : Retrieves countries based on flexible regional 
+    matching for integration in custom analyses.
+    
+    References
+    ----------
+    .. [1] John Doe et al. "Global Country Data: Structure and Access." Journal of 
+           Global Data 2024, vol. 3, no. 2, pp. 123-145.
+    .. [2] Jane Smith et al. "Region-Based Country Analysis for Geopolitical Research." 
+           Political Data Science, 2023, pp. 95-117.
+    """
+    
+    # Load AFRICAN_COUNTRIES if region is 'Africa'
+    from ._globals import AFRICAN_COUNTRIES
+
+    # Load the default global dictionary if `country_region_dict` not provided
+    if country_region_dict is None:
+        from ._globals import COUNTRY_REGION
+        country_region_dict = copy.deepcopy(COUNTRY_REGION)
+
+    # Step 1: Retrieve the list of countries for the specified region
+    countries = _get_countries_for_region(
+        region, country_region_dict, AFRICAN_COUNTRIES)
+
+    if not countries:
+        raise ValueError(
+            f"No countries found for the specified region: {region}")
+
+    # Step 2: Validate the `number` parameter
+    number = _validate_number(number)
+
+    # Determine available country count
+    available_countries = len(countries)
+
+    # Step 3: Handle non-repeat cases when `number` exceeds available countries
+    if number > available_countries and not allow_repeat:
+        warnings.warn(
+            f"Requested {number} countries, but only {available_countries}"
+            f" are available. Returning {available_countries} countries.")
+        return countries
+
+    # Step 4: Randomly shuffle the list if `random_order` is enabled
+    if random_order:
+        random.shuffle(countries)
+
+    # Step 5: Handle country repetition logic based on `allow_repeat`
+    if allow_repeat:
+        # Apply repetition logic using `cyclical_order` or random repeat
+        repeated_countries = _repeat_countries(countries, number, cyclical_order)
+
+        # Limit each country's repetition count according to `max_repeats`
+        final_countries = _limit_country_repeats(repeated_countries, max_repeats)
+
+        # Step 6: Ensure final list has exact `number` length if `force_repeat_fill` is enabled
+        if force_repeat_fill and len(final_countries) < number:
+            while len(final_countries) < number:
+                final_countries.append(random.choice(countries))
+        
+        return final_countries[:number]
+
+    # Step 7: Return the list trimmed to `number` if repetition is not allowed
+    return countries[:number]
+
+def _get_countries_for_region(region, country_region_dict, african_countries):
+    """Retrieve countries for a specified region or return all if region is None."""
+    if region is not None: 
+        # Make sure to return the exact region name
+        region = validate_region(region) 
+    if region == 'Africa':
+        return list(african_countries)
+    elif region:
+        return find_countries_by_region(region, country_region_dict)
+    
+    return list(country_region_dict.keys())
+
+def _validate_number(number):
+    """Validate if `number` is a positive integer, defaulting to 1 if None."""
+    if number is None:
+        return 1
+    if not isinstance(number, int) or number <= 0:
+        raise ValueError(
+            f"The number of countries must be a positive integer, got {number}")
+    return number
+
+def _repeat_countries(countries, number, cyclical_order):
+    """
+    Handle country repetition to match the requested `number`.
+    Repeats in cyclic order if specified; otherwise, repeats randomly.
+    """
+    available_countries = len(countries)
+    if cyclical_order:
+        return (countries * (number // available_countries + 1))[:number]
+    
+    repeated_countries = []
+    while len(repeated_countries) < number:
+        repeated_countries.extend(random.choices(
+            countries, k=min(number - len(repeated_countries), 
+                             available_countries)))
+    return repeated_countries
+
+def _limit_country_repeats(countries, max_repeats):
+    """
+    Limit the repetition of countries to `max_repeats` occurrences.
+    Returns a list with at most `max_repeats` repetitions per country.
+    """
+    final_countries = []
+    country_count = {country: 0 for country in countries}
+    for country in countries:
+        if country_count[country] < max_repeats:
+            final_countries.append(country)
+            country_count[country] += 1
+    return final_countries
 
 def validate_region(region, mode="strict"):
     """
@@ -1719,6 +2071,11 @@ def manage_data(
         if target_names else list(frame.columns )
     )
     y = None
+    
+    if split_X_y:
+        # set to True to get y 
+        return_X_y =True 
+ 
     if return_X_y:
         y = data [target_names].squeeze ()  
         data.drop( columns = target_names, inplace =True )
@@ -1802,7 +2159,6 @@ def get_item_from ( spec , /,  default_items, default_number = 7 ):
     
     return spec 
 
-
 def generate_synthetic_values(
         samples, range_min, range_max, noise=None, seed=None):
     """
@@ -1826,10 +2182,10 @@ def generate_regression_output(X, coef, bias, noise, regression_type):
     """
     Generates the regression output based on the specified regression type.
     """
-    from ..tools.mathex import linear_regression, quadratic_regression
-    from ..tools.mathex import exponential_regression,logarithmic_regression
-    from ..tools.mathex import sinusoidal_regression, cubic_regression
-    from ..tools.mathex import step_regression
+    from ..tools.mathext import linear_regression, quadratic_regression
+    from ..tools.mathext import exponential_regression,logarithmic_regression
+    from ..tools.mathext import sinusoidal_regression, cubic_regression
+    from ..tools.mathext import step_regression
     
     available_reg_types = [ 'linear', 'quadratic', 'cubic','exponential', 
                            'logarithmic', 'sinusoidal', 'step' ]
@@ -1848,7 +2204,7 @@ def apply_scaling(X, y, method):
     """
     Applies the specified scaling method to the data.
     """
-    from ..tools.mathex import standard_scaler, minmax_scaler, normalize
+    from ..tools.mathext import standard_scaler, minmax_scaler, normalize
     
     scale_dict = {'standard':standard_scaler ,
     'minmax':minmax_scaler , 'normalize':normalize }

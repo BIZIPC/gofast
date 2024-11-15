@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-# @author: LKouadio~ @Daniel
-"""
-DaskBackend Usage Documentation
--------------------------------
+# License: BSD-3-Clause
+# Author: LKouadio (a.k.a. @Daniel) <etanoyau@gmail.com>
 
+"""
 The DaskBackend module provides a seamless integration with Dask to enable
 distributed computing capabilities for gofast's machine learning and data
 processing tasks. This backend is especially useful for handling large datasets
@@ -51,6 +50,8 @@ from .base import BaseBackend
 
 class BackendNotAvailable(Exception):
     pass
+
+__all__=["DaskBackend"]
 
 class DaskBackend(BaseBackend):
     """

@@ -1,104 +1,904 @@
 # -*- coding: utf-8 -*-
-#   License: BSD-3-Clause
-#   Author: LKouadio <etanoyau@gmail.com>
+# License: BSD-3-Clause
+# Author: LKouadio <etanoyau@gmail.com>
+
 """
-Learning utilities for data transformation, model learning and inspections. 
+Learning utilities for data transformation, model learning, and inspections.
+This module provides tools for data preprocessing, model evaluation, feature 
+engineering, and utilities for handling machine learning workflows efficiently.
 """
 
 import os
-import re 
-import copy 
-import tarfile 
-import pickle 
+import re
+import math
+import copy
+import tarfile
+import pickle
 import joblib
-import datetime 
-import warnings 
-import shutil 
-from six.moves import urllib 
-from collections import Counter 
+import warnings
+import shutil
+from six.moves import urllib
+from collections import Counter
 from pathlib import Path
 
-import numpy as np 
-import pandas as pd 
+import numpy as np
+import pandas as pd
 from scipy import sparse
 from tqdm import tqdm
-
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectFromModel, SelectKBest
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import StratifiedShuffleSplit 
+from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.pipeline import Pipeline, FeatureUnion
-from sklearn.preprocessing import OneHotEncoder,RobustScaler ,OrdinalEncoder 
-from sklearn.preprocessing import StandardScaler,MinMaxScaler,  LabelBinarizer
-from sklearn.preprocessing import LabelEncoder,Normalizer, PolynomialFeatures 
+from sklearn.preprocessing import (
+    OneHotEncoder, RobustScaler, OrdinalEncoder, StandardScaler,
+    MinMaxScaler, LabelBinarizer, LabelEncoder, Normalizer, PolynomialFeatures
+)
 from sklearn.utils import resample
 
 from .._gofastlog import gofastlog
-from ..api.types import List, Tuple, Any, Dict,  Optional,Union, Series 
-from ..api.types import  _F, ArrayLike, NDArray,  DataFrame
+from ..api.types import List, Tuple, Any, Dict, Optional, Union, Series
+from ..api.types import _F, ArrayLike, NDArray, DataFrame, Callable
 from ..api.formatter import MetricFormatter
-from ..api.summary import ReportFactory, ResultSummary  
-from ..compat.sklearn import get_feature_names
-from ..compat.sklearn import train_test_split 
-from ..decorators import SmartProcessor 
-from .baseutils import select_features 
-from .coreutils import _assert_all_types, is_in_if,  ellipsis2false
-from .coreutils import smart_format, is_iterable, get_valid_kwargs
-from .coreutils import is_classification_task, to_numeric_dtypes
-from .coreutils import validate_feature, download_progress_hook, exist_features
-from .coreutils import contains_delimiter, nan_to_na 
-from .funcutils import ensure_pkg
-from .validator import _is_numeric_dtype, _is_arraylike_1d 
-from .validator import get_estimator_name, check_array, check_consistent_length
-from .validator import is_frame, build_data_if, check_is_fitted
-from .validator import check_mixed_data_types, validate_data_types   
+from ..api.summary import ReportFactory, ResultSummary
+from ..compat.sklearn import get_feature_names, train_test_split
+from ..exceptions import DependencyError
+from ..decorators import SmartProcessor
+from .baseutils import select_features
+from .coreutils import (
+    _assert_all_types, is_in_if, ellipsis2false, smart_format, is_iterable,
+    get_valid_kwargs, is_classification_task, to_numeric_dtypes,
+    validate_feature, exist_features, contains_delimiter, 
+    str2columns 
+)
+from .depsutils import ensure_pkg
+from .validator import (
+    _is_numeric_dtype, _is_arraylike_1d, get_estimator_name, check_array,
+    check_consistent_length, is_frame, build_data_if, check_is_fitted,
+    check_mixed_data_types, validate_data_types, _check_consistency_size
+)
 
+
+# Logger Configuration
 _logger = gofastlog().get_gofast_logger(__name__)
 
+__all__ = [
+    'bi_selector',
+    'bin_counting',
+    'build_data_preprocessor',
+    'compute_smart_batch_size', 
+    'discretize_categories',
+    'display_feature_contributions',
+    'dynamic_batch_size', 
+    'evaluate_model',
+    'fetch_model',
+    'fetch_tgz',
+    'fetch_tgz2',
+    'format_model_score',
+    'get_correlated_features',
+    'get_feature_contributions',
+    'get_global_score',
+    'get_batch_size', 
+    'handle_imbalance',
+    'laplace_smoothing',
+    'laplace_smoothing_categorical',
+    'laplace_smoothing_word',
+    'load_model',
+    'make_pipe',
+    'one_click_prep',
+    'process_data_types', 
+    'resampling',
+    'save_dataframes',
+    'select_feature_importances',
+    'smart_label_classifier', 
+    'smart_split',
+    'soft_data_split',
+    'soft_encoder',
+    'soft_imputer',
+    'soft_scaler',
+    'stats_from_prediction',
+    'stratify_categories'
+]
 
-__all__=[
-     'base_local_tgz_fetch',
-     'base_url_tgz_fetch',
-     'bi_selector',
-     'bin_counting',
-     'build_data_preprocessor',
-     'deserialize_data',
-     'discretize_categories',
-     'display_feature_contributions',
-     'evaluate_model',
-     'fetch_model',
-     'fetch_tgz',
-     'fetch_tgz_from_url',
-     'fetch_tgz_locally',
-     'format_model_score',
-     'get_correlated_features',
-     'get_feature_contributions',
-     'get_global_score',
-     'handle_imbalance',
-     'laplace_smoothing',
-     'laplace_smoothing_categorical',
-     'laplace_smoothing_word',
-     'load_csv',
-     'load_model',
-     'make_pipe',
-     'one_click_prep',
-     'process_df',
-     'resampling',
-     'save_dataframes',
-     'select_feature_importances',
-     'serialize_data',
-     'smart_split',
-     'soft_data_split',
-     'soft_encoder',
-     'soft_imputer',
-     'soft_scaler',
-     'stats_from_prediction',
-     'stratify_categories',
- ]
+TORCH_DEP_EMSG=(
+    "Error: PyTorch is not installed. Please install PyTorch by running:\n"
+    "'pip install torch' or follow the installation instructions at:\n"
+    "https://pytorch.org/get-started/locally/"
+)
 
+TF_DEP_EMSG= (
+    "Error: TensorFlow is not installed. Please install TensorFlow "
+    "by running:\n 'pip install tensorflow' or visit the installation "
+    "guide at:\n https://www.tensorflow.org/install"
+)
+
+@ensure_pkg(
+    "torch", extra="Torch is needed when backend is set to `torch`.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get("backend")=="torch"
+    )
+@ensure_pkg(
+    "tensorflow", extra="Tensorflow is needed when backend is set to `tf`.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get(
+        "backend") in ("tensorflow", "tf")
+    )
+def get_batch_size(
+    data_or_train_loader, *, 
+    model=None, 
+    device=None,
+    initial_batch_size=32, 
+    max_batch_size=512,
+    default_size=None, 
+    backend=None, 
+    verbose=0,
+):
+    """
+    Automatically determines the optimal batch size for training based on
+    available hardware, model, and backend.
+
+    This function adjusts the batch size by running the model with increasing
+    batch sizes until it encounters memory limitations, at which point it will
+    fall back to the largest feasible batch size. The backend can be set to 
+    either 'torch' (PyTorch) or 'tensorflow' (TensorFlow), and depending on
+    the device availability (GPU or CPU), it will adjust the batch size 
+    accordingly.
+
+    The process involves testing batch sizes starting from `initial_batch_size`
+    and doubling them until either memory limits are reached or `max_batch_size`
+    is exceeded. If an error occurs due to lack of memory, the batch size is
+    reduced until it is a feasible value. If no GPU is available or there are
+    insufficient resources, a fallback batch size is returned.
+
+    Parameters
+    ----------
+    data_or_train_loader : Dataset or DataLoader
+        The dataset or data loader to be used for training. If a DataLoader 
+        is provided, the batch size will be determined dynamically. If a 
+        raw dataset is provided, it will be wrapped in a DataLoader during 
+        the process.
+        
+    model : torch.nn.Module or tf.keras.Model, optional
+        The model to be used for training. If a model is provided, it will
+        be used to test the batch size. If no model is provided, the batch 
+        size determination will be done based on dataset characteristics.
+
+    device : torch.device or tf.device, optional
+        The device (CPU or GPU) where the model is to be trained. This 
+        should be provided if using a framework like PyTorch that requires
+        explicit device placement.
+
+    initial_batch_size : int, optional
+        The starting batch size for testing. This value is used as the 
+        initial batch size for determining the optimal batch size. Default 
+        is 32.
+
+    max_batch_size : int, optional
+        The maximum batch size to attempt. The batch size will never exceed 
+        this value, even if the available memory allows for larger sizes. 
+        Default is 512.
+
+    default_size : int, optional
+        The fallback batch size if the batch size determination process fails 
+        or the backend is unsupported. Default is None, which means the function 
+        will use `initial_batch_size` as the fallback.
+
+    backend : str, optional
+        The backend to use for training. This can either be 'torch' for 
+        PyTorch or 'tensorflow' for TensorFlow. Default is 'torch'.
+
+    verbose : int, optional
+        The verbosity level. If set to 1, the function will print information 
+        about the batch size determination process. Default is 0 (silent).
+
+    Returns
+    -------
+    int
+        The determined batch size that can be used for training.
+
+    Methods
+    -------
+    - `get_batch_size`: Main function to dynamically determine the batch size.
+    - `_use_torch_available`: Checks if PyTorch is available.
+    - `_prepare_tf_dataset`: Prepares TensorFlow dataset for testing.
+    - `_analyze_dataset`: Analyzes dataset to estimate batch size.
+    - `compute_smart_batch_size`: Heuristic computation for batch size based 
+      on dataset size and number of features.
+
+    Notes
+    -----
+    The batch size determination process involves the following steps:
+
+    1. **Test Memory Capacity**:
+        The function starts with an initial batch size, `B_0`, and 
+        progressively doubles it, checking for memory overflow at each step:
+        
+        .. math::
+            B_{i+1} = 2 \cdot B_i \quad \text{until memory overflows.}
+            
+    2. **Handling Memory Overflow**:
+        Upon encountering memory limitations, the batch size is reduced:
+        
+        .. math::
+            B_{\text{final}} = \max \left( \frac{B_i}{2}, B_{\text{min}} \right)
+            
+    3. **Final Batch Size**:
+        The final batch size is determined by returning either the largest
+        feasible batch size or the fallback batch size:
+        
+        .. math::
+            B_{\text{final}} = \min \left( B_{\text{final}}, B_{\text{max}} \right)
+            
+    - This function requires the PyTorch or TensorFlow library to be installed.
+    - If neither GPU nor sufficient memory is available, the function falls back 
+      to a heuristic method to determine a reasonable batch size based on dataset 
+      characteristics.
+    - The `device` argument is only applicable to PyTorch. TensorFlow handles 
+      device placement internally.
+
+    Example
+    -------
+    >>> from gofast.tools.mlutils import get_batch_size
+    >>> batch_size = get_batch_size(data, model=model, device=device, 
+    ...                             backend='torch', verbose=1)
+    >>> print(f"Optimal batch size: {batch_size}")
+
+    See Also
+    --------
+    - `torch.utils.data.DataLoader`
+    - `tensorflow.data.Dataset`
+    - `compute_smart_batch_size`
+    
+    References
+    ----------
+    .. [1] Paszke, A., et al., "PyTorch: An Imperative Style, High-Performance
+           Deep Learning Library," in NeurIPS, 2019.
+    .. [2] Abadi, M., et al., "TensorFlow: Large-Scale Machine Learning 
+          on Heterogeneous Distributed Systems," 2016.
+    """
+    # Determine batch size for PyTorch backend
+    backend= str(backend).lower() 
+    if backend== 'torch':
+        try:
+            import torch
+            import torch.utils.data as Tc_data
+        except ImportError:
+            raise DependencyError(TORCH_DEP_EMSG)
+            
+        if torch.cuda.is_available():
+            batch_size = initial_batch_size
+            while batch_size <= max_batch_size:
+                try:
+                    data_loader = Tc_data.DataLoader(
+                        data_or_train_loader.dataset,
+                        batch_size=batch_size
+                    )
+
+                    # Test the batch size by running a single batch
+                    for batch in data_loader:
+                        inputs, targets = batch
+                        inputs = inputs.to(device)
+                        targets = targets.to(device)
+                        model(inputs)
+                        break  # Only need to test one batch
+
+                    if verbose:
+                        print(f"Batch size {batch_size} fits in memory.")
+                    batch_size *= 2  # Double the batch size for next iteration
+
+                except RuntimeError as e:
+                    if "out of memory" in str(e):
+                        torch.cuda.empty_cache()  # Free memory
+                        batch_size = max(batch_size // 2, initial_batch_size)
+                        if verbose:
+                            print(
+                                f"Out of memory! Largest batch size: {batch_size}."
+                            )
+                        return batch_size
+                    else:
+                        raise e
+            return min(batch_size, max_batch_size)
+        else:
+            if verbose:
+                print(
+                    "CUDA not available or not enough memory."
+                    " Using fallback batch size."
+                )
+            return default_size if default_size is not None else 32
+
+    # Determine batch size for TensorFlow backend
+    elif backend.lower() == 'tensorflow':
+        try:
+            import tensorflow as tf
+        except ImportError:
+            raise DependencyError(TF_DEP_EMSG)
+
+        if tf.config.list_physical_devices('GPU'):
+            batch_size = initial_batch_size
+            while batch_size <= max_batch_size:
+                try:
+                    # Prepare dataset for testing the batch size
+                    test_ds = prepare_tf_dataset(data_or_train_loader, batch_size)
+
+                    # Run a single batch through the model
+                    for inputs, targets in test_ds.take(1):
+                        model(inputs)
+
+                    if verbose:
+                        print(f"Batch size {batch_size} fits in memory.")
+                    batch_size *= 2
+
+                except tf.errors.ResourceExhaustedError:
+                    batch_size = max(batch_size // 2, initial_batch_size)
+                    if verbose:
+                        print(
+                            f"Out of memory! Largest batch size: {batch_size}."
+                        )
+                    return batch_size
+            return min(batch_size, max_batch_size)
+        else:
+            if verbose:
+                print(
+                    "No GPU available for TensorFlow or insufficient memory."
+                    " Using fallback batch size."
+                )
+            return default_size if default_size is not None else 32
+
+    # Fallback heuristic for other cases (non-GPU or non-supported backends)
+    else:
+        if default_size is not None:
+            if verbose:
+                print(f"Using fallback batch size: {default_size}")
+            return default_size
+
+        try:
+            # Analyze dataset to estimate optimal batch size
+            dataset_size, num_features = analyze_dataset(data_or_train_loader)
+            # Use heuristic based on number of features and dataset size
+            if num_features > dataset_size:
+                warnings.warn(
+                    "High number of features detected."
+                    " Using dataset_size // 4 for batch size."
+                )
+                heuristic_batch_size = max(1, dataset_size // 4)
+            else:
+                heuristic_batch_size = compute_smart_batch_size(
+                    dataset_size, num_features, max_batch_size)
+
+            if verbose:
+                print(f"Using heuristic batch size: {heuristic_batch_size}")
+            return heuristic_batch_size
+
+        except Exception:
+            warnings.warn(
+                "Unable to determine batch size using heuristics. "
+                "Using default batch size of 32."
+            )
+            if verbose:
+                print("Using default batch size: 32")
+            return 32
+
+@ensure_pkg(
+    "tensorflow", extra="Tensorflow is needed when backend is set to `tf`.",
+    )
+def prepare_tf_dataset(data_or_train_loader, batch_size):
+    """
+    Prepare a TensorFlow dataset with the specified batch size.
+
+    This function takes a TensorFlow Dataset or a compatible data 
+    structure and applies batching to it based on the provided `batch_size`.
+    It ensures that the data is properly batched for efficient training
+    with TensorFlow models.
+
+    Parameters
+    ----------
+    data_or_train_loader : tf.data.Dataset or TF_Dataset
+        The TensorFlow Dataset or compatible data to be batched. This can 
+        include any iterable TensorFlow data structures that support batching.
+    
+    batch_size : int
+        The number of samples per batch. This determines how many samples 
+        will be propagated through the network at once.
+    
+    Returns
+    -------
+    tf.data.Dataset
+        A batched TensorFlow dataset ready for training. The returned dataset 
+        will yield batches of size `batch_size`.
+    
+    Examples
+    --------
+    >>> import tensorflow as tf
+    >>> from gofast.tools.mlutils import _prepare_tf_dataset
+    >>> dataset = tf.data.Dataset.from_tensor_slices(
+        (tf.random.normal([100, 10]), tf.random.uniform([100], maxval=2, dtype=tf.int32)))
+    >>> batched_dataset = _prepare_tf_dataset(dataset, batch_size=32)
+    >>> for batch in batched_dataset.take(1):
+    ...     inputs, targets = batch
+    ...     print(inputs.shape, targets.shape)
+    (TensorShape([32, 10]), TensorShape([32]))
+    
+    Notes
+    -----
+    - This function is intended for internal use within the `mlutils` module.
+    - It assumes that the input `data_or_train_loader` is compatible with TensorFlow's 
+      batching operations. Unsupported data types will raise a `TypeError`.
+    
+    See Also
+    --------
+    tf.data.Dataset.batch : Apply batching to a TensorFlow dataset.
+    
+    References
+    ----------
+    .. [1] Abadi, M., et al., "TensorFlow: Large-Scale Machine Learning 
+           on Heterogeneous Distributed Systems," 2016.
+    """
+        
+    try:
+        import tensorflow as tf
+        from tensorflow.data import Dataset as TF_Dataset
+    except ImportError:
+        raise DependencyError(TORCH_DEP_EMSG)
+        
+    if isinstance(data_or_train_loader, TF_Dataset):
+        return data_or_train_loader.batch(batch_size)
+    elif isinstance(data_or_train_loader, tf.data.Dataset):
+        return data_or_train_loader.batch(batch_size)
+    else:
+        raise TypeError("Unsupported data type for TensorFlow backend.")
+
+
+@ensure_pkg(
+    "torch", extra="Torch is needed when backend is set to `torch`.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get("backend")=="torch"
+    )
+@ensure_pkg(
+    "tensorflow", extra="Tensorflow is needed when backend is set to `tf`.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get(
+        "backend") in ("tensorflow", "tf")
+    )
+def analyze_dataset(data_or_train_loader, backend=None):
+    """
+    Analyze the dataset to determine its size and number of features.
+
+    This function inspects the provided dataset or data loader to 
+    estimate the total number of samples (`dataset_size`) and the number 
+    of features (`num_features`) per sample. This information is crucial 
+    for determining an appropriate batch size and optimizing training 
+    performance.
+
+    Parameters
+    ----------
+    data_or_train_loader : torch.utils.data.Dataset, tf.data.Dataset,\
+        list, tuple, or np.ndarray
+        The dataset or data loader to be analyzed. It can be a PyTorch Dataset, 
+        TensorFlow Dataset, or standard Python iterable such as a list, tuple, 
+        or NumPy array.
+    
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        
+        - `dataset_size` (int): The total number of samples in the dataset.
+        - `num_features` (int): The number of features per sample.
+    
+    Examples
+    --------
+    >>> import torch
+    >>> from torch.utils.data import TensorDataset
+    >>> from gofast.tools.mlutils import _analyze_dataset
+    >>> dataset = TensorDataset(torch.randn(1000, 20), torch.randint(0, 2, (1000,)))
+    >>> size, features = _analyze_dataset(dataset)
+    >>> print(size, features)
+    1000 20
+    
+    >>> import tensorflow as tf
+    >>> from gofast.tools.mlutils import _analyze_dataset
+    >>> tf_dataset = tf.data.Dataset.from_tensor_slices(
+        (tf.random.normal([500, 15]), tf.random.uniform([500], maxval=2, dtype=tf.int32)))
+    >>> size, features = _analyze_dataset(tf_dataset)
+    >>> print(size, features)
+    500 15
+    
+    Notes
+    -----
+    - This function supports both PyTorch and TensorFlow datasets, as well as 
+      standard Python iterables like lists, tuples, and NumPy arrays.
+    - For high-dimensional data, `num_features` is determined based on the 
+      structure of the first sample.
+    
+    See Also
+    --------
+    get_batch_size : Main function to determine batch size based on dataset analysis.
+    get_tf_dataset_size : Helper function to estimate the size of a TensorFlow dataset.
+    
+    References
+    ----------
+    .. [1] Paszke, A., et al., "PyTorch: An Imperative Style, High-Performance
+          Deep Learning Library," in NeurIPS, 2019.
+    .. [2] Abadi, M., et al., "TensorFlow: Large-Scale Machine Learning on 
+         Heterogeneous Distributed Systems," 2016.
+    """
+    
+    backend= str(backend).lower() 
+
+    if backend=="torch": 
+        try:
+            import torch
+            import torch.utils.data as Tc_data
+        except ImportError:
+            raise DependencyError(TORCH_DEP_EMSG) 
+            
+        if isinstance(data_or_train_loader, (
+                torch.utils.data.Dataset, Tc_data.Dataset)):
+            
+            dataset_size = len(data_or_train_loader)
+            sample = data_or_train_loader[0]
+            if isinstance(sample, (list, tuple)):
+                num_features = len(sample[0])
+            elif isinstance(sample, dict):
+                num_features = len(sample)
+            else:
+                num_features = 1
+                
+    elif backend in ("tensorflow", "tf"): 
+        try:
+            import tensorflow as tf
+            from tensorflow.data import Dataset as TF_Dataset
+        except ImportError:
+            raise DependencyError(TF_DEP_EMSG) 
+    
+        if isinstance(data_or_train_loader, (tf.data.Dataset, TF_Dataset)):
+            dataset_size = get_tf_dataset_size(data_or_train_loader)
+            for sample in data_or_train_loader.take(1):
+                inputs, _ = sample
+                if isinstance(inputs, (list, tuple)):
+                    num_features = len(inputs)
+                elif isinstance(inputs, dict):
+                    num_features = len(inputs)
+                else:
+                    num_features = inputs.shape[-1] if len(inputs.shape) > 1 else 1
+                    
+    elif isinstance(data_or_train_loader, (list, tuple, np.ndarray)):
+        dataset_size = len(data_or_train_loader)
+        sample = data_or_train_loader[0]
+        if isinstance(sample, (list, tuple)):
+            num_features = len(sample)
+        elif isinstance(sample, dict):
+            num_features = len(sample)
+        else:
+            num_features = 1
+    else:
+        raise TypeError("Unsupported data type for dataset analysis.")
+    
+    return dataset_size, num_features
+
+@ensure_pkg(
+    "tensorflow", extra="Tensorflow is needed for getting tf dataset size.",
+    )
+def get_tf_dataset_size(tf_dataset):
+    """
+    Estimate the size of a TensorFlow dataset.
+
+    This function attempts to determine the number of samples in a 
+    TensorFlow dataset. It uses TensorFlow's `cardinality` method to estimate 
+    the dataset size. If the size cannot be determined, a `ValueError` is raised.
+
+    Parameters
+    ----------
+    tf_dataset : tf.data.Dataset
+        The TensorFlow dataset whose size is to be estimated.
+    
+    Returns
+    -------
+    int
+        The estimated number of samples in the TensorFlow dataset.
+    
+    Examples
+    --------
+    >>> import tensorflow as tf
+    >>> from gofast.tools.mlutils import _get_tf_dataset_size
+    >>> tf_dataset = tf.data.Dataset.from_tensor_slices(tf.random.normal([200, 10]))
+    >>> size = _get_tf_dataset_size(tf_dataset)
+    >>> print(size)
+    200
+    
+    Notes
+    -----
+    - This function relies on TensorFlow's `cardinality` method, which may 
+      return `tf.data.experimental.INFINITE_CARDINALITY` or 
+      `tf.data.experimental.UNKNOWN_CARDINALITY` for certain datasets.
+    - Ensure that the dataset is fully defined and does not have infinite or 
+      unknown cardinality before using this function.
+    
+    See Also
+    --------
+    tf.data.Dataset.cardinality : TensorFlow method to determine dataset size.
+    _analyze_dataset : Helper function that uses this method to analyze datasets.
+    
+    References
+    ----------
+    .. [1] Abadi, M., et al., "TensorFlow: Large-Scale Machine 
+      Learning on Heterogeneous Distributed Systems," 2016.
+    """
+        
+    try:
+        import tensorflow as tf
+    except ImportError:
+        raise DependencyError(TF_DEP_EMSG) 
+    
+    try:
+        cardinality = tf.data.experimental.cardinality(tf_dataset).numpy()
+        if cardinality == tf.data.experimental.INFINITE_CARDINALITY:
+            raise ValueError("Dataset has infinite cardinality.")
+        if cardinality == tf.data.experimental.UNKNOWN_CARDINALITY:
+            raise ValueError("Unable to determine TensorFlow dataset size.")
+        return int(cardinality)
+    except Exception:
+        raise ValueError("Unable to determine TensorFlow dataset size.")
+
+def compute_smart_batch_size( 
+        dataset_size=None, num_features=None, data=None, max_batch_size=512):
+    """
+    Compute a smart batch size based on dataset size and number of features.
+
+    This function employs a heuristic to determine an appropriate batch 
+    size by considering both the total number of samples (`dataset_size`) and 
+    the number of features (`num_features`) per sample. The heuristic aims to 
+    balance memory usage and training efficiency.
+
+    Parameters
+    ----------
+    dataset_size : int
+        The total number of samples in the dataset. Is essential if `data` 
+        is ``None``.
+    
+    num_features : int, optional
+        The number of features per sample. Should be provided
+        if `data` is ``None``.
+    
+    data: ArrayLike or pd.DataFrame, optional 
+       If given, `dataset_size` and `num_features` should be determined 
+       accordingly if one or both are not provided. 
+    
+    max_batch_size : int, default=512
+        The maximum allowed batch size. The computed batch size will not exceed 
+        this value. Default value is set to ``512``.
+    
+    Returns
+    -------
+    int
+        The computed smart batch size suitable for training.
+    
+    Examples
+    --------
+    >>> from gofast.tools.mlutils import compute_smart_batch_size
+    >>> batch_size = compute_smart_batch_size(1000, 50, 512)
+    >>> print(batch_size)
+    32
+    
+    Notes
+    -----
+    - The function uses logarithmic scaling based on the dataset size to 
+      determine an initial batch size estimate.
+    - If the number of features exceeds the dataset size, a more conservative 
+      batch size is chosen to prevent potential overfitting and memory issues.
+    
+    See Also
+    --------
+    get_batch_size : Main function that utilizes this helper for batch size computation.
+    
+    References
+    ----------
+    .. [1] LeCun, Y., et al., "Gradient-Based Learning Applied to 
+       Document Recognition," 1998.
+    """
+    if data is not None: 
+        if isinstance ( data, (np.ndarray, pd.DataFrame)): 
+            dataset_size = dataset_size or data.shape [0] 
+            num_features = num_features or data.shape [1]
+            
+    # Logarithmic scaling based on dataset size
+    batch_size = int(math.log(dataset_size + 1, 2))  # Avoid log(0)
+    batch_size = max(32, batch_size)
+    
+    # Adjust batch size based on number of features
+    if num_features > dataset_size:
+        batch_size = max(1, dataset_size // 4)
+    else:
+        batch_size = min(batch_size, max_batch_size)
+    
+    return batch_size
+
+@ensure_pkg(
+    "torch", extra="Torch is needed when backend is set to `torch`.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get("backend")=="torch"
+    )
+@ensure_pkg(
+    "tensorflow", extra="Tensorflow is needed when backend is set to `tf`.",
+    partial_check= True,
+    condition= lambda *args, **kwargs: kwargs.get(
+        "backend")in ("tensorflow", "tf")
+    )
+def dynamic_batch_size(
+    current_batch_size, performance_metrics, *,
+    accuracy_threshold=0.90, scale_factor=2,
+    default_size=None, backend='torch', verbose=0
+):
+    """
+    Dynamically adjust the batch size based on model performance.
+
+    This function modifies the batch size during training based on the 
+    evaluation of performance metrics such as accuracy. If the performance 
+    meets or exceeds a specified threshold, the batch size is scaled up by 
+    a defined factor to potentially enhance training efficiency. If not, 
+    the batch size remains unchanged or is set to a default value.
+
+    Parameters
+    ----------
+    current_batch_size : int
+        The current batch size being used in training.
+    
+    performance_metrics : dict
+        A dictionary containing performance metrics, such as 
+        {'accuracy': 0.92, 'loss': 0.25}. These metrics are used to decide 
+        whether to adjust the batch size.
+    
+    accuracy_threshold : float, optional
+        The threshold of accuracy at which to increase the batch size. If the 
+        model's accuracy meets or exceeds this value, the batch size will be 
+        increased. Default is 0.90.
+    
+    scale_factor : int, optional
+        The factor by which to scale the batch size when performance improves.
+        For example, a `scale_factor` of 2 will double the batch size. Default 
+        is 2.
+    
+    default_size : int, optional
+        The fallback batch size to use if no improvement in performance is 
+        detected or if the backend is unsupported. Default is None, which means 
+        the function will retain the `current_batch_size`.
+    
+    backend : str, optional
+        The backend to use for adjustment. This can either be 'torch' for 
+        PyTorch or 'tensorflow' for TensorFlow. Default is 'torch'.
+    
+    verbose : int, optional
+        The verbosity level. If set to 1, the function will print information 
+        about the batch size adjustment process. Default is 0 (silent).
+    
+    Returns
+    -------
+    int
+        The adjusted batch size based on performance metrics.
+    
+    Examples
+    --------
+    >>> from gofast.tools.mlutils import dynamic_batch_size
+    >>> performance_metrics = {'accuracy': 0.92, 'loss': 0.25}
+    >>> new_batch_size = dynamic_batch_size(
+    ...     current_batch_size=32,
+    ...     performance_metrics=performance_metrics,
+    ...     backend='torch',
+    ...     verbose=1
+    ... )
+    Performance improved (accuracy: 0.92). Increasing batch size to 64.
+    >>> print(new_batch_size)
+    64
+    
+    Notes
+    -----
+    - The function supports both PyTorch and TensorFlow backends, adjusting 
+      the batch size accordingly based on the specified `backend`.
+    - It is recommended to monitor training performance continuously to 
+      ensure that increasing the batch size does not negatively impact model 
+      convergence or generalization.
+    
+    See Also
+    --------
+    get_batch_size : Main function that determines the initial batch size.
+    _analyze_dataset : Helper function used for dataset analysis.
+    _prepare_tf_dataset : Helper function used for preparing TensorFlow datasets.
+    
+    References
+    ----------
+    .. [1] Smith, L. N. (2018). "A disciplined approach to neural 
+          network hyperparameters: Part 1 - learning rate, batch size, 
+          momentum, and weight decay." arXiv preprint arXiv:1803.09820.
+    """
+    # Adjust batch size for PyTorch backend
+    if backend.lower() == 'torch':
+        try:
+            import torch
+        except ImportError:
+            raise DependencyError(TORCH_DEP_EMSG) 
+        if torch.cuda.is_available():
+            accuracy = performance_metrics.get('accuracy', 0)
+            if accuracy >= accuracy_threshold:
+                new_batch_size = current_batch_size * scale_factor
+                if verbose:
+                    print(
+                        f"Performance improved (accuracy: {accuracy}). "
+                        f"Increasing batch size to {new_batch_size}."
+                    )
+                return new_batch_size
+            else:
+                if verbose:
+                    print(
+                        f"Performance not improved (accuracy: {accuracy}). "
+                        f"Keeping batch size at {current_batch_size}."
+                    )
+                return current_batch_size
+        else:
+            if default_size is not None:
+                if verbose:
+                    print(f"Using fallback batch size: {default_size}")
+                return default_size
+            else:
+                if verbose:
+                    print(
+                        "CUDA not available. Keeping batch size at "
+                        f"{current_batch_size}."
+                    )
+                return current_batch_size
+
+    # Adjust batch size for TensorFlow backend
+    elif backend.lower() == 'tensorflow':
+        try:
+            import tensorflow as tf
+        except ImportError:
+            raise DependencyError(TF_DEP_EMSG) 
+    
+        if tf.config.list_physical_devices('GPU'):
+            accuracy = performance_metrics.get('accuracy', 0)
+            if accuracy >= accuracy_threshold:
+                new_batch_size = current_batch_size * scale_factor
+                if verbose:
+                    print(
+                        f"Performance improved (accuracy: {accuracy}). "
+                        f"Increasing batch size to {new_batch_size}."
+                    )
+                return new_batch_size
+            else:
+                if verbose:
+                    print(
+                        f"Performance not improved (accuracy: {accuracy}). "
+                        f"Keeping batch size at {current_batch_size}."
+                    )
+                return current_batch_size
+        else:
+            if default_size is not None:
+                if verbose:
+                    print(f"Using fallback batch size: {default_size}")
+                return default_size
+            else:
+                if verbose:
+                    print(
+                        "No GPU available for TensorFlow. Keeping batch size at "
+                        f"{current_batch_size}."
+                    )
+                return current_batch_size
+
+    # Fallback strategy for unsupported backends
+    else:
+        if default_size is not None:
+            if verbose:
+                print(f"Using fallback batch size: {default_size}")
+            return default_size
+        else:
+            if verbose:
+                print(
+                    "No backend strategy available. Keeping batch size at "
+                    f"{current_batch_size}."
+                )
+            return current_batch_size
 
 def one_click_prep (
     data: DataFrame, 
@@ -261,7 +1061,6 @@ def one_click_prep (
     # Attempt to retrieve processed column names for creating
     # a DataFrame from the transformed data.
     try:
-        
         if categorical_features: 
             processed_columns = numeric_features + list(get_feature_names(
                 preprocessor.named_transformers_['cat']['onehot'], categorical_features)
@@ -445,6 +1244,8 @@ def soft_encoder(
       could appear in future data.
 
     """
+    from .datautils import nan_to_na 
+    
     # Convert ellipsis inputs to False for get_dummies, parse_cols,
     # return_cat_codes if not explicitly defined
     get_dummies, parse_cols, return_cat_codes = ellipsis2false(
@@ -799,7 +1600,7 @@ def bin_counting(
         
     if isinstance (bin_columns, str) and bin_columns=='auto': 
         ttname = tname if isinstance (tname, str) else None # pass 
-        _, bin_columns = process_df(
+        _, bin_columns = process_data_types(
             data, target_name= ttname,
             exclude_target=True if ttname else False 
         )
@@ -1304,6 +2105,9 @@ def get_correlated_features(
                                      fmt=None, threshold=.95
                                      )
     """
+    data = build_data_if(data, to_frame=True, raise_exception= True, 
+                         input_name="col")
+    
     th= copy.deepcopy(threshold) 
     threshold = str(threshold)  
     try : 
@@ -1638,7 +2442,7 @@ def fetch_tgz(
     if show_progress:
         print("Download and extraction complete.")
 
-def process_df(
+def process_data_types(
     data,
     target_name=None, 
     exclude_target=False, 
@@ -1719,17 +2523,17 @@ def process_df(
 
     Examples
     --------
-    >>> from gofast.tools.mlutils import process_df
+    >>> from gofast.tools.mlutils import process_data_types 
     >>> df = pd.DataFrame({'A': [1, 2, 3], 
     ...                    'B': ['a', 'b', 'c'], 
     ...                    'C': pd.to_datetime(['2020-01-01', '2020-01-02', '2020-01-03'])})
-    >>> numeric_columns, categorical_columns = process_df(df)
+    >>> numeric_columns, categorical_columns = process_data_types(df)
     >>> numeric_columns
     ['A']
     >>> categorical_columns
     ['B']
 
-    >>> numeric_df, categorical_df = process_df(df, return_frame=True)
+    >>> numeric_df, categorical_df = process_data_types(df, return_frame=True)
     >>> numeric_df
        A
     0  1
@@ -1741,7 +2545,7 @@ def process_df(
     1  b
     2  c
 
-    >>> numeric_columns, categorical_columns, target_columns = process_df(
+    >>> numeric_columns, categorical_columns, target_columns = process_data_types(
     ...     df, target_name='A', exclude_target=True, return_target=True)
     >>> numeric_columns
     []
@@ -1814,374 +2618,8 @@ def process_df(
         else:
             return numeric_df.columns.tolist(), categorical_df.columns.tolist()
 
-def base_url_tgz_fetch(
-    data_url: str, tgz_filename: str,  
-    data_path: Optional[str]=None, 
-    file_to_retrieve: Optional[str] = None, 
-    **kwargs
-    ) -> Union[str, None]:
-    """
-    Fetches a tgz file from a given URL, saves it to a specified directory, 
-    and optionally extracts a specific file from it.
-
-    This function downloads a .tgz file from the specified URL and saves it to 
-    the given directory. If a specific file  within the .tgz archive is 
-    specified, it attempts to extract this file. If no specific file is 
-    mentioned, it will extract all contents of the archive.
-
-    Parameters
-    ----------
-    data_url : str
-        The URL where the .tgz file is located.
-    data_path : str
-        The absolute path to the directory where the .tgz file will be saved.
-    tgz_filename : str
-        The name of the .tgz file to be downloaded.
-    file_to_retrieve : Optional[str], optional
-        The specific file within the .tgz archive to extract. If None, all 
-        contents of the archive are extracted, by default None.
-    **kwargs : dict
-        Additional keyword arguments to be passed to the extraction method.
-
-    Returns
-    -------
-    Union[str, None]
-        The path to the extracted file if a specific file is requested,
-        None otherwise.
-
-    Examples
-    --------
-    >>> from gofast.tools.mlutils import base_url_tgz_fetch
-    >>> data_url = 'https://example.com/data.tar.gz'
-    >>> data_path = '/path/to/save/data'
-    >>> tgz_filename = 'data.tar.gz'
-    >>> file_to_retrieve = 'data.csv'
-    >>> extracted_file_path = base_url_tgz_fetch(
-    ... data_url, tgz_filename, data_path,file_to_retrieve)
-    >>> print(extracted_file_path)
-
-    """
-    import urllib.request
-    # Use a default data directory if none is provided
-    data_path = data_path or os.path.join(os.getcwd(), 'tgz_data')
-    
-    if not os.path.isdir(data_path):
-        os.makedirs(data_path, exist_ok=True)
-        
-    tgz_path = os.path.join(data_path, tgz_filename)
-
-    # Attempt to download the .tgz file
-    try:
-        urllib.request.urlretrieve(data_url, tgz_path)
-    except Exception as e:
-        print(f"Failed to download {tgz_filename} from {data_url}. Error: {e}")
-        return None
-
-    # If a specific file to retrieve is not specified, extract all contents
-    if not file_to_retrieve:
-        try:
-            with tarfile.open(tgz_path, "r:gz") as tar:
-                tar.extractall(path=data_path)
-        except Exception as e:
-            print(f"Failed to extract {tgz_filename}. Error: {e}")
-            return None
-        return None
-
-    # If a specific file is specified, attempt to extract just that file
-    try:
-        with tarfile.open(tgz_path, "r:gz") as tar:
-            tar.extract(file_to_retrieve, path=data_path, **kwargs)
-            return os.path.join(data_path, file_to_retrieve)
-    except Exception as e:
-        print(f"Failed to extract {file_to_retrieve} from {tgz_filename}. Error: {e}")
-        return None
-
-def fetch_tgz_from_url(
-    data_url: str, tgz_filename: str, 
-    data_path: Optional[Union [str, Path]]=None, 
-    file_to_retrieve: Optional[str] = None, 
-    **kwargs
-    ) -> Optional[Path]:
-    """
-    Fetches a tgz file from a given URL, saves it to a specified directory, 
-    and optionally extracts a specific file from it.
-
-    This function downloads a .tgz file from the specified URL and saves it to 
-    the given directory. If a specific file  within the .tgz archive is 
-    specified, it attempts to extract this file. If no specific file is 
-    mentioned, it will extract all contents of the archive.
-
-    Parameters
-    ----------
-    data_url : str
-        The URL where the .tgz file is located.
-    data_path : str
-        The absolute path to the directory where the .tgz file will be saved.
-    tgz_filename : str
-        The name of the .tgz file to be downloaded.
-    file_to_retrieve : Optional[str], optional
-        The specific file within the .tgz archive to extract. If None, all 
-        contents of the archive are extracted, by default None.
-    **kwargs : dict
-        Additional keyword arguments to be passed to the extraction method.
-
-    Returns
-    -------
-    Union[str, None]
-        The path to the extracted file if a specific file is requested,
-        None otherwise.
-
-    Examples
-    --------
-    >>> from gofast.tools.mlutils import fetch_tgz_from_url
-    >>> data_url = 'https://example.com/data.tar.gz'
-    >>> data_path = '/path/to/save/data'
-    >>> tgz_filename = 'data.tar.gz'
-    >>> file_to_retrieve = 'data.csv'
-    >>> extracted_file_path = fetch_tgz_from_url(
-    ... data_url, tgz_filename, data_path,file_to_retrieve)
-    >>> print(extracted_file_path)
-
-    """
-    # Use a default data directory if none is provided
-    data_path = data_path or os.path.join(os.getcwd(), 'tgz_data')
-    
-    if not os.path.isdir(data_path):
-        os.makedirs(data_path, exist_ok=True)
-        
-    data_path = Path(data_path)
-    tgz_path = data_path / tgz_filename
-
-    # Setup tqdm progress bar for the download
-    with tqdm(unit='B', unit_scale=True, miniters=1, desc=tgz_filename, ncols=100) as t:
-        urllib.request.urlretrieve(data_url, tgz_path, reporthook=download_progress_hook(t))
-
-    # Extract specified file or entire archive
-    try:
-        with tarfile.open(tgz_path, "r:gz") as tar:
-            if file_to_retrieve:
-                tar.extract(file_to_retrieve, path=data_path, **kwargs)
-                return data_path / file_to_retrieve
-            else:
-                tar.extractall(path=data_path)
-    except (tarfile.TarError, KeyError) as e:
-        print(f"Error extracting {'file' if file_to_retrieve else 'archive'}: {e}")
-        return None
-
-    return None
-
-def _extract_with_progress(
-        tar: tarfile.TarFile, member: tarfile.TarInfo, path: Path):
-    """
-    Extracts a single member from a tarfile with progress reporting.
-
-    Parameters
-    ----------
-    tar : tarfile.TarFile
-        The tarfile object opened in read mode.
-    member : tarfile.TarInfo
-        The specific member within the tarfile to extract.
-    path : Path
-        The path to extract the member to.
-    """
-    # Initialize a progress bar for the extraction process
-    with tqdm(total=member.size, desc=f"Extracting {member.name}",
-              unit='B', unit_scale=True) as progress_bar:
-        # Extract member and update the progress bar accordingly
-        def custom_read(size):
-            progress_bar.update(size)
-            return member_file.read(size)
-        
-        # Open the member file for reading and wrap the read method for progress updates
-        with tar.extractfile(member) as member_file:
-            with open(path / member.name, 'wb') as out_file:
-                shutil.copyfileobj(member_file, out_file, length=1024*1024,
-                                   callback=lambda x: progress_bar.update(1024*1024))
-
-def fetch_tgz_locally(
-    tgz_file: str, 
-    filename: str, 
-    savefile: str = 'tgz', 
-    rename_outfile: Optional[str] = None
-    ) -> str:
-    """
-    Fetches and optionally renames a file from a tar archive with progress
-    reporting.
-    
-    Parameters
-    ----------
-    tgz_file : str or Path
-        The full path to the tar file.
-    filename : str
-        The target file to fetch from the tar archive.
-    savefile : str or Path, optional
-        The destination path to save the retrieved file.
-    rename_outfile : str or Path, optional
-        The new name for the fetched file, if desired.
-
-    Returns
-    -------
-    str
-        The path to the fetched and possibly renamed file.
-        
-    Example
-    -------
-    >>> from gofast.tools.mlutils import fetch_tgz_locally
-    >>> fetch_tgz_locally('data/__tar.tgz/fmain.bagciv.data.tar.gz',
-    ...                      'dataset.csv', 'extracted', 
-    ...                      rename_outfile='main.bagciv.data.csv')
-    >>> # This will extract 'dataset.csv' from the tar.gz, save it to 
-    >>> # 'extracted' directory, and rename it to 'main.bagciv.data.csv'.
-    
-    """
-    tgz_path = Path(tgz_file)
-    save_path = Path(savefile)
-    save_path.mkdir(parents=True, exist_ok=True)
-
-    if not tgz_path.is_file():
-        raise FileNotFoundError(f"Source {tgz_file!r} is not a valid file.")
-
-    with tarfile.open(tgz_path) as tar:
-        member = next((m for m in tar.getmembers() if m.name.endswith(filename)), None)
-        if member:
-            _extract_with_progress(tar, member, save_path)
-            extracted_file_path = save_path / member.name
-            final_file_path = save_path / (rename_outfile if rename_outfile else filename)
-            if extracted_file_path != final_file_path:
-                extracted_file_path.rename(final_file_path)
-                # Cleanup if the extracted file was within a subdirectory
-                if extracted_file_path.parent != save_path:
-                    shutil.rmtree(extracted_file_path.parent, ignore_errors=True)
-        else:
-            raise FileNotFoundError(f"File {filename} not found in {tgz_file}.")
-
-    print(f"--> '{final_file_path}' was successfully decompressed from"
-          f" '{tgz_path.name}' and saved to '{save_path}'.")
-    
-    return str(final_file_path)
-
-def base_local_tgz_fetch(
-    tgz_file: str, 
-    filename: str, 
-    savefile: str = 'tgz', 
-    rename_outfile: Optional[str] = None
-    ) -> str:
-    """
-    Fetches a single file from an archived tar file and optionally renames it.
-
-    Parameters
-    ----------
-    tgz_file : str or Path
-        The full path to the tar file.
-    filename : str
-        The target file to fetch from the tar archive.
-    savefile : str or Path, optional
-        The destination path to save the retrieved file. Defaults to 'tgz'.
-    rename_outfile : str or Path, optional
-        The new name for the fetched file. If not provided, the original name is used.
-
-    Returns
-    -------
-    str
-        The path to the fetched (and possibly renamed) file.
-
-    Example
-    -------
-    >>> fetch_tgz_locally('data/__tar.tgz/fmain.bagciv.data.tar.gz',
-    ...                      'dataset.csv', 'extracted', 
-    ...                      rename_outfile='main.bagciv.data.csv')
-    >>> # This will extract 'dataset.csv' from the tar.gz, save it to 
-    >>> # 'extracted' directory, and rename it to 'main.bagciv.data.csv'.
-    """
-    tgz_path = Path(tgz_file)
-    save_path = Path(savefile)
-    save_path.mkdir(parents=True, exist_ok=True)
-
-    def retrieve_target_member(tar_obj, target_extension):
-        """Retrieve the main member that matches the target filename extension."""
-        return next((m for m in tar_obj.getmembers() if Path
-                     (m.name).suffix == target_extension), None)
-
-    if not tgz_path.is_file():
-        raise FileNotFoundError(f"Source {tgz_file!r} is not a valid file.")
-
-    with tarfile.open(tgz_path) as tar:
-        target_extension = Path(filename).suffix
-        target_member = retrieve_target_member(tar, target_extension)
-        if target_member:
-            tar.extract(target_member, path=save_path)
-            extracted_file_path = save_path / target_member.name
-            final_file_path = save_path / (rename_outfile if rename_outfile else filename)
-            if extracted_file_path != final_file_path:
-                extracted_file_path.rename(final_file_path)
-                # Cleanup if the extracted file was within a subdirectory
-                if extracted_file_path.parent != save_path:
-                    shutil.rmtree(extracted_file_path.parent)
-        else:
-            raise FileNotFoundError(f"File {filename} not found in {tgz_file}.")
-
-    print(f"--> '{final_file_path}' was successfully decompressed from"
-          f" '{tgz_path.name}' and saved to '{save_path}'.")
-    
-    return str(final_file_path)
-
-
-def load_csv(data_path: str, delimiter: Optional[str] = ',', **kwargs
-             ) -> DataFrame:
-    """
-    Loads a CSV file into a pandas DataFrame.
-
-    Parameters
-    ----------
-    data_path : str
-        The file path to the CSV file to be loaded.
-    delimiter : str, optional
-        The delimiter character used in the CSV file. Defaults to ','.
-    **kwargs : dict
-        Additional keyword arguments passed to `pandas.read_csv`.
-
-    Returns
-    -------
-    DataFrame
-        A DataFrame containing the loaded data.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the specified file does not exist.
-    ValueError
-        If the specified file is not a CSV file.
-
-    Examples
-    --------
-    Assuming you have a CSV file named 'example.csv' with the following content:
-    
-    ```
-    name,age
-    Alice,30
-    Bob,25
-    ```
-
-    You can load this file into a DataFrame like this:
-
-    >>> from gofast.tools.mlutils import load_csv
-    >>> df = load_csv('example.csv')
-    >>> print(df)
-       name  age
-    0  Alice   30
-    1    Bob   25
-    """
-    if not os.path.isfile(data_path):
-        raise FileNotFoundError(f"The file '{data_path}' does not exist.")
-    
-    if not data_path.lower().endswith('.csv'):
-        raise ValueError(
-            "The specified file is not a CSV file. Please provide a valid CSV file.")
-    
-    return pd.read_csv(data_path, delimiter=delimiter, **kwargs)
-
 def discretize_categories(
-    data: Union[pd.DataFrame, pd.Series],
+    data: Union[DataFrame, Series],
     in_cat: str,
     new_cat: Optional[str] = None,
     divby: float = 1.5,
@@ -2215,6 +2653,7 @@ def discretize_categories(
 
     Examples
     --------
+    >>> from gofast.tools.mlutils import discretize_categories
     >>> df = pd.DataFrame({'age': [23, 45, 18, 27]})
     >>> discretized_df = discretize_categories(df, 'age', 'age_cat', divby=10, higherclass=3)
     >>> print(discretized_df)
@@ -2227,6 +2666,10 @@ def discretize_categories(
     Note: The 'age_cat' column contains discretized categories based on the 
     'age' column.
     """
+    if isinstance (data, pd.Series): 
+        data = data.to_frame() 
+    is_frame(data, df_only =True, raise_exception=True, objname='data')
+    
     if new_cat is None:
         new_cat = 'new_category'
     
@@ -2408,175 +2851,68 @@ def fetch_model(
 
     return model_data
 
-def serialize_data(
-    data: Any,
-    filename: Optional[str] = None,
-    savepath: Optional[str] = None,
-    to: Optional[str] = None,
-    verbose: int = 0
+def fetch_tgz2(
+    tgz_file: str, 
+    filename: str, 
+    savefile: str = 'tgz', 
+    rename_outfile: Optional[str] = None
 ) -> str:
     """
-    Serialize and save data to a binary file using either joblib or pickle.
+    Extracts a specified file from a tar archive and saves it to a given directory.
 
     Parameters
     ----------
-    data : Any
-        The object to be serialized and saved.
-    filename : str, optional
-        The name of the file to save. If None, a name is generated automatically.
-    savepath : str, optional
-        The directory where the file should be saved. If it does not exist, 
-        it is created. If None, the current working directory is used.
-    to : str, optional
-        Specify the serialization method: 'joblib' or 'pickle'. 
-        If None, defaults to 'joblib'.
-    verbose : int, optional
-        Verbosity level. More messages are displayed for values greater than 0.
+    tgz_file : str
+        The full path to the tar file.
+    filename : str
+        The specific file to extract from the tar archive.
+    savefile : str, optional
+        Directory to save the extracted file, by default 'tgz'.
+    rename_outfile : str, optional
+        New name for the extracted file, if renaming is desired.
 
     Returns
     -------
     str
-        The path to the saved file.
+        The full path to the extracted (and possibly renamed) file.
 
     Raises
     ------
-    ValueError
-        If 'to' is not 'joblib', 'pickle', or None.
-    TypeError
-        If 'to' is not a string.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> data = (np.array([0, 1, 3]), np.array([0.2, 4]))
-    >>> filename = serialize_data(data, filename='__XTyT.pkl', to='pickle', 
-                                  savepath='gofast/datasets')
-    """
-    if filename is None:
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        filename = f"__mydumpedfile_{timestamp}.pkl"
-
-    if to:
-        if not isinstance(to, str):
-            raise TypeError(f"Serialization method 'to' must be a string, not {type(to)}.")
-        to = to.lower()
-        if to not in ('joblib', 'pickle'):
-            raise ValueError("Unknown serialization method 'to'. Must be"
-                             " 'joblib' or 'pickle'.")
-
-    if not filename.endswith('.pkl'):
-        filename += '.pkl'
-    
-    full_path = os.path.join(savepath, filename) if savepath else filename
-    
-    if savepath and not os.path.exists(savepath):
-        os.makedirs(savepath)
-    
-    try:
-        if to == 'pickle' or to is None:
-            with open(full_path, 'wb') as file:
-                pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
-            if verbose:
-                print(f"Data serialized using pickle and saved to {full_path!r}.")
-        elif to == 'joblib':
-            joblib.dump(data, full_path)
-            if verbose:
-                print(f"Data serialized using joblib and saved to {full_path!r}.")
-    except Exception as e:
-        raise IOError(f"An error occurred during data serialization: {e}")
-    
-    return full_path
-
-def deserialize_data(filename: str, verbose: int = 0) -> Any:
-    """
-    Deserialize and load data from a serialized file using joblib or pickle.
-
-    Parameters
-    ----------
-    filename : str
-        The name or path of the file containing the serialized data.
-
-    verbose : int, optional
-        Verbosity level. More messages are displayed for values greater 
-        than 0.
-
-    Returns
-    -------
-    Any
-        The data loaded from the serialized file.
-
-    Raises
-    ------
-    TypeError
-        If 'filename' is not a string.
-
     FileNotFoundError
-        If the specified file does not exist.
+        If the specified `tgz_file` or `filename` within the tar archive does not exist.
 
     Examples
     --------
-    >>> data = deserialize_data('path/to/serialized_data.pkl')
+    >>> from gofast.tools.mlutils import fetch_tgz
+    >>> fetch_tgz('data/__tar.tgz/fmain.bagciv.data.tar.gz', 'dataset.csv',
+    ...           'extracted', rename_outfile='main.bagciv.data.csv')
     """
+    tgz_path = Path(tgz_file)
+    save_path = Path(savefile)
+    save_path.mkdir(parents=True, exist_ok=True)
 
-    if not isinstance(filename, str):
-        raise TypeError("Expected 'filename' to be a string,"
-                        f" got {type(filename)} instead.")
-    
-    if not os.path.isfile(filename):
-        raise FileNotFoundError(f"File {filename!r} does not exist.")
+    if not tgz_path.is_file():
+        raise FileNotFoundError(f"Source {tgz_file!r} is not a valid file.")
 
-    try:
-        data = joblib.load(filename)
-        if verbose:
-            print(f"Data loaded successfully from {filename!r} using joblib.")
-    except Exception as joblib_error:
-        try:
-            with open(filename, 'rb') as file:
-                data = pickle.load(file)
-            if verbose:
-                print(f"Data loaded successfully from {filename!r} using pickle.")
-        except Exception as pickle_error:
-            raise IOError(f"Failed to load data from {filename!r}. "
-                          f"Joblib error: {joblib_error}, Pickle error: {pickle_error}")
-    if data is None:
-        raise ValueError(f"Data in {filename!r} could not be deserialized."
-                         " The file may be corrupted.")
+    with tarfile.open(tgz_path) as tar:
+        member = next((m for m in tar.getmembers() if m.name.endswith(filename)), None)
+        if member:
+            tar.extract(member, path=save_path)
+            extracted_file_path = save_path / member.name
+            final_file_path = save_path / (rename_outfile if rename_outfile else filename)
+            if extracted_file_path != final_file_path:
+                extracted_file_path.rename(final_file_path)
+                if extracted_file_path.parent != save_path:
+                    shutil.rmtree(extracted_file_path.parent, ignore_errors=True)
+        else:
+            raise FileNotFoundError(f"File {filename} not found in {tgz_file}.")
 
-    return data
+    print(f"--> '{final_file_path}' was successfully extracted from '{tgz_path.name}' "
+          f"and saved to '{save_path}'.")
+    return str(final_file_path)
 
 
-def subprocess_module_installation (module, upgrade =True ): 
-    """ Install  module using subprocess.
-    :param module: str, module name 
-    :param upgrade:bool, install the lastest version.
-    """
-    import sys 
-    import subprocess 
-    #implement pip as subprocess 
-    # refer to https://pythongeeks.org/subprocess-in-python/
-    MOD_IMP=False 
-    print(f'---> Module {module!r} installation will take a while,'
-          ' please be patient...')
-    cmd = f'<pip install {module}> | <python -m pip install {module}>'
-    try: 
-
-        upgrade ='--upgrade' if upgrade else ''
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install',
-        f'{module}', f'{upgrade}'])
-        reqs = subprocess.check_output([sys.executable,'-m', 'pip',
-                                        'freeze'])
-        [r.decode().split('==')[0] for r in reqs.split()]
-        _logger.info(f"Intallation of `{module}` and dependancies"
-                     "was successfully done!") 
-        MOD_IMP=True
      
-    except: 
-        _logger.error(f"Fail to install the module =`{module}`.")
-        print(f'---> Module {module!r} installation failed, Please use'
-           f'  the following command {cmd} to manually install it.')
-    return MOD_IMP 
-        
-                
 def _assert_sl_target (target,  df=None, obj=None): 
     """ Check whether the target name into the dataframe for supervised 
     learning.
@@ -4086,7 +4422,7 @@ def soft_scaler(
         This allows selective processing of data, avoiding alterations to the
         specified columns.
     verbose : int, default=0
-        If > 0, print messages about the processing.
+        If > 0, warning messages about the processing.
         
     **kwargs : additional keyword arguments
         Additional fitting parameters to pass to the scaler.
@@ -4125,7 +4461,8 @@ def soft_scaler(
         exclude=['number']).columns if input_is_dataframe else []
 
     if verbose > 0 and len(cat_features) > 0:
-        print("Note: Categorical data detected and excluded from scaling.")
+        warnings.warn(
+            "Note: Categorical data detected and excluded from scaling.")
 
     kind= kind if isinstance(kind, str) else kind.__name__
     scaler = _determine_scaler(
@@ -4330,9 +4667,354 @@ def get_feature_contributions(X, model=None, view=False):
 
     return shap_values
 
+          
+def smart_label_classifier(
+    y: ArrayLike, *,
+    values: Union[float, List[float], None] = None,
+    labels: Union[int, str, List[str]] = None,
+    order: str = 'soft',
+    func: Optional[Callable[[float], Union[int, str]]] = None,
+    raise_warn: bool = True
+) -> np.ndarray:
+    """
+    Maps a numeric array into class labels based on specified thresholds or
+    a custom mapping function. The `smart_label_classifier` function 
+    categorizes an array of continuous values into distinct classes, either
+    by using predefined threshold values (`values`) or by applying a custom
+    function (`func`). Optional `labels` can be used to name the categories.
+
+    .. math::
+        Y_i = 
+        \begin{cases} 
+            L_1, & \text{if } y_i \leq v_1 \\
+            L_2, & \text{if } v_1 < y_i \leq v_2 \\
+            \vdots \\
+            L_{n+1}, & \text{if } y_i > v_n \\
+        \end{cases}
+
+    where :math:`y_i` represents the value of the `i`-th item in `y`, 
+    and :math:`L` denotes the class labels corresponding to thresholds 
+    :math:`v`.
+
+    Parameters
+    ----------
+    y : ArrayLike
+        One-dimensional array of numeric values to be categorized.
+
+    values : float, list of float, optional
+        Threshold values for categorization. If `values` is provided,
+        items in `y` are mapped based on these thresholds. For instance,
+        if `values = [1.0, 2.5]`, three classes will be generated: one
+        for items less than or equal to 1.0, one for items between 1.0
+        and 2.5, and one for items greater than 2.5.
+
+    labels : int, str, or list of str, optional
+        Labels for the resulting categories. If an integer is provided, 
+        it specifies the number of classes to generate in `y` 
+        automatically when `func` and `values` are `None`. For example, 
+        if `labels=3`, the function divides `y` into three classes. If 
+        `labels` is a list, each element should correspond to a class 
+        created by `values` + 1. Mismatches raise an error in strict mode.
+
+    order : {'soft', 'strict'}, default='soft'
+        Mode to control the handling of `values`. If `order='strict'`,
+        items in `y` must match `values` exactly; otherwise, approximate
+        values are substituted. A warning is issued in soft mode if a 
+        mismatch occurs.
+
+    func : Callable, optional
+        Custom function to categorize values in `y`. If `func` is provided,
+        it takes precedence, and `values` are ignored. `func` should accept
+        a single numeric input and return a category.
+
+    raise_warn : bool, default=True
+        If `True`, raises a warning when `order='soft'` and `values` 
+        cannot be matched exactly or if `labels` do not match the 
+        number of classes derived from `values`.
+
+    Returns
+    -------
+    np.ndarray
+        Array of the same length as `y`, with categorized values or
+        labels if provided.
+
+    Notes
+    -----
+    - This function requires either `values` or `func` to categorize `y`.
+      If neither is provided, `labels` must be an integer to specify the
+      number of classes.
+    - `labels` should match the number of classes created by `values` + 1.
+      If they do not, a `ValueError` is raised if `order` is `'strict'`.
+
+    Examples
+    --------
+    >>> from gofast.tools.mlutils import smart_label_classifier
+    >>> import numpy as np
+    >>> y = np.arange(0, 7, 0.5)
+    
+    Basic classification with values:
+    >>> smart_label_classifier(y, values=[1.0, 3.2])
+    array([0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2])
+
+    Assign custom labels:
+    >>> smart_label_classifier(y, values=[1.0, 3.2], labels=['low', 'mid', 'high'])
+    array(['low', 'low', 'low', 'mid', 'mid', 'mid', 'mid', 'high', 'high', 
+           'high', 'high', 'high', 'high', 'high'], dtype=object)
+
+    Using a custom function:
+    >>> def custom_func(v):
+    ...     if v <= 1: return 'low'
+    ...     elif 1 < v <= 3.2: return 'mid'
+    ...     else: return 'high'
+    >>> smart_label_classifier(y, func=custom_func)
+    array(['low', 'low', 'low', 'mid', 'mid', 'mid', 'mid', 'high', 'high', 
+           'high', 'high', 'high', 'high', 'high'], dtype=object)
+
+    Auto-generate classes:
+    >>> smart_label_classifier(y, labels=3)
+    array([0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2])
+
+    See Also
+    --------
+    _validate_func_values_labels : Helper function for validating `func` 
+                                   and `values` parameters.
+    _assert_labels_from_values : Helper function to validate `labels` 
+                                 against `values`.
+    _smart_mapper : Helper function for mapping continuous values to 
+                    categorical classes based on thresholds.
+
+    References
+    ----------
+    .. [1] Johnson, T., & Brown, A. (2021). *Categorical Data Mapping*.
+       Data Science Journal, 17(4), 123-145.
+    .. [2] Lee, K., & Singh, P. (2019). *Threshold-Based Classification
+       Techniques*. Journal of Machine Learning, 9(2), 67-80.
+    """
+
+    name = None
+    if isinstance(y, pd.Series) and hasattr(y, "name"):
+        name = y.name
+
+    arr = np.asarray(y).squeeze()
+
+    if not _is_arraylike_1d(arr):
+        raise TypeError(
+            "Expected a one-dimensional array,"
+            f" got array with shape {arr.shape}"
+        )
+
+    if isinstance(values, str):
+        values = str2columns(values)
+
+    if values is not None:
+        values = is_iterable(values, parse_string=True, transform=True)
+        approx_values: List[Tuple[float, float]] = []
+        processed_values = np.zeros(len(values), dtype=float)
+
+        for i, v in enumerate(values):
+            try:
+                v = float(v)
+            except (TypeError, ValueError) as e:
+                raise TypeError(f"Value '{v}' must be a valid number.") from e
+
+            non_nan_arr = arr[~np.isnan(arr)]
+            diff = np.abs(non_nan_arr - v)
+            min_idx = np.argmin(diff)
+
+            if order == 'strict' and diff[min_idx] != 0.0:
+                raise ValueError(
+                    f"Value {v} is missing in the array. It must be present "
+                    "when order is set to 'strict', or set order to 'soft'"
+                    " to allow approximate matching."
+                )
+
+            matched_value = non_nan_arr[min_idx]
+            processed_values[i] = matched_value
+
+            if diff[min_idx] != 0.0:
+                approx_values.append((v, matched_value))
+
+        if approx_values and raise_warn:
+            original_vals, substituted_vals = zip(*approx_values)
+            verb = "are" if len(original_vals) > 1 else "is"
+            warnings.warn(
+                f"Values {original_vals} {verb} missing in the array. "
+                f"Substituted with {substituted_vals}."
+            )
+
+    arr_copied = arr.copy()
+
+    if func is None and values is None:
+        return _validate_func_values_labels(
+            func=func, 
+            values= values, 
+            labels= labels, 
+            y=y, 
+            order =order, 
+        )
+
+    mapper_func: Optional[Callable[[float], Union[int, str]]] = func
+    if values is not None and func is None:
+        mapper_func = lambda k: _smart_mapper(k, kr=processed_values)
+
+    arr_mapped = pd.Series(arr_copied, name='temp').map(mapper_func).values
+
+    label_mapping: Dict[Union[int, float], Union[int, str]] = {}
+    if labels is not None:
+        labels = is_iterable(labels, parse_string=True, transform=True)
+        labels, label_mapping = _assert_labels_from_values(
+            arr_mapped,
+            processed_values,
+            labels,
+            label_mapping,
+            raise_warn=raise_warn,
+            order=order
+        )
+
+    if labels is not None:
+        arr_mapped = pd.Series(
+            arr_mapped, name=name or 'temp'
+        ).map(label_mapping).values
+    else:
+        arr_mapped = arr_mapped if name is None else pd.Series(
+            arr_mapped, name=name
+        )
+
+    return arr_mapped
+
+def _validate_func_values_labels(
+    func: Optional[Callable],
+    values: Optional[Union[float, List[float]]],
+    labels: Optional[Union[int, str, List[str]]],
+    y: np.ndarray,
+    order: str
+) -> np.ndarray:
+    """
+    Validates that either `func` or `values` is provided, and handles cases 
+    where `labels` is provided as an integer when `func` and `values` are None.
+    """
+
+    # Raise an error if labels are not provided
+    # when both func and values are None
+    if labels is None:
+        raise TypeError(
+            "'func' cannot be None when 'values' are not provided."
+        )
+    
+    # Handle the case where labels is an integer
+    if isinstance(labels, int):
+        if order == 'strict':
+            raise TypeError(
+                "'func' cannot be None when 'values' are not provided. "
+                "To heuristically create `labels` classes, set `order='soft'`."
+            )
         
+        # Ensure `y` is a 1-dimensional array
+        y = np.squeeze(y)
+        if y.ndim != 1:
+            raise ValueError(
+                "Input array `y` must be one-dimensional for"
+                " automatic class generation."
+            )
         
-        
+        try:
+            # Automatically create `labels` number of classes in `y`
+            y_min, y_max = np.min(y), np.max(y)
+            thresholds = np.linspace(y_min, y_max, labels + 1)[1:-1]
+            categorized_y = np.digitize(y, bins=thresholds)
+            return categorized_y
+        except Exception as e:
+            raise ValueError(
+                "An error occurred while attempting to categorize `y`. "
+                "Ensure `y` is numeric and contains valid values for"
+                " thresholding."
+            ) from e
+    
+    else:
+        raise TypeError(
+            "When `func` and `values` are None, `labels` should be "
+            "an integer specifying the number of classes to generate."
+        )
+    
+    return y
+
+def _assert_labels_from_values(
+    arr: np.ndarray,
+    values: np.ndarray,
+    labels: Union[int, str, List[str]],
+    label_mapping: Dict,
+    raise_warn: bool = True,
+    order: str = 'soft'
+) -> Tuple[List[Union[int, str]], Dict[Union[int, float], Union[int, str]]]:
+    unique_labels = list(np.unique(arr))
+    if not is_iterable(labels):
+        labels = [labels]
+
+    if not _check_consistency_size(unique_labels, labels, error='ignore'):
+        if order == 'strict':
+            verb = "were" if len(labels) > 1 else "was"
+            raise TypeError(
+                f"Expected {len(unique_labels)} labels for the {len(values)}"
+                f" values renaming. {len(labels)} {verb} given."
+            )
+
+        expected_labels_count = len(values) + 1
+        actual_labels_count = len(labels)
+        if actual_labels_count != expected_labels_count:
+            verb = "s are" if len(values) > 1 else " is"
+            msg = (
+                f"{len(values)} value{verb} passed. Labels for renaming "
+                f"values expect to be composed of {expected_labels_count}"
+                f" items ('number of values + 1') for pure categorization."
+            )
+            undefined_classes = unique_labels[len(labels):]
+            labels = list(labels) + list(undefined_classes)
+            labels = labels[:len(unique_labels)]
+            msg += ( 
+                f" Classes {smart_format(undefined_classes)}"
+                " cannot be renamed."
+                )
+
+            if raise_warn:
+                warnings.warn(msg)
+
+    label_mapping = dict(zip(unique_labels, labels))
+    return labels, label_mapping
+
+def _smart_mapper(
+    k: float,
+    kr: np.ndarray,
+    return_dict_map: bool = False
+) -> Union[int, Dict[int, bool], float]:
+    if len(kr) == 1:
+        conditions = {
+            0: k <= kr[0],
+            1: k > kr[0]
+        }
+    elif len(kr) == 2:
+        conditions = {
+            0: k <= kr[0],
+            1: kr[0] < k <= kr[1],
+            2: k > kr[1]
+        }
+    else:
+        conditions = {}
+        for idx in range(len(kr) + 1):
+            if idx == 0:
+                conditions[idx] = k <= kr[idx]
+            elif idx == len(kr):
+                conditions[idx] = k > kr[-1]
+            else:
+                conditions[idx] = kr[idx - 1] < k <= kr[idx]
+
+    if return_dict_map:
+        return conditions
+
+    for class_label, condition in conditions.items():
+        if condition:
+            return class_label if not math.isnan(k) else np.nan
+
+    return np.nan
         
         
         

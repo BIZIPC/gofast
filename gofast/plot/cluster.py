@@ -12,6 +12,7 @@ clustering results.
 from __future__ import annotations 
 import itertools 
 import warnings 
+
 import numpy as np 
 import pandas as pd 
 import matplotlib as mpl
@@ -30,7 +31,7 @@ from sklearn.metrics import silhouette_samples
 from ..api.types import NDArray, ArrayLike, DataFrame 
 from ..api.types import List, Tuple, Optional
 from ..tools.coreutils import is_iterable, to_numeric_dtypes 
-from ..tools.mathex import linkage_matrix 
+from ..tools.mathext import linkage_matrix 
 from ..tools.validator import check_X_y, check_array, check_y 
 from ..tools.validator import validate_positive_integer, is_frame
 from .utils import _get_xticks_formatage, make_mpl_properties, savefigure 
@@ -159,6 +160,7 @@ def plot_dendroheat(
     .. [1] Murtagh, F. (1985). Multidimensional Clustering Algorithms. 
        Compstat Lectures 4, Wuerzburg: Physica-Verlag.
     """
+    from ..tools.spatialutils import linkage_matrix 
     
     df=check_array (
         df, 
@@ -1026,7 +1028,7 @@ def plot_dendrogram(
         
     method : str, default='complete'
         The linkage algorithm to use. See the `Linkage Methods` section below 
-        for full descriptions in :func:`gofast.tools.exmath.linkage_matrix`.
+        for full descriptions in :func:`gofast.tools.mathext.linkage_matrix`.
         
     labels : ndarray, optional
         By default, `labels` is None so the index of the original observation 

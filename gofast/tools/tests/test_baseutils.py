@@ -10,7 +10,8 @@ from unittest.mock import patch, mock_open
 import numpy as np 
 import pandas as pd 
 
-from gofast.tools.coreutils import cleaner, smart_label_classifier
+from gofast.tools.datautils import cleaner
+from gofast.tools.mlutils import smart_label_classifier
 from gofast.datasets.load import load_bagoue
 from gofast.tools.baseutils import download_file
 from gofast.tools.baseutils import lowertify
@@ -317,8 +318,8 @@ class TestLowertify(unittest.TestCase):
 
 def test_select_features (): 
     X, _= _prepare_dataset(return_raw= True ) 
-    select_features(X, exclude='number')
-    select_features(  X, include="number") 
+    select_features(X, dtypes_exclude='number')
+    select_features(  X, dtypes_include="number") 
     select_features (X, features = 'ohmS num shape geol lwi', 
           parse_features =True ) 
 

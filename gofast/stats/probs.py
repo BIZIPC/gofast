@@ -19,7 +19,7 @@ from ..api.types import Array1D, ArrayLike,  DataFrame, Series, NDArray
 from ..api.types import Union, List, Optional, NumPyFunction 
 from ..decorators import Extract1dArrayOrSeries, Dataify 
 from ..decorators import DataTransformer   
-from ..tools.funcutils import ensure_pkg 
+from ..tools.depsutils import ensure_pkg 
 
 try: 
     import pymc3 as pm

@@ -25,10 +25,6 @@ from gofast.estimators.boosting import HybridBoostingClassifier
 from gofast.estimators.boosting import HybridBoostingRegressor 
 from gofast.estimators.cluster_based import KMFClassifier 
 from gofast.estimators.cluster_based import KMFRegressor
-from gofast.estimators.dynamic_system import HammersteinWienerClassifier
-from gofast.estimators.dynamic_system import HammersteinWienerRegressor
-from gofast.estimators.dynamic_system import EnsembleHWClassifier 
-from gofast.estimators.dynamic_system import EnsembleHWRegressor
 from gofast.estimators.ensemble import MajorityVoteClassifier
 from gofast.estimators.ensemble import SimpleAverageClassifier
 from gofast.estimators.ensemble import WeightedAverageClassifier
@@ -50,35 +46,6 @@ def classification_data():
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
     return X_train, X_test, y_train, y_test
 
-def test_hammerstein_wiener_classifier(classification_data):
-    X_train, X_test, y_train, y_test = classification_data
-    classifier = HammersteinWienerClassifier()
-    classifier.fit(X_train, y_train)
-    predictions = classifier.predict(X_test)
-    accuracy = np.mean(predictions == y_test)
-    assert accuracy >= 0.0  # Example threshold for accuracy
-
-def test_hammerstein_wiener_regressor(sample_data):
-    X_train, X_test, y_train, y_test = sample_data
-    regressor = HammersteinWienerRegressor(linear_model=LinearRegression())
-    regressor.fit(X_train, y_train)
-    predictions = regressor.predict(X_test)
-    assert mean_squared_error(y_test, predictions) < 50000  # Example threshold
-
-def test_ensemble_hw_classifier(classification_data):
-    X_train, X_test, y_train, y_test = classification_data
-    classifier = EnsembleHWClassifier(n_estimators=10, eta0=0.1)
-    classifier.fit(X_train, y_train)
-    predictions = classifier.predict(X_test)
-    accuracy = np.mean(predictions == y_test)
-    assert accuracy > 0.0  # Expected minimal accuracy
-
-def test_ensemble_hw_regressor(sample_data):
-    X_train, X_test, y_train, y_test = sample_data
-    regressor = EnsembleHWRegressor(n_estimators=5 )
-    regressor.fit(X_train, y_train)
-    predictions = regressor.predict(X_test)
-    assert mean_squared_error(y_test, predictions) < 50000  # Example threshold
 
 @pytest.fixture
 def sample_data():

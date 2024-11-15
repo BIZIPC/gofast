@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
+#   License: BSD-3-Clause
+#   Author: LKouadio <etanoyau@gmail.com>
+
 """
-`funcutils` is a utilities package providing various functionalities for 
-functional programming tasks.
+Utilities package providing various functionalities for functional 
+programming tasks.
 """
-import sys 
 import time
 import functools
 import inspect
 import logging
 import warnings
-import subprocess
 import threading
 from datetime import datetime
  
@@ -17,12 +18,10 @@ import numpy as np
 import pandas as pd
 
 from .._gofastlog import gofastlog 
-from ..api.types import _T, Dict, Any, Callable, List, Type 
+from ..api.types import Dict, Any, Callable, List, Type 
 from ..api.types import  Optional, Tuple , Union  
 from ..api.types import Series, DataFrame, ArrayLike, Array1D, LambdaType
-from ._dependency import import_optional_dependency
 from .coreutils import to_numeric_dtypes, is_iterable
-from .coreutils import get_installation_name, is_module_installed 
 
 # Configure  logging
 _logger=gofastlog.get_gofast_logger(__name__)
@@ -39,10 +38,8 @@ __all__=[
     'convert_to_pandas',
     'curry',
     'drop_nan_if',
-    'ensure_pkg',
     'flatten_data_if',
     'flatten_list',
-    'install_package',
     'is_valid_if',
     'make_data_dynamic',
     'memoize',
@@ -778,345 +775,6 @@ def is_valid_if(
             return func(*args, **kwargs)
         return wrapper
     return decorator
-
-def install_package(
-    name: str, 
-    dist_name: Optional[str]=None,
-    infer_dist_name: bool=False, 
-    extra: str = '', 
-    use_conda: bool = False, 
-    verbose: bool = True
-    ) -> None:
-    """
-    Install a Python package using either conda or pip, with an option to 
-    display installation progress and fallback mechanism.
-
-    This function dynamically chooses between conda and pip for installing 
-    Python packages, based on user preference and system configuration. It 
-    supports a verbose mode for detailed operation logging and utilizes a 
-    progress bar for pip installations.
-
-    Parameters
-    ----------
-    name : str
-        Name of the package to install. Version specification can be included.
-    dist_name : str, optional
-        The distribution name of the package. Useful for packages where
-        the import name differs from the distribution name.
-    infer_dist_name : bool, optional
-        If True, attempt to infer the distribution name for pip installation,
-        defaults to False.
-    extra : str, optional
-        Additional options or version specifier for the package, by default ''.
-    use_conda : bool, optional
-        Prefer conda over pip for installation, by default False.
-    verbose : bool, optional
-        Enable detailed output during the installation process, by default True.
-
-    Raises
-    ------
-    RuntimeError
-        If installation fails via both conda and pip, or if the specified installer
-        is not available.
-
-    Examples
-    --------
-    Install a package using pip without version specification:
-
-        >>> install_package('requests', verbose=True)
-
-    Install a specific version of a package using conda:
-
-        >>> install_package('pandas', extra='==1.2.0', use_conda=True, verbose=True)
-    
-    Notes
-    -----
-    Conda installations do not display a progress bar due to limitations in capturing
-    conda command line output. Pip installations will show a progress bar indicating
-    the number of processed output lines from the installation command.
-    """
-    def execute_command(command: list, progress_bar: bool = False) -> None:
-        """
-        Execute a system command with optional progress bar for output lines.
-
-        Parameters
-        ----------
-        command : list
-            Command and arguments to execute as a list.
-        progress_bar : bool, optional
-            Enable a progress bar that tracks the command's output lines, 
-            by default False.
-        """
-        from tqdm import tqdm
-        with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
-                              text=True, bufsize=1) as process, \
-             tqdm(desc="Installing", unit="line", disable=not progress_bar) as pbar:
-            for line in process.stdout:
-                if verbose:
-                    print(line, end='')
-                pbar.update(1)
-            if process.wait() != 0:  # Non-zero exit code indicates failure
-                raise RuntimeError(f"Installation failed for package '{name}{extra}'.")
-    
-    # If the module is installed don't install again.
-    if is_module_installed(name, distribution_name= dist_name ): 
-        if verbose:
-           print(f"{name} is already installed.")
-           
-        return True
-    # If the distribution to pkg name if the pkg name 
-    # is different to distribution name .
-    if infer_dist_name: 
-        name = get_installation_name(name, dist_name)  
-        
-    conda_available = _check_conda_installed()
-    try:
-        if use_conda and conda_available:
-            if verbose:
-                print(f"Attempting to install '{name}{extra}' using conda...")
-            execute_command(['conda', 'install', f"{name}{extra}", '-y'], 
-                            progress_bar=False)
-        elif use_conda and not conda_available:
-            if verbose:
-                print("Conda is not available. Falling back to pip...")
-            execute_command([sys.executable, "-m", "pip", "install", f"{name}{extra}"],
-                            progress_bar=True)
-        else:
-            if verbose:
-                print(f"Attempting to install '{name}{extra}' using pip...")
-            execute_command([sys.executable, "-m", "pip", "install", f"{name}{extra}"],
-                            progress_bar=True)
-        if verbose:
-            print(f"Package '{name}{extra}' was successfully installed.")
-    except Exception as e:
-        raise RuntimeError(f"Failed to install '{name}{extra}': {e}") from e
-
-def _check_conda_installed() -> bool:
-    """
-    Check if conda is installed and available in the system's PATH.
-
-    Returns
-    -------
-    bool
-        True if conda is found, False otherwise.
-    """
-    try:
-        subprocess.check_call(['conda', '--version'], stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-def ensure_pkg(
-    name: str, 
-    extra: str = "",
-    errors: str = "raise",
-    min_version: str | None = None,
-    exception: Exception = None, 
-    dist_name: Optional[str]=None, 
-    infer_dist_name: bool=False, 
-    auto_install: bool = False,
-    use_conda: bool = False, 
-    partial_check: bool = False,
-    condition: Any = None, 
-    verbose: bool = False
-) -> Callable[[_T], _T]:
-    """
-    Decorator to ensure a Python package is installed before function execution.
-
-    If the specified package is not installed, or if its installed version does
-    not meet the minimum version requirement, this decorator can optionally 
-    install or upgrade the package automatically using either pip or conda.
-
-    Parameters
-    ----------
-    name : str
-        The name of the package.
-    extra : str, optional
-        Additional specification for the package, such as version or extras.
-    errors : str, optional
-        Error handling strategy if the package is missing: 'raise', 'ignore',
-        or 'warn'.
-    min_version : str or None, optional
-        The minimum required version of the package. If not met, triggers 
-        installation.
-    exception : Exception, optional
-        A custom exception to raise if the package is missing and `errors`
-        is 'raise'.
-    dist_name : str, optional
-        The distribution name of the package as known by package managers (e.g., pip).
-        If provided and the module import fails, an additional check based on the
-        distribution name is performed. This parameter is useful for packages where
-        the distribution name differs from the importable module name.
-    infer_dist_name : bool, optional
-        If True, attempt to infer the distribution name for pip installation,
-        defaults to False.
-    auto_install : bool, optional
-        Whether to automatically install the package if missing. 
-        Defaults to False.
-    use_conda : bool, optional
-        Prefer conda over pip for automatic installation. Defaults to False.
-    partial_check : bool, optional
-        If True, checks the existence of the package only if the `condition` 
-        is met. This allows for conditional package checking based on the 
-        function's arguments or other criteria. If `False`, the check is always
-        performed. Defaults to False.
-    condition : Any, optional
-        A condition that determines whether to check for the package's existence. 
-        This can be a callable that takes the same arguments as the decorated function 
-        and returns a boolean, a specific argument name to check for truthiness, or 
-        any other value that will be evaluated as a boolean. If `None`, the package 
-        check is performed unconditionally unless `partial_check` is False.
-    verbose : bool, optional
-        Enable verbose output during the installation process. Defaults to False.
-
-    Returns
-    -------
-    Callable
-        A decorator that wraps functions to ensure the specified package 
-        is installed.
-
-    Examples
-    --------
-    >>> from gofast.tools.funcutils import ensure_pkg
-    >>> @ensure_pkg("numpy", auto_install=True)
-    ... def use_numpy():
-    ...     import numpy as np
-    ...     return np.array([1, 2, 3])
-
-    >>> @ensure_pkg("pandas", min_version="1.1.0", errors="warn", use_conda=True)
-    ... def use_pandas():
-    ...     import pandas as pd
-    ...     return pd.DataFrame([[1, 2], [3, 4]])
-
-    >>> @ensure_pkg("matplotlib", partial_check=True, condition=lambda x, y: x > 0)
-    ... def plot_data(x, y):
-    ...     import matplotlib.pyplot as plt
-    ...     plt.plot(x, y)
-    ...     plt.show()
-    
-    >>> @ensure_pkg("skimage", partial_check=True, condition=(
-    ...     lambda *args, **kwargs: 'method' in kwargs and kwargs['method'] == 'hog')
-    ...     )
-    >>> def check_package_installed(data, method='hog', **kwargs):
-    ...     extractor_function = None
-    ...     if method == 'hog':
-    ...         from skimage.feature import hog
-    ...         extractor_function = lambda image: hog(image, **kwargs)
-    ...     return extractor_function
-    """
-    def decorator(func: _T) -> _T:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Determine if this is a method or a function based on the first argument
-            bound_method = hasattr(args[0], func.__name__) if args else False # 
-            
-            # If partial_check is True, check condition before performing actions
-            if not partial_check or  _should_check_condition(
-                    condition, *args, **kwargs):
-                try:
-                    # Attempt to import the package, handling installation 
-                    # if necessary and permitted
-                    import_optional_dependency(
-                        name, extra=extra, errors=errors, 
-                        min_version=min_version, exception=exception
-                    )
-                except (ModuleNotFoundError, ImportError):
-                    if auto_install:
-                        # Install the package if auto-install is enabled
-                        install_package(
-                            name, dist_name=dist_name, 
-                            infer_dist_name=infer_dist_name, 
-                            extra=extra, use_conda=use_conda, verbose=verbose
-                        )
-                    elif exception is not None:
-                        raise exception
-                    else:
-                        raise
-                    
-            # If the function is a bound method, call it with 'self' or 'cls'
-            if bound_method:
-                return func(args[0], *args[1:], **kwargs)
-            else:
-                return func(*args, **kwargs) # 
-        
-        return wrapper
-    
-    return decorator
-
-def _should_check_condition(condition: Any, *args, **kwargs) -> bool:
-    """
-    Determines whether the condition(s) for checking a package's existence are met, 
-    based on the provided arguments and keyword arguments of a decorated function.
-
-    This function offers enhanced flexibility by allowing conditions to be specified 
-    as callable functions, tuples for positional argument checks, strings for keyword 
-    argument checks, or a list combining any of these types for multiple conditions.
-
-    Parameters
-    ----------
-    condition : Any
-        The condition(s) that determine whether to perform the package check. Can be:
-        - A callable that takes `*args` and `**kwargs` and returns a boolean.
-        - A string specifying a keyword argument name that should be truthy.
-        - A tuple `(index, value)` for checking a specific value of a positional argument.
-        - A list of any combination of the above to specify multiple conditions.
-    *args : tuple
-        Positional arguments passed to the decorated function.
-    **kwargs : dict
-        Keyword arguments passed to the decorated function.
-
-    Returns
-    -------
-    bool
-        `True` if the package check should be performed based on the evaluation of 
-        `condition`, `False` otherwise.
-
-    Examples
-    --------
-    Checking with a single callable condition for partial_check is ``True``:
-
-    >>> _should_check_condition(lambda x, y: x > y, 5, 3)
-    True
-
-    Checking with a string condition (keyword argument name):
-
-    >>> _should_check_condition('method', method='hog')
-    True
-
-    Checking with a tuple for positional argument value:
-
-    >>> _should_check_condition((0, 'data'), 'data', method='hog')
-    True
-
-    Checking with multiple conditions:
-
-    >>> conditions = [(1, 'hog'), lambda *args, **kwargs: kwargs.get('filter', False)]
-    >>> _should_check_condition( conditions, 'data', 'hog', filter=True)
-    True
-
-    In the last example, the package check is performed because both conditions are met:
-    the second positional argument equals 'hog', and the 'filter' keyword argument is `True`.
-    """
-
-    def eval_condition(cond):
-        # Callable condition with direct application
-        if callable(cond):
-            return cond(*args, **kwargs)
-        # String condition indicating a key in kwargs
-        elif isinstance(cond, str) and cond in kwargs:
-            return bool(kwargs[cond])
-        # Tuple condition indicating positional argument check
-        elif isinstance(cond, tuple) and len(cond) == 2:
-            index, value = cond
-            return index < len(args) and args[index] == value
-        return False
-    
-    # Support for list of conditions: all must be True
-    if isinstance(condition, list):
-        return all(eval_condition(cond) for cond in condition)
-    else:
-        return eval_condition(condition)
 
 def drop_nan_if(thresh: float, meth: str = 'drop_cols'):
     """
@@ -1892,7 +1550,7 @@ def update_series_index(
     return_series: bool = False, 
     on_error: str = 'ignore', 
     transform: Optional[Callable] = None, 
-    condition: Optional[LambdaType|Callable[[Series], bool]] = None
+    condition: Optional[Union[LambdaType,Callable[[Series], bool]]] = None
 ):
     """
     Updates the index of a pandas Series with new values under certain conditions.
@@ -2008,14 +1666,14 @@ def update_series_index(
     return series if return_series else new_indexes
 
 def update_dataframe_index(
-    df: pd.DataFrame, 
+    df: DataFrame, 
     new_indexes: Optional[Union[list, str]] = None, 
     axis: int = 0,
     allow_replace: bool = False, 
     return_df: bool = False, 
     on_error: str = 'ignore', 
     transform: Optional[Callable] = None, 
-    condition: Optional[LambdaType|Callable[[DataFrame], bool]] = None
+    condition: Optional[Union [LambdaType,Callable[[DataFrame], bool]]] = None
 ):
     """
     Updates the index (axis=0) or columns (axis=1) of a pandas DataFrame with 
@@ -2121,10 +1779,10 @@ def update_dataframe_index(
     return df if return_df else new_indexes
 
 def convert_to_pandas(
-        data: ArrayLike | List, 
-        error: str='raise', 
-        custom_convert: Callable=None
-        ):
+    data: Union [ArrayLike, List], 
+    error: str='raise', 
+    custom_convert: Callable=None
+    ):
     """
     Automatically converts input data to a pandas DataFrame or Series 
     based on its structure. 
@@ -2213,7 +1871,7 @@ def update_index(
     return_data: bool = False, 
     on_error: str = 'ignore', 
     transform: Optional[Callable] = None, 
-    condition: Optional[LambdaType|Callable[[Union[Series, DataFrame]], bool]] = None,
+    condition: Optional[Union [LambdaType,Callable[[Union[Series, DataFrame]], bool]]] = None,
     convert_to: Optional[str] = None
 ):
     """
@@ -2348,7 +2006,7 @@ def convert_and_format_data(
     force_array_output: bool = False,
     condense: bool = False,
     custom_conversion: Optional[Callable[[Any], Union[DataFrame, Series]]] = None,
-    condition: Optional[LambdaType | Callable[[Any], dict]] = None, 
+    condition: Optional[Union[LambdaType , Callable[[Any], dict]]] = None, 
     where: str = 'before'
 ):
     """

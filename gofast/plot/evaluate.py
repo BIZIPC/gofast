@@ -3,52 +3,69 @@
 #   Author: LKouadio <etanoyau@gmail.com>
 
 """
-`evaluate ` is a set of plot templates for visualising and inspecting
-the learning models.  It gives a quick depiction for users for 
-models visualization and evaluation with : :class:`~gofast.plot.EvalPlotter`.
+A comprehensive suite of plotting utilities for visualizing and inspecting 
+machine learning models, designed to provide clear, insightful, and quick 
+depictions of model performance, structure, and evaluation metrics.
+
+The module includes various classes and functions for evaluating machine 
+learning model metrics and generating visualizations:
+    - :class:`~gofast.plot.EvalPlotter`: Primary interface for generating 
+      evaluation plots.
+    - Metric visualizations for regression, classification, and clustering 
+      models.
+    - Learning curves, ROC curves, confusion matrices, and silhouette plots.
+    - Customizable, scalable visual properties using matplotlib and seaborn 
+      for publication-quality visuals.
 """
-from __future__ import annotations 
+
+from __future__ import annotations
 import re
 import warnings
-import inspect 
-import copy 
-import numpy as np 
+import inspect
+import copy
+
+import numpy as np
 import pandas as pd
-import seaborn as sns 
-import matplotlib as mpl 
-import matplotlib.pyplot  as plt
+import seaborn as sns
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from abc import ABCMeta 
-from matplotlib import cm 
+from matplotlib import cm
 from matplotlib.colors import BoundaryNorm
 
-from sklearn.model_selection import learning_curve , train_test_split
-from sklearn.metrics import mean_squared_error, silhouette_samples
-from sklearn.metrics import  silhouette_score
-from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
+from sklearn.model_selection import learning_curve, train_test_split
+from sklearn.metrics import (
+    mean_squared_error, silhouette_samples, silhouette_score,
+    confusion_matrix, roc_curve, auc, precision_recall_curve
+)
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, label_binarize
-
-from sklearn.impute import   SimpleImputer
+from sklearn.impute import SimpleImputer
 
 from .._gofastlog import gofastlog
-from ..analysis.dimensionality import nPCA
 from ..api.docstring import _core_docs, _baseplot_params, DocstringComponents
-from ..api.property import BasePlot 
-from ..api.types import  _F, Optional, List, ArrayLike, NDArray 
-from ..api.types import DataFrame,  Series 
-from ..exceptions import NotFittedError, EstimatorError
+from ..api.property import BasePlot
+from ..api.types import  Optional, List, Union, Tuple,  Series
+from ..api.types import  ArrayLike, DataFrame
+from ..exceptions import NotFittedError
 from ..tools.baseutils import categorize_target, extract_target
-from ..tools.coreutils import to_numeric_dtypes, fancier_repr_formatter 
-from ..tools.coreutils import smart_strobj_recognition, reshape 
-from ..tools.coreutils import str2columns, make_ids, type_of_target, is_iterable 
-from ..tools.funcutils import ensure_pkg 
-from ..tools.validator import _check_consistency_size
-from ..tools.validator import build_data_if
-from ..tools.validator import _is_numeric_dtype , check_consistent_length
-from ..tools.validator import assert_xy_in 
-from .utils import _get_xticks_formatage,  make_mpl_properties
+from ..tools.coreutils import (
+    to_numeric_dtypes, reshape, str2columns, make_ids, type_of_target,
+    is_iterable
+)
+from ..tools.depsutils import ensure_pkg
+from ..tools.validator import (
+    _check_consistency_size, build_data_if, _is_numeric_dtype,
+    check_consistent_length, assert_xy_in
+)
+from .utils import _get_xticks_formatage, make_mpl_properties
 
-_logger=gofastlog.get_gofast_logger(__name__)
+
+__all__ = ["MetricPlotter", "EvalPlotter", "plot_model_scores",
+           "plot_reg_scoring", "plot_model"]
+
+_logger = gofastlog.get_gofast_logger(__name__)
+
+
 
 class MetricPlotter (BasePlot):
     def __init__(self, line_style='-',line_width=2, color_map='viridis',
@@ -672,70 +689,6 @@ class MetricPlotter (BasePlot):
             raise NotFittedError(msg.format(expobj=self))
         return 1
     
-    def __repr__(self):
-        """ Pretty format for programmer guidance following the API... """
-        return fancier_repr_formatter(self ) 
-       
-    def __getattr__(self, name):
-        """
-        Custom attribute accessor to provide informative error messages.
-
-        This method is called if the attribute accessed is not found in the
-        usual places (`__dict__` and the class tree). It checks for common 
-        attribute patterns and raises informative errors if the attribute is 
-        missing or if the object is not fitted yet.
-
-        Parameters
-        ----------
-        name : str
-            The name of the attribute being accessed.
-
-        Raises
-        ------
-        NotFittedError
-            If the attribute indicates a requirement for a prior fit method call.
-
-        AttributeError
-            If the attribute is not found, potentially suggesting a similar attribute.
-
-        Returns
-        -------
-        Any
-            The value of the attribute, if found through smart recognition.
-        """
-        if name.endswith('_'):
-            # Special handling for attributes that are typically set after fitting
-            if name not in self.__dict__:
-                if name in ('data_', 'X_'):
-                    raise NotFittedError(
-                        f"Attribute '{name}' not found.Please fit the"
-                        f" {self.__class__.__name__} object first.")
-
-        # Attempt to find a similar attribute name for a more informative error
-        similar_attr = self._find_similar_attribute(name)
-        suggestion = f". Did you mean '{similar_attr}'?" if similar_attr else ""
-
-        raise AttributeError(f"'{self.__class__.__name__}' object has "
-                             f"no attribute '{name}'{suggestion}")
-
-    def _find_similar_attribute(self, name):
-        """
-        Attempts to find a similar attribute name in the object's dictionary.
-
-        Parameters
-        ----------
-        name : str
-            The name of the attribute to find a similar match for.
-
-        Returns
-        -------
-        str or None
-            A similar attribute name if found, otherwise None.
-        """
-        # Implement the logic for finding a similar attribute name
-        # For example, using a string comparison or a fuzzy search
-        rv = smart_strobj_recognition(name, self.__dict__, deep =True)
-        return rv 
     
         
 MetricPlotter.__doc__="""\
@@ -1557,6 +1510,7 @@ class EvalPlotter(BasePlot):
         
         """
         self.inspect 
+        from ..analysis.dimensionality import nPCA
         # Setup and perform PCA analysis and return pca object.
         pca = nPCA(self.X, n_components=n_components, return_X=False, **pca_kws)
         X_pca = pca.X # pca.fit_transform(X)
@@ -1857,6 +1811,8 @@ class EvalPlotter(BasePlot):
         color-coded based on the labels provided.
         """
         self.inspect 
+        from ..analysis.dimensionality import nPCA
+        
         # Standardizing the features
         if self.scale: 
             self.X  = StandardScaler().fit_transform(self.X)
@@ -2420,70 +2376,6 @@ class EvalPlotter(BasePlot):
 
         self.save(fig)
 
-    def __repr__(self):
-        """ Pretty format for programmer guidance following the API... """
-        return fancier_repr_formatter(self ) 
-       
-    def __getattr__(self, name):
-        """
-        Custom attribute accessor to provide informative error messages.
-
-        This method is called if the attribute accessed is not found in the
-        usual places (`__dict__` and the class tree). It checks for common 
-        attribute patterns and raises informative errors if the attribute is 
-        missing or if the object is not fitted yet.
-
-        Parameters
-        ----------
-        name : str
-            The name of the attribute being accessed.
-
-        Raises
-        ------
-        NotFittedError
-            If the attribute indicates a requirement for a prior fit method call.
-
-        AttributeError
-            If the attribute is not found, potentially suggesting a similar attribute.
-
-        Returns
-        -------
-        Any
-            The value of the attribute, if found through smart recognition.
-        """
-        if name.endswith('_'):
-            # Special handling for attributes that are typically set after fitting
-            if name not in self.__dict__:
-                if name in ('data_', 'X_'):
-                    raise NotFittedError(
-                        f"Attribute '{name}' not found.Please fit the"
-                        f" {self.__class__.__name__} object first.")
-
-        # Attempt to find a similar attribute name for a more informative error
-        similar_attr = self._find_similar_attribute(name)
-        suggestion = f". Did you mean '{similar_attr}'?" if similar_attr else ""
-
-        raise AttributeError(f"'{self.__class__.__name__}' object has "
-                             f"no attribute '{name}'{suggestion}")
-
-    def _find_similar_attribute(self, name):
-        """
-        Attempts to find a similar attribute name in the object's dictionary.
-
-        Parameters
-        ----------
-        name : str
-            The name of the attribute to find a similar match for.
-
-        Returns
-        -------
-        str or None
-            A similar attribute name if found, otherwise None.
-        """
-        # Implement the logic for finding a similar attribute name
-        # For example, using a string comparison or a fuzzy search
-        rv = smart_strobj_recognition(name, self.__dict__, deep =True)
-        return rv 
 
 #------------------------------------------------------------------------------
 # Add specific params to Evaldocs 
@@ -2743,267 +2635,334 @@ attributes object. For instance::
     
 """
 # xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-            
-def plot_model(
-    yt: ArrayLike |Series, 
-    ypred:ArrayLike |Series=None,
-    *, 
-    clf:_F=None, 
-    Xt:DataFrame|NDArray=None, 
-    predict:bool =False, 
-    prefix:Optional[bool]=None, 
-    index:List[int|str] =None, 
-    fill_between:bool=False, 
-    labels:List[str]=None, 
-    return_ypred:bool=False, 
-    **baseplot_kws 
-    ): 
-    """ Plot model 'y' (true labels) versus 'ypred' (predicted) from test 
-    data.
-    
-    Plot will allow to know where estimator/classifier fails to predict 
-    correctly the target 
-    
+
+def _check_predict_args(
+    yt: ArrayLike | Series,
+    ypred: Optional[Union[ArrayLike, Series]],
+    Xt: Optional[Union[ArrayLike, DataFrame]],
+    clf,
+    index: Optional[List[Union[int, str]]],
+    predict: bool
+) -> Tuple[ArrayLike, ArrayLike, List[Union[int, str]], object]:
+    """
+    Validate and prepare the arguments for prediction and plotting.
+
     Parameters
     ----------
-    yt:array-like, shape (M, ) ``M=m-samples``,
-        test target; Denotes data that may be observed at training time 
-        as the dependent variable in learning, but which is unavailable 
-        at prediction time, and is usually the target of prediction. 
-        
-    ypred:array-like, shape (M, ) ``M=m-samples``
-        Array of the predicted labels. It has the same number of samples as 
-        the test data 'Xt' 
-        
-    clf :callable, always as a function, classifier estimator
-        A supervised predictor with a finite set of discrete possible 
-        output values. A classifier must supports modeling some of binary, 
-        targets. It must store a classes attribute after fitting.
-        
-    Xt: Ndarray ( M x N matrix where ``M=m-samples``, & ``N=n-features``)
-        Shorthand for "test set"; data that is observed at testing and 
-        prediction time, used as independent variables in learning. The 
-        notation is uppercase to denote that it is ordinarily a matrix.
-        
-    prefix: str, optional 
-        litteral string to prefix the samples/examples considered as 
-        tick labels in the abscissa. For instance:: 
-            
-            index =[0, 2, 4, 7]
-            prefix ='b' --> index =['b0', 'b2', 'b4', 'b7']
+    yt : array-like of shape (n_samples,)
+        True labels.
 
-    predict: bool, default=False, 
-        Expected to be 'True' when user want to predict the array 'ypred'
-        and plot at the same time. Otherwise, can be set to 'False' and use 
-        the'ypred' data already predicted. Note that, if 'True', an  
-        estimator/classifier must be provided as well as the test data 'Xt', 
-        otherwise an error will occur. 
-        
-    index: array_like, optional
-        list integer values or string expected to be the index of 'Xt' 
-        and 'yt' turned into pandas dataframe and series respectively. Note 
-        that one of them has already and index and new index is given, the 
-        latter must be consistent. This is usefull when data are provided as
-        ndarray rathern than a dataframe. 
-        
-    fill_between: bool 
-        Fill a line between the actual classes i.e the true labels. 
-        
-    labels: list of str or int, Optional
-       list of labels names  to hold the name of each category.
-       
-    return_pred: bool, 
-        return predicted 'ypred' if 'True' else nothing. 
-    
-    baseplot_kws: dict, 
-        All all  the keywords arguments passed to the peroperty  
-        :class:`gofast.property.BasePlot` class. 
- 
+    ypred : array-like of shape (n_samples,), optional
+        Predicted labels.
+
+    Xt : array-like of shape (n_samples, n_features), optional
+        Test data features.
+
+    clf : estimator object
+        Classifier or estimator with a `predict` method.
+
+    index : list of int or str, optional
+        Sample indices.
+
+    predict : bool
+        If True, use `clf` and `Xt` to predict `ypred`.
+
+    Returns
+    -------
+    yt : np.ndarray
+        True labels as a NumPy array.
+
+    ypred : np.ndarray
+        Predicted labels as a NumPy array.
+
+    index : list
+        Sample indices.
+
+    clf : estimator object
+        Classifier.
+
+    """
+    # If index is provided, ensure its length matches yt
+    if index is not None:
+        if len(index) != len(yt):
+            warnings.warn(
+                f"Length of index ({len(index)}) does not match length"
+                f" of yt ({len(yt)}). Index will be ignored."
+            )
+            index = None
+
+    # If predict is True, generate predictions using clf and Xt
+    if predict:
+        if clf is None:
+            raise ValueError("An estimator `clf` must be provided when `predict` is True.")
+        if Xt is None:
+            raise ValueError("Test data `Xt` must be provided when `predict` is True.")
+
+        if not hasattr(clf, "predict"):
+            raise ValueError("Estimator `clf` must have a `predict` method.")
+
+        # Generate predictions
+        ypred = clf.predict(Xt)
+
+        # Use index from Xt if available
+        if isinstance(Xt, (pd.DataFrame, pd.Series)) and index is None:
+            index = Xt.index.tolist()
+    else:
+        if ypred is None:
+            raise ValueError(
+                "Predicted labels `ypred` must be provided when `predict` is False.")
+
+    # Convert yt and ypred to NumPy arrays if they are pandas Series
+    if isinstance(yt, pd.Series):
+        if index is None:
+            index = yt.index.tolist()
+        yt = yt.values
+    else:
+        if index is None:
+            index = list(range(len(yt)))
+
+    if isinstance(ypred, pd.Series):
+        ypred = ypred.values
+
+    # Ensure yt and ypred have the same length
+    if len(yt) != len(ypred):
+        raise ValueError(
+            f"Length of yt ({len(yt)}) and ypred ({len(ypred)}) must be the same."
+        )
+
+    return yt, ypred, index, clf
+
+def plot_model(
+    yt: ArrayLike|Series,
+    ypred: ArrayLike|Series= None,
+    *,
+    clf=None,
+    Xt: ArrayLike|DataFrame = None,
+    predict: bool = False,
+    prefix: Optional[str] = None,
+    index: Optional[List[Union[int, str]]] = None,
+    fill_between: bool = False,
+    labels: Optional[List[str]] = None,
+    return_ypred: bool = False,
+    **baseplot_kws
+):
+    """
+    Plot true labels versus predicted labels from test data.
+
+    This function visualizes the performance of a classifier by plotting the true labels
+    (`yt`) against the predicted labels (`ypred`). It helps identify where the classifier
+    may be misclassifying samples.
+
+    Parameters
+    ----------
+    yt : array-like of shape (n_samples,)
+        True labels (target values) for the test data.
+
+    ypred : array-like of shape (n_samples,), optional
+        Predicted labels. If not provided and `predict` is True, predictions will be
+        made using the classifier `clf` on test data `Xt`.
+
+    clf : estimator object, optional
+        A fitted classifier or estimator that supports the `predict` method. Required if
+        `predict` is True.
+
+    Xt : array-like of shape (n_samples, n_features), optional
+        Test data features. Required if `predict` is True.
+
+    predict : bool, default=False
+        If True, predictions will be made using `clf` and `Xt`. If False, `ypred` must
+        be provided.
+
+    prefix : str, optional
+        A string prefix to add to sample indices used as tick labels on the x-axis.
+        For example, if `prefix='Sample_'`, indices will be labeled as 'Sample_0',
+        'Sample_1', etc.
+
+    index : list of int or str, optional
+        List of indices for the samples. If provided, must be of the same length as `yt`.
+        If not provided, indices will be generated automatically.
+
+    fill_between : bool, default=False
+        If True, a line plot will be drawn connecting the true labels, and the area
+        between the labels will be filled.
+
+    labels : list of str, optional
+        List of class label names corresponding to the unique classes in `yt`.
+        If provided, the y-axis tick labels will be set to these names.
+
+    return_ypred : bool, default=False
+        If True, returns the predicted labels `ypred`.
+
+    **baseplot_kws : dict, optional
+        Additional keyword arguments to customize the plot appearance. Common parameters
+        include:
+
+        - `figsize` : tuple of float, default=(10, 6)
+            Figure size in inches.
+        - `lw` : float, default=2
+            Line width for plots.
+        - `s` : float, default=100
+            Marker size.
+        - `alpha` : float, default=0.7
+            Transparency level of markers.
+        - `marker` : str, default='o'
+            Marker style for true labels.
+        - `edgecolors` : color or sequence of color, default='k'
+            Edge color of markers for true labels.
+        - `facecolors` : color or sequence of color, default='b'
+            Face color of markers for true labels.
+        - `yp_marker` : str, default='x'
+            Marker style for predicted labels.
+        - `yp_edgecolors` : color or sequence of color, default='r'
+            Edge color of markers for predicted labels.
+        - `yp_facecolors` : color or sequence of color, default='none'
+            Face color of markers for predicted labels.
+        - `xlabel` : str, default='Samples'
+            Label for the x-axis.
+        - `ylabel` : str, default='Labels'
+            Label for the y-axis.
+        - `fontsize` : float, default=12
+            Font size for labels and ticks.
+        - `legend_loc` : str, default='upper left'
+            Location of the legend.
+        - `rotate_xlabel` : float, default=90
+            Rotation angle of x-axis tick labels.
+
+    Returns
+    -------
+    ypred : array-like of shape (n_samples,), optional
+        Predicted labels. Returned only if `return_ypred` is True.
+
+    Notes
+    -----
+    This function is useful for evaluating classification models by visually comparing
+    true labels and predicted labels. It can highlight patterns where the model is
+    performing well or poorly.
+
     Examples
     --------
-    (1)-> Prepare our data - Use analysis data of Bagoue dataset 
-            since data is alread scaled and imputed
-            
-    >>> from gofast.exlib.sklearn  import SVC 
-    >>> from gofast.datasets import fetch_data 
-    >>> from gofast.plot import  plot_model 
-    >>> from gofast.tools.mlutils import split_train_test_by_id
-    >>> X, y = fetch_data('bagoue analysis' ) 
-    >>> _, Xtest = split_train_test_by_id(X, 
-                                          test_ratio=.3 ,  # 30% in test set 
-                                          keep_colindex= False
-                                        )
-    >>> _, ytest = split_train_test_by_id(y, .3 , keep_colindex =False) 
-    
-   (2)-> prepared our demo estimator and plot model predicted 
-   
-    >>> svc_clf = SVC(C=100, gamma=1e-2, kernel='rbf', random_state =42) 
-    >>> base_plot_params ={
-                        'lw' :3.,                  # line width 
-                        'lc':(.9, 0, .8), 
-                        'ms':7.,                
-                        'yp_marker' :'o', 
-                        'fig_size':(12, 8),
-                        'font_size':15.,
-                        'xlabel': 'Test examples',
-                        'ylabel':'Flow categories' ,
-                        'marker':'o', 
-                        'markeredgecolor':'k', 
-                        'markerfacecolor':'b', 
-                        'markeredgewidth':3, 
-                        'yp_markerfacecolor' :'k', 
-                        'yp_markeredgecolor':'r', 
-                        'alpha' :1., 
-                        'yp_markeredgewidth':2.,
-                        'show_grid' :True,          
-                        'galpha' :0.2,              
-                        'glw':.5,                   
-                        'rotate_xlabel' :90.,
-                        'fs' :3.,                   
-                        's' :20 ,                  
-                        'rotate_xlabel':90
-                   }
-    >>> plot_model(yt= ytest ,
-                   Xt=Xtest , 
-                   predict =True , # predict the result (estimator fit)
-                   clf=svc_clf ,  
-                   fill_between= False, 
-                   prefix ='b', 
-                   labels=['FR0', 'FR1', 'FR2', 'FR3'], # replace 'y' labels. 
-                   **base_plot_params 
-                   )
-    >>> # plot show where the model failed to predict the target 'yt'
-    
+    >>> from gofast.plot.evaluate import plot_model
+    >>> from sklearn.svm import SVC
+    >>> from sklearn.model_selection import train_test_split
+    >>> from sklearn.datasets import load_iris
+    >>> X, y = load_iris(return_X_y=True)
+    >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
+    >>> clf = SVC()
+    >>> clf.fit(X_train, y_train)
+    >>> plot_model(yt=y_test, Xt=X_test, clf=clf, predict=True,
+    ...            labels=['Setosa', 'Versicolor', 'Virginica'],
+    ...            prefix='Sample_', xlabel='Test Samples', ylabel='Species')
+
+    See Also
+    --------
+    sklearn.metrics.plot_confusion_matrix : Plot a confusion matrix.
+    sklearn.metrics.classification_report : Build a text report showing the main classification metrics.
+
+    References
+    ----------
+    .. [1] Pedregosa et al., "Scikit-learn: Machine Learning in Python",
+       Journal of Machine Learning Research, 2011.
+
     """
-    def format_ticks (ind, tick_number):
-        """ Format thick parameter with 'FuncFormatter(func)'
-        rather than using:: 
-            
-        axi.xaxis.set_major_locator (plt.MaxNLocator(3))
-        
-        ax.xaxis.set_major_formatter (plt.FuncFormatter(format_thicks))
-        """
-        if ind % 7 ==0: 
-            return '{}'.format (index[ind])
-        else: None 
-        
-    #xxxxxxxxxxxxxxxx update base plot keyword arguments xxxxxxxxxxxxxx
-    for k  in list(baseplot_kws.keys()): 
-        setattr (pobj , k, baseplot_kws[k])
+    # Validate and prepare the arguments
+    yt, ypred, index, clf = _check_predict_args(
+        yt, ypred, Xt, clf, index, predict
+    )
 
-    # index is used for displaying the examples label in x-abscissa  
-    # for instance index = ['b4, 'b5', 'b11',  ... ,'b425', 'b427', 'b430'] 
-    
-    Xt, yt,index, clf, ypred= _chk_predict_args (
-        Xt, yt,index, clf, ypred , predict= predict 
+    # If prefix is provided, add it to the indices
+    if prefix is not None:
+        index = [f"{prefix}{i}" for i in index]
+
+    # Set up default plotting parameters
+    plot_params = {
+        'figsize': (10, 6),
+        'lw': 2,
+        's': 100,
+        'alpha': 0.7,
+        'marker': 'o',
+        'edgecolors': 'k',
+        'facecolors': 'b',
+        'yp_marker': 'x',
+        'yp_edgecolors': 'r',
+        'yp_facecolors': 'none',
+        'xlabel': 'Samples',
+        'ylabel': 'Labels',
+        'fontsize': 12,
+        'legend_loc': 'upper left',
+        'rotate_xlabel': 90,
+    }
+
+    # Update plot_params with any user-provided values
+    plot_params.update(baseplot_kws)
+
+    # Create the figure and axes
+    fig, ax = plt.subplots(figsize=plot_params['figsize'])
+
+    # Plot the true labels
+    ax.scatter(
+        index,
+        yt,
+        s=plot_params['s'],
+        alpha=plot_params['alpha'],
+        marker=plot_params['marker'],
+        edgecolors=plot_params['edgecolors'],
+        facecolors=plot_params['facecolors'],
+        label='True Labels',
+    )
+
+    # Plot the predicted labels
+    ax.scatter(
+        index,
+        ypred,
+        s=plot_params['s'] / 2,
+        alpha=plot_params['alpha'],
+        marker=plot_params.get('yp_marker', 'x'),
+        edgecolors=plot_params.get('yp_edgecolors', 'r'),
+        facecolors=plot_params.get('yp_facecolors', 'none'),
+        label='Predicted Labels',
+    )
+
+    # Optionally fill between the true labels
+    if fill_between:
+        ax.plot(
+            index,
+            yt,
+            color=plot_params['facecolors'],
+            lw=plot_params['lw'],
+            alpha=plot_params['alpha'],
         )
-    if prefix is not None: 
-        index =np.array([f'{prefix}' +str(item) for item in index ])        
-        
-    # create figure obj 
-    fig = plt.figure(figsize = pobj.fig_size)
-    ax = fig.add_subplot(1,1,1) # create figure obj 
-    # control the size of predicted items 
-    pobj.s = pobj.s or pobj.fs *30 
-    # plot obverved data (test label =actual)
-    ax.scatter(x= index,
-               y =yt ,
-                color = pobj.lc,
-                s = pobj.s*10,
-                alpha = pobj.alpha, 
-                marker = pobj.marker,
-                edgecolors = pobj.marker_edgecolor,
-                linewidths = pobj.lw,
-                linestyles = pobj.ls,
-                facecolors = pobj.marker_facecolor,
-                label = 'Observed'
-                   )   
-    # plot the predicted target
-    ax.scatter(x= index, y =ypred ,
-              color = pobj.yp_lc,
-               s = pobj.s/2,
-               alpha = pobj.alpha, 
-               marker = pobj.yp_marker,
-               edgecolors = pobj.yp_marker_edgecolor,
-               linewidths = pobj.yp_lw,
-               linestyles = pobj.yp_ls,
-               facecolors = pobj.yp_marker_facecolor,
-               label = 'Predicted'
-               )
-  
-    if fill_between: 
-        ax.plot(yt, 
-                c=pobj.lc,
-                ls=pobj.ls, 
-                lw=pobj.lw, 
-                alpha=pobj.alpha
-                )
-    if pobj.ylabel is None:
-        pobj.ylabel ='Categories '
-    if pobj.xlabel is None:
-        pobj.xlabel = 'Test data'
-        
-    if labels is not None: 
-        if not  is_iterable(labels): 
-            labels =[labels]
 
-        if len(labels) != len(np.unique(yt)): 
+    # Set axis labels
+    ax.set_xlabel(plot_params['xlabel'], fontsize=plot_params['fontsize'])
+    ax.set_ylabel(plot_params['ylabel'], fontsize=plot_params['fontsize'])
+
+    # Rotate x-axis tick labels if specified
+    plt.xticks(rotation=plot_params['rotate_xlabel'])
+
+    # Set y-axis tick labels if labels are provided
+    if labels is not None:
+        unique_classes = np.unique(yt)
+        if len(labels) != len(unique_classes):
             warnings.warn(
-                "Number of categories in 'yt' and labels must be consistent."
-                f" Expected {len(np.unique(yt))}, got {len(labels)}")
-        else:
-            ax.set_yticks(np.unique(yt))
-            ax.set_yticklabels(labels)
-            
-    ax.set_ylabel (pobj.ylabel,
-                   fontsize= pobj.font_size  )
-    ax.set_xlabel (pobj.xlabel,
-           fontsize= pobj.font_size  )
-   
-    if pobj.tp_axis is None or pobj.tp_axis =='both': 
-        ax.tick_params(axis=pobj.tp_axis, 
-            labelsize= pobj.tp_labelsize *5 , 
+                f"Number of labels ({len(labels)}) does not match number"
+                f" of classes ({len(unique_classes)})."
             )
-        
-    elif pobj.tp_axis =='x':
-        param_='y'
-    elif pobj.tp_axis =='y': 
-        param_='x'
-        
-    if pobj.tp_axis in ('x', 'y'):
-        ax.tick_params(axis=pobj.tp_axis, 
-                        labelsize= pobj.tp_labelsize *5 , 
-                        )
-        
-        ax.tick_params(axis=param_, 
-                labelsize= pobj.font_size, 
-                )
-    # show label every 14 samples 
-    if len(yt ) >= 14 : 
-        ax.xaxis.set_major_formatter (plt.FuncFormatter(format_ticks))
+        else:
+            ax.set_yticks(unique_classes)
+            ax.set_yticklabels(labels)
 
-    plt.xticks(rotation = pobj.rotate_xlabel)
-    plt.yticks(rotation = pobj.rotate_ylabel)
-    
-    if pobj.show_grid: 
-        ax.grid(pobj.show_grid,
-                axis=pobj.gaxis,
-                which = pobj.gwhich, 
-                color = pobj.gc,
-                linestyle=pobj.gls,
-                linewidth=pobj.glw, 
-                alpha = pobj.galpha
-                )
-        if pobj.gwhich =='minor': 
-            ax.minorticks_on()
-            
-    if len(pobj.leg_kws) ==0 or 'loc' not in pobj.leg_kws.keys():
-         pobj.leg_kws['loc']='upper left'
-    ax.legend(**pobj.leg_kws)
-    
-    pobj.save(fig)
-    
-    return ypred if return_ypred else None   
+    # Add legend
+    ax.legend(loc=plot_params['legend_loc'])
+
+    # Adjust layout
+    plt.tight_layout()
+
+    # Show the plot
+    plt.show()
+
+    if return_ypred:
+        return ypred
+ 
 
 def plot_reg_scoring(
     reg, X, y, test_size=None, random_state =42, scoring ='mse',
@@ -3389,90 +3348,6 @@ def _remaining_plot_roperties (self, ax, xlim=None, ylim=None, fig=None ):
     self.save(fig)
         
     return self 
-
-
-def _chk_predict_args (Xt, yt, *args,  predict =False ): 
-    """ Validate arguments passed  for model prediction 
-    
-    :param Xt: ndarray|DataFrame, test data 
-    :param yt: array-like, pandas serie for test label 
-    :param args: list of other keyword arguments which seems to be usefull. 
-    :param predict: bool, expect a prediction or not. 
-    :returns: Tuple (Xt, yt, index , clf ,  ypred )- tuple of : 
-        * Xt : test data 
-        * yt : test label data 
-        * index :index to fit the samples in the dataframe or the 
-            shape [0] of ndarray 
-        * clf: the predictor or estimator 
-        * ypred: the estimator predicted values 
-        
-    """
-    # index is used for displayed the examples label in x-abscissa  
-    # for instance index = ['b4, 'b5', 'b11',  ... ,'b425', 'b427', 'b430']
-    
-    index , clf ,  ypred = args 
-    if index is not None:
-        #control len of index and len of y
-        if not is_iterable (index): 
-            raise TypeError("Index is an iterable object with the same length"
-                            "as 'y', got '{type (index).__name__!r}'") 
-        len_index= len(yt)==len(index)
-        
-        if not len_index:
-            warnings.warn(
-                "Expect an index size be consistent with 'y' size={len(yt)},"
-                  " got'{len(index)}'. Given index can not be used."
-                  )
-            index =None
-            
-        if len_index : 
-            if isinstance(yt, (pd.Series, pd.DataFrame)):
-                if not np.all(yt.index.isin(index)):
-                    warnings.warn(
-                        "Given index values are mismatched. Note that for "
-                        "overlaying the model plot, 'Xt' indexes must be "
-                        "identical to the one in target 'yt'. The indexes"
-                        " provided are wrong and should be resetted."
-                        )
-                    index =yt.index 
-                    yt=yt.values()
-            yt= pd.Series(yt, index = index )
-            
-    if predict: 
-        if clf is None: 
-            warnings.warn("An estimator/classifier is needed for prediction."
-                          " Got Nonetype.")
-            raise EstimatorError("No estimator detected. Could not predict 'y'") 
-        if Xt is None: 
-            raise TypeError(
-                "Test data 'Xt' is needed for prediction. Got nothing")
-  
-        # check estimator as callable object or ABCMeta classes
-        if not hasattr(clf, '__call__') and  not inspect.isclass(clf)\
-            and  type(clf.__class__)!=ABCMeta: 
-            raise EstimatorError(
-                f"{clf.__class__.__name__!r} is not an estimator/classifier."
-                " 'y' prediction is aborted!")
-            
-        clf.fit(Xt, yt)
-        ypred = clf.predict(Xt)
-        
-        if isinstance(Xt, (pd.DataFrame, pd.Series)):
-            if index is None:
-                index = Xt.index
-                
-    if isinstance(yt, pd.Series): 
-        index = yt.index.astype('>U12')
-    
-    if index is None: 
-        # take default values if  indexes are not given 
-        index =np.array([i for i in range(len(yt))])
-
-    if len(yt)!=len(ypred): 
-        raise TypeError("'ypred'(predicted) and 'yt'(true target) sizes must"
-                        f" be consistent. Expected {len(yt)}, got {len(ypred)}")
-        
-    return Xt, yt, index , clf ,  ypred 
 
 
 def plot2d(

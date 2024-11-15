@@ -64,10 +64,11 @@ if _missing_dependencies:
 # Suppress FutureWarnings if desired, but allow users to re-enable them
 _warnings_state = {"FutureWarning": "ignore"}
 def suppress_warnings(suppress=True):
-    """Function to suppress or re-enable future warnings."""
+    """Function to suppress or re-enable future/syntax warnings."""
     for warning, action in _warnings_state.items():
         if suppress:
             warnings.filterwarnings(action, category=FutureWarning)
+            warnings.filterwarnings(action, category=SyntaxWarning)
         else:
             warnings.filterwarnings("default", category=FutureWarning)
 
@@ -78,8 +79,9 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 
 # Setup logging configuration
-from .util import setup_logging
-setup_logging()
+from .util import initialize_logging
+
+initialize_logging()
 
 # Public API flag
 PUBLIC = False
@@ -89,13 +91,13 @@ def check_public_api():
     global __all__
     if config._set_public:
         from . import _public  # noqa
-        from .assistance import assist_me, gofast_explorer as explore
+        from .assistance import assist_me, explore 
         __all__.extend(["assist_me", "explore"])
         globals().update({"assist_me": assist_me, "explore": explore})
         # print("Public API has been enabled.")
         warnings.warn("Public API has been enabled.", UserWarning)
 
-# Property to automatically check public API when __set_public__ changes
+# Property to automatically check public API when _set_public changes
 class GoFastConfig:
     def __init__(self):
         self._set_public = False

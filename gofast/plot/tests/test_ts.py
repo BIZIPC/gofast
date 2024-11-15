@@ -9,8 +9,7 @@ import matplotlib.pyplot as plt
 from unittest.mock import patch, MagicMock # noqa 
 import pytest
 import seaborn as sns 
-from gofast.tools.coreutils import is_module_installed 
-from gofast.tools.funcutils import install_package 
+from gofast.tools.depsutils import is_module_installed, install_package 
 from gofast.plot.ts import TimeSeriesPlotter  
 
 try:

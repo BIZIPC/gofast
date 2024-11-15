@@ -1,10 +1,4 @@
 
-"""
-Analysis sub-package is used for basic feature extraction, transformation and 
-matrices covariance computations (:mod:`~gofast.analysis.decomposition`). 
-It also includes some dimensional reduction (:mod:`~gofast.analysis.dimensionality`) 
-and factor analysis from :mod:`~gofast.analysis.factors`. 
-"""
 from .dimensionality import (   
     nPCA, kPCA, LLE, iPCA, 
     get_most_variance_component,

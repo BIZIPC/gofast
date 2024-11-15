@@ -25,9 +25,10 @@ from ..api.types import _Tensor, _Dataset, _Optimizer
 from ..api.types import  _Callback, _Model, _Sequential 
 from ..api.types import List, Union, Dict, Tuple, DataFrame, Series 
 from ..api.types import ArrayLike , Callable, Any
-from ..tools._dependency import import_optional_dependency 
+from ..api.property import BaseClass
 from ..tools.coreutils import is_iterable, type_of_target 
-from ..tools.funcutils import ensure_pkg 
+from ..decorators import smartFitRun
+from ..tools.depsutils import ensure_pkg, import_optional_dependency
 from ..tools.validator import check_consistent_length
 from ..tools.validator import validate_keras_model,  is_frame
 
@@ -61,8 +62,9 @@ __all__= [
 
 DEP_MSG=dependency_message('tune')
 
+@smartFitRun 
 @ensure_pkg(KERAS_BACKEND or "keras", extra=DEP_MSG)
-class PBTTrainer:
+class PBTTrainer(BaseClass):
     """
     Implements Population Based Training (PBT), a hyperparameter optimization
     technique that adapts hyperparameters dynamically during training. 
@@ -163,7 +165,7 @@ class PBTTrainer:
 
     Examples
     --------
-    >>> from gofast.models.deep_search import PBTTrainer
+    >>> from gofast.nn.tune import PBTTrainer
     >>> def model_fn():
     ...     model = tf.keras.Sequential([
     ...         tf.keras.layers.Dense(10, activation='relu', input_shape=(10,)),
@@ -236,7 +238,7 @@ class PBTTrainer:
     
         Examples
         --------
-        >>> from gofast.models.deep_search import PBTTrainer
+        >>> from gofast.nn.tune import PBTTrainer
         >>> def model_fn():
         ...     model = tf.keras.Sequential([
         ...         tf.keras.layers.Dense(10, activation='relu', input_shape=(10,)),
@@ -371,8 +373,9 @@ class PBTTrainer:
             self.population[i] = (self.model_fn(), perturbed_hyperparams)  
             # Reinitialize model
 
+@smartFitRun 
 @ensure_pkg(KERAS_BACKEND or "keras", extra=DEP_MSG)
-class Hyperband:
+class Hyperband(BaseClass):
     """
     Implements the Hyperband hyperparameter optimization algorithm, utilizing 
     a bandit-based approach combined with successive halving to efficiently
@@ -411,7 +414,7 @@ class Hyperband:
 
     Examples
     --------
-    >>> from gofast.models.deep_search import Hyperband
+    >>> from gofast.nn.tune import Hyperband
     >>> from tensorflow.keras.models import Sequential
     >>> from tensorflow.keras.layers import Dense
     >>> from tensorflow.keras.optimizers import Adam
@@ -546,7 +549,7 @@ class Hyperband:
     
         Examples
         --------
-        >>> from gofast.models.deep_search import Hyperband
+        >>> from gofast.nn.tune import Hyperband
         >>> from tensorflow.keras.layers import Dense
         >>> from tensorflow.keras.models import Sequential
         >>> from tensorflow.keras.optimizers import Adam
@@ -697,7 +700,7 @@ def base_tuning(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import base_tuning
+    >>> from gofast.nn.tune import base_tuning
     >>> from tensorflow.keras.models import Sequential
     >>> from tensorflow.keras.layers import Dense
     >>> from tensorflow.keras.optimizers import Adam
@@ -830,7 +833,7 @@ def robust_tuning(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import robust_tuning
+    >>> from gofast.nn.tune import robust_tuning
     >>> from tensorflow.keras.models import Sequential
     >>> from tensorflow.keras.layers import Dense
     >>> import numpy as np
@@ -987,7 +990,7 @@ def fair_neural_tuning(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import fair_neural_tuning
+    >>> from gofast.nn.tune import fair_neural_tuning
     >>> from tensorflow.keras.models import Sequential
     >>> from tensorflow.keras.layers import Dense
     >>> import numpy as np
@@ -1138,7 +1141,7 @@ def deep_cv_tuning(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import deep_cv_tuning
+    >>> from gofast.nn.tune import deep_cv_tuning
     >>> import numpy as np
     >>> def model_fn(learning_rate):
     ...     from tensorflow.keras.models import Sequential
@@ -1297,7 +1300,7 @@ def custom_loss(
 
     Examples
     --------
-    >>> from gofast.models.deep_search import custom_loss
+    >>> from gofast.nn.tune import custom_loss
     >>> import tensorflow as tf
     >>> model = tf.keras.models.Sequential([
     ...     tf.keras.layers.Dense(10, activation='relu', input_shape=(20,)),
@@ -1422,7 +1425,7 @@ def find_best_lr(
     Examples
     --------
     >>> import numpy as np
-    >>> from gofast.models.deep_search import find_best_lr
+    >>> from gofast.nn.tune import find_best_lr
     >>> def create_model():
     ...     return tf.keras.models.Sequential([
     ...         tf.keras.layers.Dense(10, activation='relu', input_shape=(100,)),
@@ -1595,7 +1598,7 @@ def lstm_ts_tuner(
     --------
     >>> import pandas as pd 
     >>> import numpy as np 
-    >>> from gofast.models.deep_search import lstm_ts_tuner
+    >>> from gofast.nn.tune import lstm_ts_tuner
     >>> data = pd.read_csv('data.csv', parse_dates=['date'], index_col='date')
     >>> best_params = lstm_ts_tuner(data, 'target_column', n_lag=12)
     >>> print(best_params)

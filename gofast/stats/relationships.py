@@ -16,12 +16,13 @@ from sklearn.linear_model import LinearRegression
 from sklearn.manifold import MDS
 
 from ..api.types import Optional, Union, Tuple
-from ..api.types import DataFrame, ArrayLike, Array1D, Series
-from ..tools.validator import assert_xy_in
-from ..tools.validator import _is_arraylike_1d, is_frame 
+from ..api.types import DataFrame, ArrayLike, Array1D, Series 
 from ..tools.coreutils import to_series_if 
 from ..tools.coreutils import get_colors_and_alphas
 from ..tools.funcutils import make_data_dynamic
+from ..tools.validator import assert_xy_in
+from ..tools.validator import _is_arraylike_1d, is_frame
+
 
 __all__=[ 
     "correlation","perform_linear_regression","perform_kmeans_clustering",

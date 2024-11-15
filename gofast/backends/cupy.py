@@ -2,10 +2,7 @@
 # @author: LKouadio~ @Daniel
 
 """
-CuPyBackend Usage Documentation
--------------------------------
-
-The CuPyBackend module within the gofast computational framework provides an 
+CuPyBackend module within the gofast computational framework provides an 
 efficient way to utilize GPU acceleration for array operations, leveraging the 
 CuPy library as an alternative to NumPy but with support for CUDA. This backend 
 is ideal for tasks requiring high computational power and is particularly 
@@ -63,7 +60,6 @@ the gofast framework, highlighting its capabilities and ease of use for GPU-acce
 scientific computing.
 """
 
-# Import necessary modules
 try:
     import cupy as cp
 except ImportError:

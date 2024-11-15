@@ -13,7 +13,7 @@ from gofast.api.summary import ReportFactory, assemble_reports
 from gofast.api.util import remove_extra_spaces, get_table_size 
 TW = get_table_size() 
 
-__all__=["assist_me", "gofast_explorer"]
+__all__=["assist_me", "explore"]
 
 TASK_MAPPING = {
     'data_preprocessing': [
@@ -90,7 +90,6 @@ TASK_MAPPING = {
         'drop_correlated_features',
     ],
     'statistics_and_math': [
-        'adaptive_moving_average',
         'calculate_adjusted_lr',
         'calculate_optimal_bins',
         'calculate_binary_iv',
@@ -239,7 +238,7 @@ def _manage_task (tasks):
         return [random.choice(sorted (TASK_MAPPING.keys()))]
     return tasks 
         
-def gofast_explorer(package_path, /,  exclude_names=None):
+def explore(package_path, /,  exclude_names=None):
     """
     Provides a guided exploration of the 'gofast' package, returning descriptions
     for modules or functions, excluding any specified by the user or those 
@@ -365,6 +364,7 @@ def _get_gofast_package_descriptions(include_private=False):
         "analysis": "Includes modules for data analysis and statistical computations.",
         "api": "Provides API interfaces and methods for external integration.",
         "backends": "Houses different backend implementations for various operations.",
+        "callbacks": "Callbacks for data operations and model training.",
         "cli": "Command-line interface tools and scripts.",
         "compat": "Ensures compatibility with different versions and dependencies.",
         "dataops": "Data operations and management utilities.",
@@ -374,6 +374,7 @@ def _get_gofast_package_descriptions(include_private=False):
         "externals": "External dependencies and third-party integrations.",
         "geo": "Geospatial data processing and analysis tools.",
         "gflogs": "Logging utilities specific to the gofast framework.",
+        "mlops": "Tools and modules for Machine Learning Operations",
         "models": "Defines various machine learning models.",
         "nn": "Neural network models, data processing, training, and hyperparameter tuning tools.",
         "plot": "Plotting and visualization tools.",
@@ -387,7 +388,6 @@ def _get_gofast_package_descriptions(include_private=False):
         "_gofastlog[m]": "Logging configurations and settings for gofast.",
         "_public[m]": "Public API definitions and exports.",
         "assistance[m]": "Helper functions and assistance utilities.",
-        "base[m]": "Base classes and core functionalities.",
         "config[m]": "Configuration settings and utilities.",
         "decorators[m]": "Decorators for various functionalities within the package.",
         "exceptions[m]": "Custom exceptions and error handling.",

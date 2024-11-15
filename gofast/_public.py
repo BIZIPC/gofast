@@ -6,6 +6,7 @@ import pandas as pd
 import gofast.stats.descriptive # noqa 
 from gofast.api.formatter import MultiFrameFormatter 
 from gofast.api.util import escape_dataframe_elements 
+from gofast.compat.pandas import describe_dataframe 
 from gofast.decorators import DynamicMethod 
 
 __all__= ["summary" ]
@@ -93,8 +94,12 @@ def summary(
     dfs.append(df_infos)
 
     titles.append("Basic Statistics")
-    df_descr = df.describe(None, 'all' if not numeric_only else None,
-                           datetime_is_numeric=True )
+    df_descr = describe_dataframe(
+        df, numeric_only = numeric_only ,
+        datetime_is_numeric=True 
+        )
+    # df_descr = df.describe(None, 'all' if not numeric_only else None,
+    #                        datetime_is_numeric=True )
     dfs.append(df_descr)
 
     if include_correlation: 

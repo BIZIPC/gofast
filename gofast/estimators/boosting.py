@@ -7,13 +7,18 @@ for hybrid boosting approaches in classification and regression tasks.
 """
 
 from __future__ import annotations 
+from numbers import Real
+
 import numpy as np
 from tqdm import tqdm 
+
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.metrics  import  mean_squared_error
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+from sklearn.utils._param_validation import Interval, StrOptions
 
+from ._boosting import BaseBoostingTree 
 from ..tools.validator import check_X_y, get_estimator_name, check_array 
 from ..tools.validator import check_is_fitted
 
@@ -22,7 +27,7 @@ __all__=[
     "HybridBoostingClassifier","HybridBoostingRegressor",
     ]
 
-class BoostingTreeRegressor(BaseEstimator, RegressorMixin):
+class BoostingTreeRegressor(BaseBoostingTree, RegressorMixin):
     """
     Enhanced Boosted Regression Tree (BRT) for Regression Tasks.
 
@@ -204,6 +209,15 @@ class BoostingTreeRegressor(BaseEstimator, RegressorMixin):
     - Tree depth can be controlled to avoid overly complex models.
     
     """
+    _parameter_constraints: dict = {
+        **BaseBoostingTree._parameter_constraints, 
+        "criterion": [
+            StrOptions({"squared_error", "friedman_mse"})
+        ],
+        "loss": [StrOptions ({'linear', 'square','exponential'})], 
+        "subsample": [Interval(Real, 0.0 , None, closed="left")]
+    }
+        
     def __init__(
         self, 
         n_estimators=100, 
@@ -223,23 +237,25 @@ class BoostingTreeRegressor(BaseEstimator, RegressorMixin):
         ccp_alpha=0., 
         verbose=False 
         ):
-        self.n_estimators = n_estimators
-        self.eta0 = eta0
-        self.max_depth = max_depth
+        super().__init__(
+            n_estimators=n_estimators, 
+            eta0=eta0, 
+            max_depth=max_depth, 
+            criterion=criterion, 
+            splitter=splitter, 
+            min_samples_split=min_samples_split, 
+            min_samples_leaf=min_samples_leaf, 
+            min_weight_fraction_leaf=min_weight_fraction_leaf, 
+            max_features=max_features, 
+            random_state=random_state, 
+            max_leaf_nodes=max_leaf_nodes, 
+            min_impurity_decrease=min_impurity_decrease, 
+            ccp_alpha=ccp_alpha, 
+            verbose=verbose
+            )
         self.loss = loss
         self.subsample = subsample
-        self.criterion = criterion 
-        self.splitter = splitter 
-        self.min_samples_split = min_samples_split 
-        self.min_samples_leaf = min_samples_leaf 
-        self.min_weight_fraction_leaf = min_weight_fraction_leaf 
-        self.max_features = max_features 
-        self.random_state = random_state 
-        self.max_leaf_nodes = max_leaf_nodes 
-        self.min_impurity_decrease = min_impurity_decrease
-        self.ccp_alpha = ccp_alpha 
-        self.verbose=verbose 
-
+        
     def _loss_derivative(self, y, y_pred):
         """
         Compute the derivative of the loss function.
@@ -305,7 +321,7 @@ class BoostingTreeRegressor(BaseEstimator, RegressorMixin):
         using the specified loss function, and the predictions are adjusted using 
         the learning rate (`eta0`).
         """
-
+        self._validate_params() 
         X, y = check_X_y(X, y, estimator= get_estimator_name(self), 
                          accept_large_sparse= True, accept_sparse =True 
                          )
@@ -407,7 +423,7 @@ class BoostingTreeRegressor(BaseEstimator, RegressorMixin):
 
         return y_pred
 
-class BoostingTreeClassifier(BaseEstimator, ClassifierMixin):
+class BoostingTreeClassifier(BaseBoostingTree, ClassifierMixin):
     """
     Boosted Decision Tree Classifier.
 
@@ -559,6 +575,15 @@ class BoostingTreeClassifier(BaseEstimator, ClassifierMixin):
     sklearn.ensemble.GradientBoostingClassifier : A gradient boosting 
         machine for classification.
     """
+    _parameter_constraints: dict = {
+        **BaseBoostingTree._parameter_constraints, 
+        "criterion": [
+            StrOptions({"gini", "entropy"})
+        ],
+        "class_weight": [dict, list, None, 
+            StrOptions ({"balanced"})
+            ], 
+    }
     def __init__(
         self,
         n_estimators=100, 
@@ -577,23 +602,25 @@ class BoostingTreeClassifier(BaseEstimator, ClassifierMixin):
         ccp_alpha=0., 
         verbose=0 
         ):
-        self.n_estimators = n_estimators
-        self.max_depth = max_depth
-        self.eta0 = eta0
-        self.criterion = criterion 
-        self.splitter = splitter 
-        self.min_samples_split = min_samples_split 
-        self.min_samples_leaf = min_samples_leaf
-        self.min_weight_fraction_leaf = min_weight_fraction_leaf 
-        self.max_features = max_features 
-        self.random_state = random_state 
-        self.max_leaf_nodes = max_leaf_nodes 
-        self.min_impurity_decrease = min_impurity_decrease
-        self.class_weight = class_weight 
-        self.ccp_alpha = ccp_alpha 
-        self.verbose=verbose 
+        super().__init__(
+            n_estimators=n_estimators,
+            eta0=eta0, 
+            max_depth=max_depth, 
+            criterion=criterion, 
+            splitter=splitter, 
+            min_samples_split=min_samples_split, 
+            min_samples_leaf=min_samples_leaf, 
+            min_weight_fraction_leaf=min_weight_fraction_leaf, 
+            max_features=max_features, 
+            random_state=random_state,
+            max_leaf_nodes=max_leaf_nodes, 
+            min_impurity_decrease=min_impurity_decrease, 
+            ccp_alpha=ccp_alpha, 
+            verbose=verbose
+            )
+        self.class_weight = class_weight
         
-
+ 
     def fit(self, X, y):
         """
         Fit the Boosted Decision Tree Classifier model to the data.
@@ -635,6 +662,8 @@ class BoostingTreeClassifier(BaseEstimator, ClassifierMixin):
         using the logistic function, and the predictions are adjusted using the 
         learning rate (`eta0`).
         """
+        self._validate_params() 
+        
         X, y = check_X_y(X, y, estimator= get_estimator_name( self))
         self.classes_ = np.unique(y)
         self.estimators_ = []
@@ -788,7 +817,7 @@ class BoostingTreeClassifier(BaseEstimator, ClassifierMixin):
 
         return np.vstack((proba_negative_class, proba_positive_class)).T
 
-class HybridBoostingClassifier(BaseEstimator, ClassifierMixin):
+class HybridBoostingClassifier(BaseBoostingTree, ClassifierMixin):
     """
     Hybrid Boosting Classifier.
 
@@ -922,6 +951,16 @@ class HybridBoostingClassifier(BaseEstimator, ClassifierMixin):
     - :math:`\text{GB}(X)` is the prediction from the Gradient Boosting model.
 
     """
+    _parameter_constraints: dict = {
+        **BaseBoostingTree._parameter_constraints, 
+        "criterion": [
+            StrOptions({"gini", "entropy"})
+        ],
+        "class_weight": [dict, list, None, 
+            StrOptions ({"balanced"})
+        ], 
+    }
+    
     def __init__(
         self, 
         n_estimators=50, 
@@ -940,22 +979,25 @@ class HybridBoostingClassifier(BaseEstimator, ClassifierMixin):
         random_state=None, 
         verbose=False 
         ):
-        self.n_estimators = n_estimators
-        self.eta0 = eta0
-        self.max_depth = max_depth
-        self.criterion = criterion
-        self.splitter = splitter
-        self.min_samples_split = min_samples_split
-        self.min_samples_leaf = min_samples_leaf
-        self.min_weight_fraction_leaf = min_weight_fraction_leaf
-        self.max_features = max_features
-        self.max_leaf_nodes = max_leaf_nodes
-        self.min_impurity_decrease = min_impurity_decrease
+        
+        super().__init__(
+            n_estimators=n_estimators,
+            eta0=eta0, 
+            max_depth=max_depth, 
+            criterion=criterion, 
+            splitter=splitter, 
+            min_samples_split=min_samples_split, 
+            min_samples_leaf=min_samples_leaf, 
+            min_weight_fraction_leaf=min_weight_fraction_leaf, 
+            max_features=max_features, 
+            random_state=random_state,
+            max_leaf_nodes=max_leaf_nodes, 
+            min_impurity_decrease=min_impurity_decrease, 
+            ccp_alpha=ccp_alpha, 
+            verbose=verbose
+            )
         self.class_weight = class_weight
-        self.ccp_alpha = ccp_alpha
-        self.random_state = random_state
-        self.verbose = verbose 
-
+        
 
     def fit(self, X, y, sample_weight =None ):
         """
@@ -973,6 +1015,8 @@ class HybridBoostingClassifier(BaseEstimator, ClassifierMixin):
         self : object
             Returns self.
         """
+        self._validate_params() 
+        
         X, y = check_X_y(X, y, accept_sparse=True, estimator=self )
         
         if self.verbose:
@@ -1218,6 +1262,12 @@ class HybridBoostingRegressor(BaseEstimator, RegressorMixin):
       Gradient Boosting model trained on the residuals.
 
     """
+    _parameter_constraints: dict = {
+        **BaseBoostingTree._parameter_constraints, 
+        "criterion": [
+            StrOptions({"squared_error", "friedman_mse"})
+        ],
+    }
     def __init__(
         self, 
         n_estimators=100, 
@@ -1235,21 +1285,24 @@ class HybridBoostingRegressor(BaseEstimator, RegressorMixin):
         random_state=None,
         verbose=0
         ):
-        self.n_estimators = n_estimators
-        self.eta0 = eta0
-        self.max_depth = max_depth
-        self.criterion = criterion
-        self.splitter = splitter
-        self.min_samples_split = min_samples_split
-        self.min_samples_leaf = min_samples_leaf
-        self.min_weight_fraction_leaf = min_weight_fraction_leaf
-        self.max_features = max_features
-        self.max_leaf_nodes = max_leaf_nodes
-        self.min_impurity_decrease = min_impurity_decrease
-        self.ccp_alpha = ccp_alpha
-        self.random_state = random_state
-        self.verbose=verbose 
-
+        
+        super().__init__(
+            n_estimators=n_estimators, 
+            eta0=eta0, 
+            max_depth=max_depth, 
+            criterion=criterion, 
+            splitter=splitter, 
+            min_samples_split=min_samples_split, 
+            min_samples_leaf=min_samples_leaf, 
+            min_weight_fraction_leaf=min_weight_fraction_leaf, 
+            max_features=max_features, 
+            random_state=random_state, 
+            max_leaf_nodes=max_leaf_nodes, 
+            min_impurity_decrease=min_impurity_decrease, 
+            ccp_alpha=ccp_alpha, 
+            verbose=verbose
+            )
+   
     def fit(self, X, y, sample_weight=None):
         """
         Fit the Hybrid Boosting Regressor model to the data.
@@ -1266,6 +1319,8 @@ class HybridBoostingRegressor(BaseEstimator, RegressorMixin):
         self : object
             Returns self.
         """
+        self._validate_params() 
+        
         X, y = check_X_y(
             X, y, 
             accept_sparse=True, 
