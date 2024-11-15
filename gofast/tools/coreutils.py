@@ -634,7 +634,7 @@ def to_numeric_dtypes(
                     "NaN columns found in the data",
                     " ", inline =True, lstyle='.')                               
         # drop rows and columns with NaN values everywhere.                                                   
-        df.dropna ( axis=1, how='all', inplace =True)
+        df.dropna (axis=1, how='all', inplace =True)
         if str(how).lower()=='all': 
             df.dropna ( axis=0, how='all', inplace =True)
     
@@ -2190,7 +2190,7 @@ def save_job(
     
     versions = 'sklearn_v{0}.numpy_v{1}.pandas_v{2}'.format( 
         sklearn.__version__, np.__version__, pd.__version__) 
-    date = datetime.datetime.now() 
+    date = datetime.datetime.now().strftime("%Y%M%D") 
     
     savefile =str(savefile) 
     if ( 

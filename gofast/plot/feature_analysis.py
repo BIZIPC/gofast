@@ -26,6 +26,7 @@ from sklearn.linear_model import LogisticRegression
 from ..api.types import Optional, Tuple,  List, Union 
 from ..api.types import ArrayLike, DataFrame, Series
 from ..api.summary import ReportFactory 
+from ..transformers import SequentialBackwardSelector 
 from ..tools.coreutils import is_iterable
 from ..tools.coreutils import to_numeric_dtypes, fill_nan_in
 from ..tools.validator import get_estimator_name
@@ -37,61 +38,94 @@ __all__=[
   'plot_rf_feature_importances',
   'plot_feature_interactions',
   'plot_variables',
-  'plot_correlation_with_target',
+  'plot_correlation_with',
   'plot_dependences',
   'plot_sbs_feature_selection',
   'plot_permutation_importance',
   'plot_regularization_path',   
 ]
 
-def plot_regularization_path ( 
-        X, y , c_range=(-4., 6. ), fig_size=(8, 5), sns_style =False, 
-        savefig = None, **kws 
-        ): 
-    r""" Plot the regularisation path from Logit / LogisticRegression 
+
+def plot_regularization_path(
+    X, y, 
+    c_range=(-4., 6.), 
+    fig_size=(8, 5), 
+    sns_style=False, 
+    savefig=None, 
+    **kws
+): 
+    r"""
+    Plot the regularization path from Logistic Regression.
     
-    Varying the  different regularization strengths and plot the  weight 
-    coefficient of the different features for different regularization 
-    strength. 
+    Varying the different regularization strengths and plot the weight 
+    coefficients of the different features for different regularization 
+    strengths.
     
-    Note that, it is recommended to standardize the data first. 
+    Note that it is recommended to standardize the data first.
     
-    Parameters 
-    -----------
+    Parameters
+    ----------
     X : array-like of shape (n_samples, n_features)
         Training vector, where `n_samples` is the number of samples and
         `n_features` is the number of features. X is expected to be 
-        standardized. 
-
+        standardized.
+        
     y : array-like of shape (n_samples,) or (n_samples, n_outputs)
-        Target relative to X for classification or regression;
-        None for unsupervised learning.
-    c_range: list or tuple [start, stop] 
-        Regularization strength list. It is a range from the strong  
-        strong ( start) to lower (stop) regularization. Note that 'C' is 
+        Target relative to X for classification or regression; None for 
+        unsupervised learning.
+        
+    c_range : list or tuple, default=(-4., 6.)
+        Regularization strength range. It is a range from the strongest 
+        (start) to the weakest (stop) regularization. Note that 'C' is 
         the inverse of the Logistic Regression regularization parameter 
-        :math:`\lambda`. 
-    fig_size : tuple (width, height), default =(8, 6)
-        the matplotlib figure size given as a tuple of width and height
+        :math:`\lambda`.
         
-    savefig: str, default =None , 
-        the path to save the figures. Argument is passed to matplotlib.Figure 
-        class. 
-    sns_style: str, optional, 
-        the seaborn style.
+    fig_size : tuple, default=(8, 5)
+        The matplotlib figure size given as a tuple of width and height.
         
-    kws: dict, 
-        Additional keywords arguments passed to 
-        :class:`sklearn.linear_model.LogisticRegression`
-    
+    sns_style : bool, optional
+        If True, apply seaborn style to the plot.
+        
+    savefig : str, optional
+        The path to save the figure. Argument is passed to matplotlib.Figure.
+        
+    kws : dict
+        Additional keyword arguments passed to 
+        :class:`sklearn.linear_model.LogisticRegression`.
+        
     Examples
     --------
     >>> from gofast.plot.feature_analysis import plot_regularization_path 
     >>> from gofast.datasets import fetch_data
-    >>> X, y = fetch_data ('bagoue analysed' ) # data aleardy standardized
-    >>> plot_regularization_path (X, y ) 
+    >>> X, y = fetch_data('bagoue analysed')  # data already standardized
+    >>> plot_regularization_path(X, y)
+    
+    Notes
+    -----
+    This function visualizes the regularization path by plotting the weight 
+    coefficients of the features as a function of the regularization strength 
+    parameter `C` in logistic regression. It helps in understanding the effect 
+    of regularization on feature selection.
 
+    The weight coefficient for a feature :math:`j` is given by:
+
+    .. math::
+        w_j = \frac{1}{C} \sum_{i=1}^{n} y_i x_{ij} \cdot \text{logistic}(w^T x_i)
+
+    where :math:`C` is the inverse of the regularization strength, :math:`y_i` 
+    is the target value, and :math:`x_{ij}` is the feature value.
+
+    See Also
+    --------
+    sklearn.linear_model.LogisticRegression : Logistic regression implementation.
+    
+    References
+    ----------
+    .. [1] Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization Paths 
+       for Generalized Linear Models via Coordinate Descent. Journal of Statistical 
+       Software, 33(1), 1-22.
     """
+
     X, y = check_X_y( X, y,  to_frame= True)
     
     if not is_iterable(c_range): 
@@ -167,29 +201,38 @@ def plot_permutation_importance(
     importances : array-like
         The feature importances, typically obtained from a model 
         or permutation test.
+        
     feature_names : list of str
         The names of the features corresponding to the importances.
+        
     title : str, optional
         Title of the plot. Defaults to "Permutation feature importance".
+        
     xlabel : str, optional
         Label for the x-axis. Defaults to "RF importance".
+        
     ylabel : str, optional
         Label for the y-axis. Defaults to "Features".
+        
     figsize : tuple, optional
         Size of the figure (width, height) in inches. Defaults to (10, 8).
+        
     color : str, optional
         Bar color. Defaults to "skyblue".
+        
     edgecolor : str, optional
         Bar edge color. Defaults to "black".
+        
     savefig : str, optional
         Path to save the figure. If None, the figure is not saved. 
         Defaults to None.
     
     Returns
     -------
-    fig : Figure
+    fig : matplotlib.figure.Figure
         The matplotlib Figure object for the plot.
-    ax : Axes
+        
+    ax : matplotlib.axes.Axes
         The matplotlib Axes object for the plot.
     
     Example
@@ -199,11 +242,35 @@ def plot_permutation_importance(
     >>> importances = np.random.rand(30)
     >>> feature_names = ['Feature {}'.format(i) for i in range(30)]
     >>> plot_permutation_importance(
-        importances, feature_names, title="My Plot", xlabel="Importance",
-        ylabel="Features", figsize=(8, 10), color="lightblue",
-        edgecolor="gray", savefig="importance_plot.png")
-    """
+    ...     importances, feature_names, title="My Plot", xlabel="Importance",
+    ...     ylabel="Features", figsize=(8, 10), color="lightblue",
+    ...     edgecolor="gray", savefig="importance_plot.png")
+    
+    Notes
+    -----
+    This function visualizes the feature importance scores obtained from 
+    permutation importance tests. The importance scores indicate how much 
+    the model's performance metric decreases when the feature's values are 
+    randomly shuffled. Higher scores indicate more important features.
+    
+    The permutation importance for feature :math:`j` is calculated as:
 
+    .. math::
+        \text{Importance}(j) = \frac{1}{n} \sum_{i=1}^{n} (m_i - m_i^{(j)})
+
+    where :math:`m_i` is the performance metric for the original dataset, 
+    and :math:`m_i^{(j)}` is the performance metric with feature :math:`j` 
+    permuted.
+    
+    See Also
+    --------
+    sklearn.inspection.permutation_importance : Compute the permutation 
+        importance of a feature.
+    
+    References
+    ----------
+    .. [1] Breiman, L. (2001). Random Forests. Machine Learning, 45(1), 5-32.
+    """
     # Sort the feature importances in ascending order for plotting
     sorted_indices = np.argsort(importances)
     
@@ -221,6 +288,7 @@ def plot_permutation_importance(
         plt.savefig(savefig, bbox_inches='tight')
 
     plt.show()
+    
     return fig, ax
 
 def plot_dependences(
@@ -244,30 +312,39 @@ def plot_dependences(
     model : BaseEstimator
         A fitted scikit-learn-compatible estimator that implements `predict` 
         or `predict_proba`.
+        
     X : Union[np.ndarray, pd.DataFrame]
         The input samples. Pass directly as a Fortran-contiguous NumPy array 
         to avoid unnecessary memory duplication. For pandas DataFrame, 
         ensure binary columns are used.
+        
     features : Union[List[int], List[str]]
         The target features for which to create the PDPs or ICE plots. For 
         `feature_names` provided, `features` can be a list of feature names.
+        
     kind : str, optional
         The kind of plot to generate. 'average' generates the PDP, and 
         'individual' generates the ICE plots. Defaults to 'average'.
+        
     grid_resolution : int, optional
         The number of evenly spaced points where the partial dependence 
         is evaluated. Defaults to 100.
+        
     feature_names : Optional[List[str]], optional
         List of feature names if `X` is a NumPy array. `feature_names` is 
         used for axis labels. Defaults to None.
+        
     percentiles : Tuple[float, float], optional
         The lower and upper percentile used to create the extreme values 
         for the PDP axes. Must be in [0, 1]. Defaults to (0.05, 0.95).
+        
     n_jobs : Optional[int], optional
         The number of jobs to run in parallel for `plot_partial_dependence`. 
         `None` means 1. Defaults to None.
+        
     verbose : int, optional
         Verbosity level. Defaults to 0.
+        
     ax : Optional[matplotlib.axes.Axes], optional
         Matplotlib axes object to plot on. If None, creates a new figure. 
         Defaults to None.
@@ -288,14 +365,32 @@ def plot_dependences(
 
     See Also 
     ---------
-    sklearn.inspection.PartialDependenceDisplay: 
-        Class simplifies generating PDP and ICE plots. 
+    sklearn.inspection.PartialDependenceDisplay : 
+        Class simplifies generating PDP and ICE plots.
         
-    Note
-    ----
-    PDP and ICE plots are valuable  tools for understanding the effect of 
+    Notes
+    -----
+    PDP and ICE plots are valuable tools for understanding the effect of 
     features on the prediction of a model, providing insights into the model's 
     behavior over a range of feature values.
+
+    Partial dependence for feature :math:`j` is calculated as:
+
+    .. math::
+        \hat{f}_j(x_j) = \frac{1}{n} \sum_{i=1}^{n} \hat{f}(x_j, x_{i, -j})
+
+    where :math:`\hat{f}` is the fitted model, :math:`x_j` is the feature value 
+    for feature :math:`j`, and :math:`x_{i, -j}` are the values of all other 
+    features except :math:`j` for sample :math:`i`.
+
+    Individual Conditional Expectation for feature :math:`j` is the predicted 
+    value for each instance when only the feature :math:`j` varies, while other 
+    features remain fixed.
+
+    References
+    ----------
+    .. [1] Friedman, J.H. (2001). Greedy Function Approximation: A Gradient 
+       Boosting Machine. Annals of Statistics, 29(5), 1189-1232.
     """
     if not hasattr(model, 'predict') and not hasattr(model, 'predict_proba'):
        raise TypeError("The model must implement predict or predict_proba method.")
@@ -321,9 +416,16 @@ def plot_dependences(
     return ax
 
 def plot_sbs_feature_selection(
-        sbs_estimator,/, X=None, y=None, fig_size=(8, 5), 
-        sns_style=False, savefig=None, verbose=0, **sbs_kws
-    ):
+    sbs_estimator: 'SequentialBackwardSelector', 
+    /, 
+    X: Optional[ArrayLike] = None, 
+    y: Optional[ArrayLike] = None, 
+    fig_size: Tuple[int, int] = (8, 5), 
+    sns_style: bool = False, 
+    savefig: Optional[str] = None, 
+    verbose: int = 0, 
+    **sbs_kws
+) -> None:
     """
     Plot the feature selection process using Sequential Backward Selection (SBS).
 
@@ -333,7 +435,7 @@ def plot_sbs_feature_selection(
 
     Parameters
     ----------
-    sbs_estimator : :class:`~.gofast.transformers.SequentialBackwardSelection`
+    sbs_estimator : SequentialBackwardSelection
         The SBS estimator. Can be pre-fitted; if not, `X` and `y` must be provided
         for fitting during the plot generation.
 
@@ -361,7 +463,7 @@ def plot_sbs_feature_selection(
 
     sbs_kws : dict, optional
         Additional keyword arguments passed to the
-        :class:`~.gofast.base.SequentialBackwardSelection` class.
+        SequentialBackwardSelection class.
 
     Examples
     --------
@@ -379,9 +481,30 @@ def plot_sbs_feature_selection(
 
     # Example 2: Plotting an SBS estimator without pre-fitting
     >>> plot_sbs_feature_selection(knn, X_train, y_train)  # Same result as above
+
+    Returns
+    -------
+    None
+    
+    See Also
+    --------
+    gofast.transformers.SequentialBackwardSelection : Implementation of SBS algorithm.
+    
+    Notes
+    -----
+    The SBS algorithm reduces the feature space by iteratively removing the least 
+    significant feature based on the chosen performance metric, and evaluates the 
+    performance of the model with the remaining features. The goal is to find the 
+    smallest subset of features that achieves the best model performance.
+
+    The performance metric used in SBS is computed as follows:
+
+    .. math::
+        \text{Score} = \frac{1}{n} \sum_{i=1}^{n} \mathbb{1}\left(y_i = \hat{y}_i\right)
+
+    where :math:`\hat{y}_i` is the predicted label and :math:`y_i` is the true label.
     """
 
-    from ..transformers import SequentialBackwardSelection as SBS 
     if ( 
         not hasattr (sbs_estimator, 'scores_') 
         and not hasattr (sbs_estimator, 'k_score_')
@@ -391,7 +514,8 @@ def plot_sbs_feature_selection(
             raise TypeError (f"When {clfn} is not a fitted "
                              "estimator, X and y are needed."
                              )
-        sbs_estimator = SBS(estimator = sbs_estimator, **sbs_kws)
+        sbs_estimator = SequentialBackwardSelector(
+            estimator = sbs_estimator, **sbs_kws)
         sbs_estimator.fit(X, y )
         
     k_feat = [len(k) for k in sbs_estimator.subsets_]
@@ -432,7 +556,6 @@ def plot_sbs_feature_selection(
         
     plt.close () if savefig is not None else plt.show() 
     
-
 def plot_variables(
     data: DataFrame, 
     target: Union[Optional[str], ArrayLike] = None,
@@ -442,7 +565,7 @@ def plot_variables(
     fontsize: int = 12, 
     ylabel: Optional[str] = None, 
     figsize: Tuple[int, int] = (20, 16)
-    ) -> None:
+) -> None:
     """
     Plot variables in the dataframe based on their type (categorical or numerical)
     against a target variable.
@@ -451,21 +574,28 @@ def plot_variables(
     ----------
     data : pd.DataFrame
         The dataframe containing the variables to plot.
+        
     target : Optional[str], optional
         The name of the target variable. If provided, it must exist in `data`.
-        If array is passed, it must be consistent with the data. 
+        If array is passed, it must be consistent with the data.
+        
     kind : str, optional
         The kind of variables to plot ('cat' for categorical, 'num' for numerical). 
         Default is 'cat'.
+        
     colors : Optional[List[str]], optional
         A list of colors to use for the plot. If not provided, defaults will be used.
+        
     target_labels : Optional[Union[List[str], np.ndarray]], optional
         Labels for the different values of the target variable. If not provided,
         values will be used as labels.
+        
     fontsize : int, optional
         Font size for labels in the plot. Default is 12.
+        
     ylabel : Optional[str], optional
         Label for the y-axis. If not provided, no label is set.
+        
     figsize : Tuple[int, int], optional
         Figure size for the plot. Default is (20, 16).
 
@@ -473,6 +603,7 @@ def plot_variables(
     ------
     TypeError
         If `data` is not a pandas DataFrame.
+        
     ValueError
         If `target` is provided but does not exist in `data`.
 
@@ -484,8 +615,22 @@ def plot_variables(
     >>> plot_variables(df, kind='cat', target='survived',
                        colors=['blue', 'red'], target_labels=['Died', 'Survived'], 
                        fontsize=10, ylabel='Count')
-    """
 
+    Notes
+    -----
+    This function helps in visualizing the relationship between features and a 
+    target variable in a given dataset. It can plot either categorical or numerical 
+    variables based on the specified `kind`.
+
+    The function uses helper functions `_plot_categorical_variables` and 
+    `_plot_numerical_variables` to generate the plots based on the type of 
+    variables.
+
+    See Also
+    --------
+    seaborn.catplot : Categorical data plotting in seaborn.
+    seaborn.histplot : Plotting histograms for numerical data in seaborn.
+    """
     if not isinstance(data, pd.DataFrame):
         raise TypeError("Expected data to be a pandas DataFrame."
                         f" Got {type(data).__name__!r}")
@@ -566,8 +711,7 @@ def _plot_numerical_variables(
         plt.legend(fontsize=fontsize)
     plt.tight_layout()
 
-
-def plot_correlation_with_target(
+def plot_correlation_with(
     data: DataFrame, 
     target: Union[str, Series], 
     kind: str = 'bar', 
@@ -577,33 +721,40 @@ def plot_correlation_with_target(
     color: Optional[str] = None, 
     sns_style: Optional[str] = None, 
     **kwargs
-    ) -> plt.Axes:
+) -> plt.Axes:
     """
-    Plot the correlation of each feature in the dataframe with a
-    specified target.
+    Plot the correlation of each feature in the dataframe with a specified target.
 
     Parameters
     ----------
     data : pd.DataFrame
         The dataset containing the features to be correlated with the target.
+        
     target : Union[str, pd.Series]
         The target feature name (as a string) or a pandas Series object. 
         If a string is provided, it should be a column name in `data`.
+        
     kind : str, optional
         The kind of plot to generate. Default is 'bar'.
+        
     show_grid : bool, optional
         Whether to show grid lines on the plot. Default is True.
+        
     fig_size : Tuple[int, int], optional
         The figure size in inches (width, height). Default is (20, 8).
+        
     title : Optional[str], optional
         The title of the plot. If None, defaults to "Correlation with target". 
         Default is None.
+        
     color : Optional[str], optional
         The color for the bars or lines in the plot. If None, defaults to 
         "royalblue". Default is None.
+        
     sns_style : Optional[str], optional
         The seaborn style to apply to the plot. If None, the default seaborn 
         style is used. Default is None.
+        
     **kwargs : dict
         Additional keyword arguments to be passed to the plot function.
 
@@ -612,14 +763,48 @@ def plot_correlation_with_target(
     plt.Axes
         The matplotlib Axes object with the plot.
 
+    Raises
+    ------
+    TypeError
+        If `data` is not a pandas DataFrame.
+        
+    ValueError
+        If `target` is provided as a string but does not exist in `data`.
+
     Examples
     --------
     >>> import seaborn as sns
-    >>> from gofast.plot.feature_analysis import plot_correlation_with_target
+    >>> from gofast.plot.feature_analysis import plot_correlation_with
     >>> df = sns.load_dataset('iris')
-    >>> plot_correlation_with_target(df, 'petal_length', kind='bar', 
+    >>> plot_correlation_with(df, 'petal_length', kind='bar', 
                                      sns_style='whitegrid', color='green')
+
+    Notes
+    -----
+    This function calculates the correlation between each feature in the provided 
+    dataframe and the specified target. It then generates a plot of these correlations 
+    using the specified plot kind (e.g., bar plot, line plot).
+
+    Correlation calculation uses the Pearson correlation coefficient, defined as:
+
+    .. math::
+        r_{xy} = \frac{\sum{(x_i - \bar{x})(y_i - \bar{y})}}{\sqrt{\sum{(x_i - \bar{x})^2}\sum{(y_i - \bar{y})^2}}}
+
+    where :math:`x_i` and :math:`y_i` are individual sample points, and :math:`\bar{x}` and :math:`\bar{y}` 
+    are the means of the sample points.
+
+    See Also
+    --------
+    pandas.DataFrame.corrwith : Compute pairwise correlation of columns.
+    matplotlib.pyplot.bar : Make a bar plot.
+    seaborn.set_style : Set aesthetic parameters in seaborn.
+
+    References
+    ----------
+    .. [1] Pearson, K. (1895). Note on Regression and Inheritance in the Case of Two Parents. 
+       Proceedings of the Royal Society of London, 58, 240-242.
     """
+    
     if not isinstance(data, pd.DataFrame):
         raise TypeError("Expected data to be a pandas DataFrame."
                         f" Got {type(data).__name__!r}")
@@ -642,8 +827,7 @@ def plot_correlation_with_target(
                           color=color or "royalblue", **kwargs)
 
     return ax
- 
-    
+  
 def plot_feature_interactions(
     data: DataFrame, /, 
     features: Optional[List[str]] = None, 
@@ -657,7 +841,7 @@ def plot_feature_interactions(
     """
     Visualizes the interactions (distributions and relationships) among 
     various features in a dataset. 
-    
+
     The visualization includes histograms for distribution of features, 
     scatter plots for pairwise relationships, and Pearson correlation 
     coefficients.
@@ -666,20 +850,27 @@ def plot_feature_interactions(
     ----------
     data : pd.DataFrame
         A DataFrame containing the dataset.
+        
     features : Optional[List[str]]
         A list of feature names to be visualized. If None, all features are used.
+        
     histogram_bins : int, optional
         The number of bins for the histograms. Default is 15.
+        
     scatter_alpha : float, optional
         Alpha blending value for scatter plot, between 0 (transparent) and 
         1 (opaque). Default is 0.7.
+        
     corr_round : int, optional
         The number of decimal places for rounding the correlation coefficient.
         Default is 2.
+        
     plot_color : str, optional
         The color for the plots. Default is 'skyblue'.
+        
     edge_color : str, optional
         The edge color for the histogram bins. Default is 'black'.
+        
     savefig : Optional[str], optional
         The file path to save the figure. If None, the figure is not saved.
 
@@ -694,15 +885,46 @@ def plot_feature_interactions(
     >>> import pandas as pd 
     >>> from gofast.plot.feature_analysis import plot_feature_interactions
     >>> df = pd.DataFrame({
-        'Feature1': np.random.randn(100),
-        'Feature2': np.random.rand(100),
-        'Feature3': np.random.gamma(2., 2., 100)
-    })
+    ...     'Feature1': np.random.randn(100),
+    ...     'Feature2': np.random.rand(100),
+    ...     'Feature3': np.random.gamma(2., 2., 100)
+    ... })
     >>> fig = plot_feature_interactions(df, histogram_bins=20, scatter_alpha=0.5)
     
     This will create a customized plot with histograms, scatter plots, 
     and correlation coefficients for all features in the DataFrame.
+
+    Notes
+    -----
+    This function provides a comprehensive visualization of the relationships 
+    between features in a dataset. It includes:
+    
+    - Histograms on the diagonal to show the distribution of each feature.
+    - Scatter plots on the upper triangle to show the pairwise relationships 
+      between features.
+    - Pearson correlation coefficients annotated on the scatter plots to quantify 
+      the linear relationship between features.
+
+    The Pearson correlation coefficient is defined as:
+
+    .. math::
+        r_{xy} = \frac{\sum{(x_i - \bar{x})(y_i - \bar{y})}}{\sqrt{\sum{(x_i - \bar{x})^2}\sum{(y_i - \bar{y})^2}}}
+
+    where :math:`x_i` and :math:`y_i` are individual sample points, and 
+    :math:`\bar{x}` and :math:`\bar{y}` are the means of the sample points.
+
+    See Also
+    --------
+    pandas.DataFrame.hist : Generate histograms for DataFrame columns.
+    matplotlib.pyplot.scatter : Create a scatter plot with varying marker size and/or color.
+    scipy.stats.pearsonr : Calculate a Pearson correlation coefficient and the p-value.
+
+    References
+    ----------
+    .. [1] Pearson, K. (1895). Note on Regression and Inheritance in the Case of Two Parents. 
+       Proceedings of the Royal Society of London, 58, 240-242.
     """
+    
     data = to_numeric_dtypes(data, pop_cat_features=True )
     if features is None:
         features= list( data.columns )
@@ -738,7 +960,6 @@ def plot_feature_interactions(
 
     return fig
 
-
 def plot_rf_feature_importances(
     clf=None, 
     X=None, 
@@ -762,27 +983,40 @@ def plot_rf_feature_importances(
         A fitted classifier object that has an attribute `feature_importances_`.
         If None, and `importances` is also None, a RandomForestClassifier will
         be instantiated and fitted.
+        
     X : array-like of shape (n_samples, n_features), default=None
         The training input samples. Required if `clf` is not fitted or if
         `importances` is None.
+        
     y : array-like of shape (n_samples,), default=None
         The target values (class labels) as integers or strings.
+        
     importances : array-like of shape (n_features,), default=None
         Precomputed feature importances. If provided, `clf` will be ignored.
+        
     fig_size : tuple, default=(8, 4)
         Width, height in inches of the figure.
+        
     savefig : str, default=None
         If provided, the plot will be saved to the given path instead of shown.
+        
     n_estimators : int, default=500
         Number of trees in the forest to train if a new RandomForestClassifier
         is created. Ignored if `clf` is provided and fitted.
+        
     verbose : int, default=0
         If greater than 0, the feature importances will be printed to stdout.
+        
     sns_style : str, default=None
         The style of seaborn to apply. See seaborn documentation for valid styles.
+        
     **kwargs : dict
         Additional keyword arguments to pass to the RandomForestClassifier
         constructor, if needed.
+
+    Returns
+    -------
+    None
 
     Examples
     --------
@@ -795,9 +1029,9 @@ def plot_rf_feature_importances(
     >>> clf.fit(X, y)
     >>> plot_rf_feature_importances(clf=clf, X=X, verbose=1)
     
-    >>> X, y = fetch_data ('bagoue analysed' , return_X_y =True) 
-    >>> plot_rf_feature_importances (
-        RandomForestClassifier(), X=X, y=y , sns_style=True)
+    >>> X, y = fetch_data('bagoue analysed', return_X_y=True) 
+    >>> plot_rf_feature_importances(
+            RandomForestClassifier(), X=X, y=y, sns_style=True)
 
     Notes
     -----
@@ -808,8 +1042,32 @@ def plot_rf_feature_importances(
     and models that require fitting. Importances are extracted directly from the
     classifier if available; otherwise, it assumes they are provided directly
     through the `importances` parameter.
-    """
 
+    The importance of a feature is computed as the (normalized) total reduction 
+    of the criterion brought by that feature. It is also known as the Gini 
+    importance or Mean Decrease in Impurity (MDI).
+
+    The Gini importance is calculated as follows:
+
+    .. math::
+        I(f_j) = \sum_{t=1}^{T} \frac{v_{j}(t)}{|S(t)|}
+
+    where :math:`I(f_j)` is the importance of feature :math:`f_j`, :math:`v_{j}(t)` 
+    is the importance of feature :math:`f_j` at node :math:`t`, and :math:`|S(t)|` 
+    is the number of samples at node :math:`t`.
+
+    See Also
+    --------
+    sklearn.ensemble.RandomForestClassifier : A random forest classifier.
+    sklearn.inspection.permutation_importance : Permutation importance for feature 
+        evaluation.
+    matplotlib.pyplot.bar : Make a bar plot.
+
+    References
+    ----------
+    .. [1] Breiman, L. (2001). Random Forests. Machine Learning, 45(1), 5-32.
+    """
+    
     # Validate input
     if clf is None and importances is None and X is None  :
         raise ValueError("Either a classifier or precomputed importances"
@@ -872,36 +1130,42 @@ def plot_rf_feature_importances(
         plt.show()
         
 def plot_importances_ranking(
-    data, /, 
-    column=None, 
-    kind='barh', 
-    color='skyblue',
-    fig_size=(8, 4), 
-    sns_style=None, 
-    savefig=None
-    ):
+    data: Union[Series, DataFrame, np.ndarray], /, 
+    column: Union[str, int, None] = None, 
+    kind: str = 'barh', 
+    color: str = 'skyblue',
+    fig_size: Tuple[int, int] = (8, 4), 
+    sns_style: Optional[str] = None, 
+    savefig: Optional[str] = None
+) -> None:
     """
     Plot the ranking of feature importances from various input formats such as
     pandas Series, DataFrame, or a one-dimensional numpy array.
 
     Parameters
     ----------
-    data : pd.Series, pd.DataFrame, np.ndarray
+    data : Union[pd.Series, pd.DataFrame, np.ndarray]
         The data containing the feature importances. Can be a pandas Series,
         a DataFrame with one or multiple columns, or a one-dimensional numpy array.
-    column : str, int, optional
+        
+    column : Union[str, int, None], optional
         Specific column name or index to be used from DataFrame. If not provided,
         the first column is used by default if the DataFrame only has one column.
+        
     kind : str, default='barh'
         The kind of plot to generate. Options include 'bar', 'barh', etc.
+        
     color : str, default='skyblue'
         Color of the plot elements.
-    fig_size : tuple, default=(8, 4)
+        
+    fig_size : Tuple[int, int], default=(8, 4)
         The figure size in inches (width, height).
-    sns_style : str, optional
+        
+    sns_style : Optional[str], optional
         The style of seaborn to apply to the plot. See seaborn documentation for
         available styles.
-    savefig : str, optional
+        
+    savefig : Optional[str], optional
         Path to save the figure to. If provided, the plot is saved to this path
         and not shown.
 
@@ -933,6 +1197,26 @@ def plot_importances_ranking(
     If `data` is a DataFrame and `column` is not specified, and the DataFrame contains
     multiple columns, a ValueError is raised. This function assumes that feature
     importance data is numeric and will raise an error if non-numeric data is passed.
+
+    The importance of a feature is calculated as follows:
+
+    .. math::
+        I(f_i) = \frac{1}{n} \sum_{j=1}^{n} v_{ij}
+
+    where :math:`I(f_i)` is the importance of feature :math:`f_i`, and 
+    :math:`v_{ij}` is the importance value of feature :math:`f_i` in the 
+    :math:`j`-th iteration.
+
+    See Also
+    --------
+    pandas.Series.plot : Plot Series data.
+    pandas.DataFrame.plot : Plot DataFrame data.
+    matplotlib.pyplot.bar : Make a bar plot.
+    matplotlib.pyplot.barh : Make a horizontal bar plot.
+
+    References
+    ----------
+    .. [1] Breiman, L. (2001). Random Forests. Machine Learning, 45(1), 5-32.
     """
 
     if isinstance(data, pd.DataFrame):

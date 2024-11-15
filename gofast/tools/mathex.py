@@ -40,7 +40,7 @@ from ..exceptions import SiteError
 from ._arraytools import axis_slice
 from .coreutils import _assert_all_types, _validate_name_in
 from .coreutils import concat_array_from_list
-from .coreutils import find_close_position, normalize_string 
+from .coreutils import normalize_string # find_close_position 
 from .coreutils import to_numeric_dtypes, ellipsis2false
 from .coreutils import smart_format, type_of_target, is_iterable 
 from .coreutils import reshape, assert_ratio
@@ -3051,6 +3051,7 @@ def normalize(X, y=None):
         return X_normalized, y_normalized
 
     return X_normalized
+
 def moving_average (
     y:ArrayLike,
     *, 

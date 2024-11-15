@@ -123,7 +123,7 @@ def collect_pyx_modules(package_path, specific_files=None, rename=False):
 def collect_all_pyx_modules(base_package_paths, specific_files=None, rename=False):
     all_pyx_modules = []
     for package_path in base_package_paths:
-        all_pyx_modules.extend(collect_pyx_modules(package_path, specific_files,    rename=rename))
+        all_pyx_modules.extend(collect_pyx_modules(package_path, specific_files, rename=rename))
     return all_pyx_modules
 
 base_package_paths = [
@@ -165,7 +165,10 @@ setup_kwargs = {
     },
     'packages': find_packages(),
     'ext_modules': cythonize(
-        ext_modules, compiler_directives={'linetrace': True, 'language_level': "3", 'binding': True, }, annotate=True),
+        ext_modules, compiler_directives={
+            'linetrace': True, 'language_level': "3", 'binding': True, }, 
+        annotate=True
+        ),
     'cmdclass': {'build_ext': BuildExt},
     'install_requires': [
         "cython>=0.29.33",

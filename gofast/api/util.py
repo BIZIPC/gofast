@@ -1355,8 +1355,9 @@ def flex_df_formatter(
     
     if max_cols > auto_max_cols : 
         max_cols = auto_max_cols 
-    
+
     style= select_df_styles(style, df )
+
     if style =='advanced': 
         formatted_output = df_advanced_style(
             formatted_df, 
@@ -1381,6 +1382,7 @@ def flex_df_formatter(
             df=df 
             )
     # Remove the whitespace_sub GOFAST_ESCAPE π 
+
     formatted_output = formatted_output.replace (GOFAST_ESCAPE, ' ')
     return formatted_output
 
@@ -1911,7 +1913,10 @@ def _robust_df_display(
             continue
         elif i == 1 and header:
             new_lines.append(sub_line * table_width)
-            continue
+            
+            # Dont skip for single row.
+            if i !=len(lines)-1: 
+                continue
         
         # Split line into index and data parts if index is included
         if index:
@@ -1953,8 +1958,8 @@ def _robust_df_display(
     return formatted_output
 
 def make_format_df(
-        subset_df, whitespace_sub="%g%o#f#", apply_to_column=False, 
-        max_text_length=50):
+    subset_df, whitespace_sub="%g%o#f#", apply_to_column=False, 
+    max_text_length=50):
     """
     Creates a new DataFrame where each string value of each column that 
     contains a whitespace is replaced by '%g%o#f#'. This is useful to fix the 
@@ -2065,6 +2070,7 @@ def df_advanced_style(
     """
     # Split the formatted DataFrame string into individual lines.
     lines = formatted_df.split('\n')
+
     new_lines = []
     #print(index)
     # Calculate the automatic widths for the index and columns based on the content,
@@ -2110,7 +2116,10 @@ def df_advanced_style(
             new_lines.append(
                 add_move_space   + sub_line * ( # remove extra space 
                     len(header_line_formatted) - len (add_move_space))) 
-            continue
+            
+            # Dont skip for single row.
+            if i !=len(lines)-1: 
+                continue
 
         parts = line.split(maxsplit=1)
         if len(parts) > 1:
@@ -2131,7 +2140,6 @@ def df_advanced_style(
 
     header = f"{title}".center(table_width) if title else ""
     header_separator = header_line * table_width
-
     formatted_output = f"{header}\n{header_separator}\n" + "\n".join(
         new_lines) + f"\n{header_separator}"
 

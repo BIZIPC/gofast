@@ -3032,8 +3032,7 @@ def soft_data_split(
             X, test_size=test_size,random_state=random_state, **split_kwargs)
  
 def load_model(
-    file_path: str,
-    *,
+    file_path: str, *,
     retrieve_default: bool = True,
     model_name: Optional[str] = None,
     storage_format: Optional[str] = None

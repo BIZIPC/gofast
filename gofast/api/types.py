@@ -132,7 +132,8 @@ Examples of Series and DataFrame usage:
 """
 from __future__ import annotations 
 # from typing import TYPE_CHECKING
-
+import numpy as np 
+from scipy import sparse 
 # if TYPE_CHECKING:
 from typing import (
     List,
@@ -228,7 +229,10 @@ S = TypeVar('S', bound='Shape')
 A = TypeVar('A')  # Argument type
 R = TypeVar('R')  # Return type
 
+_ArrayLike = Union[np.ndarray, sparse.spmatrix]
+R = TypeVar('R')
 # ArrayLike = Union[Sequence, np.ndarray, pd.Series, pd.DataFrame]
+
 class AddShape(Generic[S]): 
     """
     Represents an additional dimension for shapes beyond two dimensions.
@@ -848,10 +852,71 @@ class _Metric:
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
+class SparseMatrix(Generic[R]):
+    """
+    A type hint for representing sparse matrices and their operations.
+    This class captures the structure of sparse matrices and allows for
+    easy type annotation and usage in functions that expect sparse matrix
+    inputs.
 
-if __name__ == '__main__':
-    # Test cases demonstrating the usage of defined generic types.
-    ...
+    This type hint is particularly useful for annotating functions that accept 
+    sparse matrices as arguments or return them, or for specifying the expected 
+    behavior of user-defined functions that manipulate sparse matrices.
+
+    Example:
+        >>> def apply_sparse_operation(matrix: SparseMatrix[sparse.spmatrix]) -> float:
+        ...     return matrix.sum()
+
+        >>> sm = SparseMatrix(sparse.csr_matrix([[1, 0, 2], [0, 3, 0], [4, 0, 5]]))
+        >>> print(apply_sparse_operation(sm))
+    """
+
+    def __init__(self, matrix: _ArrayLike):
+        if not sparse.isspmatrix(matrix) and not isinstance(matrix, np.ndarray):
+            raise TypeError("The input must be a sparse matrix or a numpy array.")
+        self.matrix = matrix
+    
+    def __call__(self, *args: Any, **kwargs: Any) -> R:
+        return self.matrix
+
+    @staticmethod
+    def show_sparse_types() -> None:
+        """
+        Prints the available sparse matrix types in `scipy.sparse`.
+
+        This method prints out the common sparse matrix types such as 
+        CSR, CSC, COO, DOK, LIL, and DIA matrices, with a brief description 
+        of each type.
+
+        Examples
+        --------
+        >>> SparseMatrix.show_sparse_types()
+        """
+        sparse_types = {
+            'csr_matrix': 'Compressed Sparse Row matrix',
+            'csc_matrix': 'Compressed Sparse Column matrix',
+            'coo_matrix': 'Coordinate list matrix',
+            'dok_matrix': 'Dictionary Of Keys matrix',
+            'lil_matrix': 'List of Lists matrix',
+            'dia_matrix': 'Diagonal storage matrix'
+        }
+        
+        print("Available sparse matrix types in scipy.sparse:")
+        for key, value in sparse_types.items():
+            print(f"{key}: {value}")
+
+
+if __name__ == "__main__":
+    def apply_sparse_operation(matrix: SparseMatrix[sparse.spmatrix]) -> float:
+        return matrix.matrix.sum()
+
+    # Create a SparseMatrix instance with a CSR matrix
+    sm = SparseMatrix(sparse.csr_matrix([[1, 0, 2], [0, 3, 0], [4, 0, 5]]))
+    result = apply_sparse_operation(sm)
+    print("Sum of sparse matrix:", result)  # Output: Sum of sparse matrix: 15.0
+    
+    # Show available sparse matrix types
+    SparseMatrix.show_sparse_types()
 
 
 

@@ -535,7 +535,7 @@ class DataFrameFormatter(metaclass=MetaLen):
             Enables method chaining.
         """
         if isinstance(df, pd.Series):
-            df = df.to_frame(self.series_name) 
+            df = df.to_frame(name = self.series_name) 
         elif not isinstance(df, pd.DataFrame):
             raise ValueError("Input must be a pandas DataFrame or Series.")
         
@@ -602,12 +602,12 @@ class DataFrameFormatter(metaclass=MetaLen):
         col_width = col_widths[col_name]
         
         if isinstance(val, (np.integer, np.floating)):
-            formatted_val = apply_precision(val, self.precision) if isinstance(
+            formatted_val = f"{apply_precision(val, self.precision)}" if isinstance(
                 val, np.floating) else f"{int(val)}"
             # formatted_val = f"{float(val):.{self.precision}f}" if isinstance(
             #     val, np.floating) else f"{int(val)}"
         elif isinstance(val, (float, int)):
-            formatted_val = apply_precision(val, self.precision) if isinstance (
+            formatted_val = f"{apply_precision(val, self.precision)}" if isinstance (
                 val, float) else f"{val}"
             # formatted_val = f"{val:.{self.precision}f}" if isinstance(
             #     val, float) else f"{val}"
@@ -619,7 +619,7 @@ class DataFrameFormatter(metaclass=MetaLen):
              )
         else:
             formatted_val = format_iterable(val)
-    
+
         if len(formatted_val) > self._max_value_width :
             formatted_val = formatted_val[:col_width - 3] + '...'
     

@@ -34,40 +34,88 @@ def plot_pie_charts(
     verbose: int = 0
 ):
     """
-    Plots pie charts for categorical and numerical columns in a DataFrame. 
+    Plots pie charts for categorical and numerical columns in a DataFrame.
     
-    Function automatically detects and appropriately treats each type. 
+    Function automatically detects and appropriately treats each type.
     Numerical columns can be binned into categories.
-
+    
     Parameters
     ----------
     data : pandas.DataFrame
         The DataFrame containing the data.
+        
     columns : str or list of str, optional
-        Specific columns to plot. If None, all columns are plotted.
+        Specific columns to plot. If `None`, all columns are plotted.
+        
     bin_numerical : bool, optional
-        If True, numerical columns will be binned into categories before plotting.
+        If `True`, numerical columns will be binned into categories before
+        plotting. Default is `True`.
+        
     num_bins : int, optional
-        Number of bins to use for numerical columns if bin_numerical is True.
+        Number of bins to use for numerical columns if `bin_numerical` is 
+        `True`. Default is 4.
+        
     handle_missing : {'exclude', 'include'}, optional
         How to handle missing values in data. 'exclude' will ignore them,
-        while 'include' will treat them as a separate category.
-    explode, shadow, startangle, cmap, autopct : various
-        Formatting options for the pie charts, similar to matplotlib's pie 
-        chart configuration.
+        while 'include' will treat them as a separate category. Default is 
+        'exclude'.
+        
+    explode : tuple of float, or str, optional
+        If not `None`, each value in the tuple indicates how far each wedge 
+        is separated from the center of the pie. Can also be a single string
+        'all' to apply the same explode value to all wedges. Default is `None`.
+        
+    shadow : bool, optional
+        Draw a shadow beneath the pie chart. Default is `True`.
+        
+    startangle : int, optional
+        Starting angle of the pie chart. Default is 90 degrees.
+        
+    cmap : str, optional
+        Colormap for the pie chart. Default is 'viridis'.
+        
+    autopct : str, optional
+        String used to label the wedges with their numeric value. Default is 
+        '%1.1f%%'.
+        
     verbose : int, optional
-        Verbosity level. Higher values increase the amount of informational output.
-
+        Verbosity level. Higher values increase the amount of informational 
+        output. Default is 0.
+        
     Examples
     --------
-    >>> import pandas as pd 
+    >>> import pandas as pd
     >>> from gofast.plot.charts import plot_pie_charts
     >>> df = pd.DataFrame({
     ...     'Category': ['A', 'B', 'A', 'C', 'B', 'A', 'D', 'D'],
     ...     'Values': [1, 2, 3, 4, 5, 6, 7, 8]
     ... })
     >>> plot_pie_charts(df, bin_numerical=True, num_bins=3)
+    
+    Notes
+    -----
+    This function helps visualize categorical distributions of data in a 
+    DataFrame using pie charts. For numerical columns, data can be binned 
+    into a specified number of categories to facilitate categorical plotting.
+    
+    The mathematical formulation for the binning of numerical data is:
+    
+    .. math::
+        bins = \frac{\max(x) - \min(x)}{n}
+    
+    where :math:`x` represents the numerical data and :math:`n` is the number
+    of bins.
+    
+    See Also
+    --------
+    pandas.DataFrame.plot : Basic plotting functionality for DataFrames.
+    
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+       Computing in Science & Engineering, 9(3), 90-95.
     """
+
     is_frame (data, df_only=True, raise_exception= True)
     if columns is None:
         columns = data.columns.tolist()
@@ -136,7 +184,7 @@ def _plot_pie_chart(
                np.linspace(0, 1, len(labels))))
     ax.set_title(title)
     ax.axis('equal')  # Ensures the pie chart is drawn as a circle
-    
+
 def create_radar_chart(
     d: ArrayLike, /, categories: List[str], 
     cluster_labels: List[str], 
@@ -160,42 +208,58 @@ def create_radar_chart(
         2D array with shape (n_clusters, n_variables), where each row 
         represents a different cluster and each column represents a 
         different variable.
+        
     categories : list of str
         List of variable names corresponding to the columns in the data.
+        
     cluster_labels : list of str
         List of labels for the different clusters.
+        
     title : str, optional
         The title of the radar chart. Default is "Radar plot Umatrix cluster 
         properties".
+        
     figsize : tuple, optional
-        The size of the figure to plot (width, height in inches). Default is (6, 6).
+        The size of the figure to plot (width, height in inches). Default is 
+        (6, 6).
+        
     color_map : str or list, optional
-        Colormap or list of colors for the different clusters. Default is 'Set2'.
+        Colormap or list of colors for the different clusters. Default is 
+        'Set2'.
+        
     alpha_fill : float, optional
         Alpha value for the filled area under the plot. Default is 0.25.
+        
     linestyle : str, optional
         The style of the line in the plot. Default is 'solid'.
+        
     linewidth : int, optional
         The width of the lines. Default is 1.
+        
     yticks : tuple, optional
         Tuple containing the y-ticks values. Default is (0.5, 1, 1.5).
+        
     ytick_labels : list of str, optional
-        List of labels for the y-ticks, must match the length of yticks. 
-        If None, yticks will be used as labels. Default is None.
+        List of labels for the y-ticks, must match the length of `yticks`. 
+        If `None`, `yticks` will be used as labels. Default is `None`.
+        
     ylim : tuple, optional
-        Tuple containing the min and max values for the y-axis. Default is (0, 2).
+        Tuple containing the min and max values for the y-axis. Default is 
+        (0, 2).
+        
     legend_loc : str, optional
         The location of the legend. Default is 'upper right'.
 
     Returns
     -------
     fig : Figure
-        The matplotlib Figure object for the radar chart.
+        The matplotlib `Figure` object for the radar chart.
+        
     ax : Axes
-        The matplotlib Axes object for the radar chart.
+        The matplotlib `Axes` object for the radar chart.
 
-    Example
-    -------
+    Examples
+    --------
     >>> import numpy as np 
     >>> from gofast.plot.charts import create_radar_chart
     >>> num_clusters = 5
@@ -204,8 +268,34 @@ def create_radar_chart(
     >>> categories = [f"Variable {i}" for i in range(num_vars)]
     >>> cluster_labels = [f"Cluster {i}" for i in range(num_clusters)]
     >>> create_radar_chart(data, categories, cluster_labels)
-    """
+    
+    Notes
+    -----
+    This function creates a radar chart (or spider chart) to visualize 
+    multivariate data. Each variable has its own axis, and data is plotted 
+    radially. The chart helps compare the profiles of different clusters 
+    across multiple variables.
 
+    The data should be arranged in a 2D array where each row represents a 
+    cluster and each column represents a variable. The angles for the axes 
+    are computed using:
+
+    .. math::
+        \\theta_i = \\frac{2 \\pi i}{n}
+    
+    where :math:`i` is the index of the category and :math:`n` is the total 
+    number of categories.
+
+    See Also
+    --------
+    pandas.DataFrame.plot : Basic plotting functionality for DataFrames.
+    
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+       Computing in Science & Engineering, 9(3), 90-95.
+    """
+    
     # Compute angle for each axis
     angles = np.linspace(0, 2 * np.pi, len(categories),
                          endpoint=False).tolist()
@@ -242,36 +332,41 @@ def create_radar_chart(
     return fig, ax
 
 def create_base_radar_chart(
-    d: ArrayLike,/,   categories: List[str], 
-    cluster_labels: List[str],
-    title:str="Radar plot Umatrix cluster properties"
-    ):
+    d: ArrayLike, /, 
+    categories: List[str], 
+    cluster_labels: List[str], 
+    title: str = "Radar plot Umatrix cluster properties"
+):
     """
     Create a radar chart with one axis per variable.
 
     Parameters
     ----------
-    data : array-like
+    d : array-like
         2D array with shape (n_clusters, n_variables), where each row 
-        represents a different
-        cluster and each column represents a different variable.
+        represents a different cluster and each column represents a 
+        different variable.
+        
     categories : list of str
         List of variable names corresponding to the columns in the data.
+        
     cluster_labels : list of str
         List of labels for the different clusters.
+        
     title : str, optional
-        The title of the radar chart. Default is "Radar plot
-        Umatrix cluster properties".
+        The title of the radar chart. Default is "Radar plot Umatrix cluster 
+        properties".
 
     Returns
     -------
     fig : Figure
-        The matplotlib Figure object for the radar chart.
-    ax : Axes
-        The matplotlib Axes object for the radar chart.
+        The matplotlib `Figure` object for the radar chart.
         
-    Example
-    -------
+    ax : Axes
+        The matplotlib `Axes` object for the radar chart.
+        
+    Examples
+    --------
     >>> import numpy as np 
     >>> from gofast.plot.charts import create_base_radar_chart
     >>> num_clusters = 5
@@ -280,7 +375,34 @@ def create_base_radar_chart(
     >>> categories = [f"Variable {i}" for i in range(num_vars)]
     >>> cluster_labels = [f"Cluster {i}" for i in range(num_clusters)]
     >>> create_base_radar_chart(data, categories, cluster_labels)
+    
+    Notes
+    -----
+    This function creates a radar chart (or spider chart) to visualize 
+    multivariate data. Each variable has its own axis, and data is plotted 
+    radially. The chart helps compare the profiles of different clusters 
+    across multiple variables.
+
+    The data should be arranged in a 2D array where each row represents a 
+    cluster and each column represents a variable. The angles for the axes 
+    are computed using:
+
+    .. math::
+        \\theta_i = \\frac{2 \\pi i}{n}
+    
+    where :math:`i` is the index of the category and :math:`n` is the total 
+    number of categories.
+
+    See Also
+    --------
+    pandas.DataFrame.plot : Basic plotting functionality for DataFrames.
+    
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+       Computing in Science & Engineering, 9(3), 90-95.
     """
+    
     # Number of variables we're plotting.
     num_vars = len(categories)
 

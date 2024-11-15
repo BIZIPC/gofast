@@ -156,6 +156,130 @@ def filter_valid_kwargs(callable_obj, kwargs):
 
     return valid_kwargs
 
+def validate_sets(
+    data,  
+    mode: str = 'base', 
+    allow_empty: bool = True, 
+    element_type: type = None,
+    key_type: type = str
+    ) :
+
+    """
+    Validates whether the input data is a set in 'base' mode or a dictionary 
+    of sets in 'deep' mode. Provides additional parameters for flexibility 
+    and versatility. Returns the data if it passes validation.
+
+    Parameters
+    ----------
+    data : Union[set, Dict[str, set]]
+        The input data to validate. It can be either a single set or a dictionary 
+        where keys are set names and values are sets.
+
+        - `base mode` : A single set.
+        - `deep mode` : A dictionary of sets.
+
+    mode : str, optional
+        The mode in which to validate the data. Options are 'base' for a single 
+        set and 'deep' for a dictionary of sets. Default is 'base'.
+
+    allow_empty : bool, optional
+        Whether to allow empty sets or dictionaries. Default is True.
+
+    element_type : type, optional
+        The expected type of elements in the set(s). If provided, the function 
+        checks whether all elements are of this type. Default is None (no type 
+        check).
+
+    key_type : type, optional
+        The expected type of keys in the dictionary when in 'deep' mode. Default 
+        is `str`.
+
+    Returns
+    -------
+    Union[set, Dict[str, set]]
+        The original data if it matches the specified mode and additional 
+        criteria. Raises ValueError if validation fails.
+
+    Examples
+    --------
+    >>> from gofast.tools.validator import validate_sets 
+    >>> validate_sets({1, 2, 3}, mode='base')
+    {1, 2, 3}
+
+    >>> validate_sets({"Set1": {1, 2, 3}, "Set2": {3, 4, 5}}, mode='deep')
+    {"Set1": {1, 2, 3}, "Set2": {3, 4, 5}}
+
+    >>> validate_sets({"Set1": {1, 2, 3}, "Set2": [3, 4, 5]}, mode='deep')
+    Traceback (most recent call last):
+        ...
+    ValueError: Data validation failed: expected all values to be sets
+
+    >>> validate_sets(set(), mode='base', allow_empty=False)
+    Traceback (most recent call last):
+        ...
+    ValueError: Data validation failed: empty set is not allowed
+
+    >>> validate_sets({"Set1": set()}, mode='deep', allow_empty=False)
+    Traceback (most recent call last):
+        ...
+    ValueError: Data validation failed: empty dictionary is not allowed
+
+    >>> validate_sets({"Set1": {1, 2, 3}}, mode='deep', element_type=int)
+    {"Set1": {1, 2, 3}}
+
+    Notes
+    -----
+    This function checks the type of the input data based on the specified mode. 
+    In 'base' mode, it ensures the data is a set. In 'deep' mode, it ensures the 
+    data is a dictionary where all values are sets. Additional parameters allow 
+    for checking if sets are empty, if elements are of a specific type, and if 
+    dictionary keys are of a specific type.
+
+    See Also
+    --------
+    isinstance : Python built-in function to check an object's type.
+
+    References
+    ----------
+    .. [1] Python Software Foundation. (n.d.). isinstance. Retrieved from 
+       https://docs.python.org/3/library/functions.html#isinstance
+
+    """
+    if mode == 'base':
+        if not isinstance(data, set):
+            raise ValueError(
+                f"Data validation failed: expected a set, got {type(data).__name__!r}")
+        if not allow_empty and not data:
+            raise ValueError("Data validation failed: empty set is not allowed")
+        if element_type is not None and any(
+                not isinstance(el, element_type) for el in data):
+            raise ValueError("Data validation failed: all elements must"
+                             f" be of type {element_type.__name__!r}")
+    elif mode == 'deep':
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Data validation failed: expected a dictionary,"
+                f" got {type(data).__name__!r}")
+        if not allow_empty and not data:
+            raise ValueError(
+                "Data validation failed: empty dictionary is not allowed")
+        if any(not isinstance(k, key_type) for k in data.keys()):
+            raise ValueError(
+                f"Data validation failed: all keys must be of type {key_type.__name__!r}")
+        if any(not isinstance(v, set) for v in data.values()):
+            raise ValueError("Data validation failed: expected all values to be sets")
+        if element_type is not None and any(
+                not isinstance(el, element_type) 
+                for v in data.values() for el in v):
+            raise ValueError("Data validation failed: all elements must"
+                             f" be of type {element_type.__name__!r}")
+     
+    else:
+        raise ValueError("Mode must be either 'base' or 'deep'.")
+        
+    return data
+
+
 def validate_scores(
     scores, true_labels=None, 
     mode="strict", 

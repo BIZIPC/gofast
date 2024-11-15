@@ -24,14 +24,13 @@ from .utils import pobj, make_mpl_properties
 
 __all__=['plot_unified_pca', 'plot_pca_components', 'plot_cumulative_variance']
 
-def plot_pca_components (
+def plot_pca_components(
     components: ArrayLike, *, 
-    feature_names: Optional[List[str]]= None , 
-    cmap: str= 'viridis', 
-    savefig: Optional [str]=None, 
+    feature_names: Optional[List[str]] = None, 
+    cmap: str = 'viridis', 
+    savefig: Optional[str] = None, 
     **kws
-    ): 
-
+):
     """
     Visualize the coefficients of principal component analysis (PCA) as 
     a heatmap.
@@ -43,15 +42,19 @@ def plot_pca_components (
         object from :class:`gofast.analysis.dimensionality.nPCA`. If a PCA object 
         is provided, `feature_names` is not needed as it will retrieve the feature
         names automatically from the PCA object.
+        
     feature_names : list of str, optional
         List of feature names for the heatmap axes. This is necessary if `components` 
         is an array. If `components` is a PCA object, feature names are retrieved 
         automatically and this parameter can be omitted.
+        
     cmap : str, default 'viridis'
         The colormap name for the heatmap. Uses Matplotlib colormaps.
+        
     savefig : str, optional
         Path where the figure should be saved. If not provided, the figure is not 
         saved.
+        
     kws : dict
         Additional keyword arguments passed to :meth:`matplotlib.pyplot.matshow`.
 
@@ -72,7 +75,33 @@ def plot_pca_components (
     >>> features = pca.feature_names_in_
     >>> plot_pca_components(components, feature_names=features, cmap='jet_r')
 
+    Notes
+    -----
+    This function visualizes the PCA components as a heatmap, which allows 
+    for easy interpretation of the contribution of each feature to the 
+    principal components. The color intensity in the heatmap represents the 
+    magnitude of the coefficients.
+
+    The PCA transformation is defined as:
+
+    .. math::
+        Z = XW
+
+    where :math:`X` is the original data, :math:`W` is the matrix of PCA 
+    components, and :math:`Z` is the transformed data in the new feature 
+    space.
+
+    See Also
+    --------
+    sklearn.decomposition.PCA : Principal component analysis (PCA).
+    matplotlib.pyplot.matshow : Plot a matrix or array as an image.
+
+    References
+    ----------
+    .. [1] Jolliffe, I. T. (2002). Principal Component Analysis. Springer Series 
+       in Statistics (2nd ed.). Springer.
     """
+    
     if sp.issparse (components): 
         raise TypeError ("Sparse array is not supported for PCA "
                          "components visualization."
@@ -108,8 +137,7 @@ def plot_pca_components (
         plt.savefig(savefig, dpi = 300 )
         
     plt.close () if savefig is not None else plt.show() 
-    
-
+ 
 def plot_cumulative_variance(
     data: NDArray,
     n_components: Optional[int] = None,
@@ -120,7 +148,7 @@ def plot_cumulative_variance(
     title: str = None, 
     xlabel: str = None, 
     ylabel: str = None, 
-    threshold_label: Optional[str] =None, 
+    threshold_label: Optional[str] = None, 
     grid_style: str = ':',
     grid_width: float = 0.5,
     axis_width: float = 2,
@@ -138,34 +166,48 @@ def plot_cumulative_variance(
     ----------
     data : np.ndarray
         The input dataset for PCA. Must be 2D (samples x features).
+        
     n_components : int, optional
         Number of principal components to consider. Defaults to min(data.shape).
+        
     threshold : float, optional
         A variance ratio threshold to draw a horizontal line. Defaults to None.
+        
     figsize : Tuple[int, int], optional
         Size of the figure (width, height) in inches. Defaults to (10, 6).
+        
     threshold_color : str, optional
         Color of the threshold line. Defaults to 'red'.
+        
     line_color : str, optional
         Color of the cumulative variance line. Defaults to 'teal'.
+        
     title : str, optional
         Title of the plot. Defaults to 'Cumulative Explained Variance 
         Ratio by Principal Components'.
+        
     xlabel : str, optional
         X-axis label. Defaults to 'Number of Components'.
+        
     ylabel : str, optional
         Y-axis label. Defaults to 'Cumulative Explained Variance Ratio'.
+        
     threshold_label : str, optional
         Label for the threshold line. Defaults to 'Variance Threshold'.
+        
     grid_style : str, optional
         Style of the grid lines (lines, dashes, dots, etc.).
         Defaults to ':' (dotted line).
+        
     grid_width : float, optional
         Width of the grid lines. Defaults to 0.5.
+        
     axis_width : float, optional
         Width of the axes' spines. Defaults to 2.
+        
     axis_color : str, optional
         Color of the axes' spines. Defaults to 'black'.
+        
     show_grid : bool, optional
         If True, display grid lines on the plot. Defaults to True.
     
@@ -177,9 +219,9 @@ def plot_cumulative_variance(
     Raises
     ------
     ValueError
-        If 'data' is not a 2D array.
-        If 'n_components' is greater than the number of features in 'data'.
-        If 'threshold' is not between 0 and 1 when provided.
+        If `data` is not a 2D array.
+        If `n_components` is greater than the number of features in `data`.
+        If `threshold` is not between 0 and 1 when provided.
     
     Examples
     --------
@@ -188,7 +230,33 @@ def plot_cumulative_variance(
     >>> ax = plot_cumulative_variance(iris.data)
     >>> ax.set_title('Updated Plot Title')
     >>> plt.show()
+    
+    Notes
+    -----
+    This function performs PCA on the given dataset and plots the cumulative 
+    explained variance ratio as a function of the number of principal components.
+    This visualization helps in determining the number of components needed to 
+    capture the desired amount of variance in the data.
+
+    The cumulative explained variance ratio is computed as follows:
+
+    .. math::
+        \text{Cumulative Variance} = \sum_{i=1}^{k} \lambda_i
+
+    where :math:`\lambda_i` represents the explained variance by the :math:`i`-th 
+    principal component.
+
+    See Also
+    --------
+    sklearn.decomposition.PCA : Principal component analysis (PCA).
+    matplotlib.pyplot.plot : Plot y versus x as lines and/or markers.
+
+    References
+    ----------
+    .. [1] Jolliffe, I. T. (2002). Principal Component Analysis. Springer Series 
+       in Statistics (2nd ed.). Springer.
     """
+    
     title= title or  'Cumulative Explained Variance Ratio by Principal Components'
     xlabel = xlabel or 'Number of Components',
     ylabel= ylabel or 'Cumulative Explained Variance Ratio'
@@ -244,67 +312,87 @@ def plot_cumulative_variance(
     
     plt.show()
     
-    return ax    
+    return ax
+
 def plot_unified_pca(
-    components:NDArray,
+    components: NDArray,
     Xr: NDArray,
     y: ArrayLike,
-    classes: ArrayLike=None,
-    markers:List [str]=None, 
-    colors: List [str ]=None, 
-    **baseplot_kws, 
- ):
+    classes: ArrayLike = None,
+    markers: List[str] = None, 
+    colors: List[str] = None, 
+    **baseplot_kws
+):
     """
     The biplot is the best way to visualize all-in-one following a PCA analysis.
     
     There is an implementation in R but there is no standard implementation
-    in Python. 
+    in Python.
 
     Parameters  
-    -----------
-    components: NDArray, shape (n_components, n_eigenvectors ), 
-        the eigenvectors of the PCA. The shape in axis must much the number 
-        of component computed using PCA. If the `Xr` shape 1 equals to the 
-        shape 0 of the component matrix `components`, it will be transposed 
-        to fit `Xr` shape 1.
+    ----------
+    components : NDArray of shape (n_components, n_eigenvectors)
+        The eigenvectors of the PCA. The shape in axis must match the number 
+        of components computed using PCA. If the shape of `Xr` along axis 1 
+        equals the shape of `components` along axis 0, it will be transposed 
+        to fit the shape of `Xr` along axis 1.
         
-    Xr: NDArray of transformed X. 
-        the PCA projected data scores on n-given components.The reduced  
+    Xr : NDArray of transformed X
+        The PCA projected data scores on n-given components. The reduced 
         dimension of train set 'X' with maximum ratio as sorted eigenvectors 
-        from first to the last component. 
+        from the first to the last component.
  
-    y: Array-like, 
-        the target composing the class labels.
-    classes: list or int, 
-        class categories or class labels 
-    markers: str, 
-        Matplotlib list of markers for plotting  classes.
-    colors: str, 
-        Matplotlib list of colors to customize plots 
+    y : Array-like
+        The target composing the class labels.
         
-    baseplot: dict, :class:`gofast.property.BasePlot`. 
-        Matplotlib property from `BasePlot` instances. 
-
+    classes : list of str, optional
+        Class categories or class labels.
+        
+    markers : list of str, optional
+        Matplotlib list of markers for plotting classes.
+        
+    colors : list of str, optional
+        Matplotlib list of colors to customize plots.
+        
+    **baseplot_kws : dict
+        Additional keyword arguments for the base plot properties.
+        
     Examples 
-    ---------
+    --------
     >>> from gofast.analysis import nPCA
     >>> from gofast.datasets import fetch_data
-    >>> from gofast.plot import  plot_unified_pca, pobj_obj  #  is Baseplot instance 
-    >>> X, y = fetch_data ('bagoue pca' )  # fetch pca data 
-    >>> pca= nPCA (X, n_components= 2 , return_X= False ) # return PCA object 
-    >>> components = pca.components_ [:2, :] # for two components 
-    >>> plot_unified_pca ( components , pca.X, y ) # pca.X is the reduced dim X 
-    >>> # to change for instance line width (lw) or style (ls) 
-    >>> # just use the baseplotobject (pobj_obj)
-    
-    References 
-    -----------
-    Originally written by `Serafeim Loukas`_, serafeim.loukas@epfl.ch 
-    and was edited to fit the :term:`gofast` package API. 
-    
-    .. _Serafeim Loukas: https://towardsdatascience.com/...-python-7c274582c37e
-    
+    >>> from gofast.plot.dimensionality import plot_unified_pca
+    >>> X, y = fetch_data('bagoue pca')
+    >>> pca = nPCA(X, n_components=2, return_X=False)
+    >>> components = pca.components_[:2, :]
+    >>> plot_unified_pca(components, pca.X, y)
+
+    Notes
+    -----
+    This function creates a biplot that displays both the principal component 
+    scores and the principal component loadings. This dual representation 
+    allows for the simultaneous visualization of observations and variables 
+    in the PCA-transformed feature space.
+
+    The mathematical formulation of PCA involves decomposing the data matrix 
+    :math:`X` as:
+
+    .. math::
+        X = T P^T
+
+    where :math:`T` contains the principal component scores and :math:`P` 
+    contains the loadings (eigenvectors).
+
+    See Also
+    --------
+    sklearn.decomposition.PCA : Principal component analysis (PCA).
+
+    References
+    ----------
+    .. [1] Serafeim Loukas, "PCA Biplot in Python," Towards Data Science, 
+       https://towardsdatascience.com/pca-biplot-in-python-7c274582c37e
     """
+
     #xxxxxxxxx update base plot keyword arguments
     for k  in list(baseplot_kws.keys()): 
         setattr (pobj , k, baseplot_kws[k])

@@ -18,10 +18,11 @@ import matplotlib as mpl
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt 
 import seaborn as sns 
+from sklearn.base import BaseEstimator
 from sklearn.model_selection import learning_curve 
 
 from ..api.types import NDArray, ArrayLike, DataFrame 
-from ..api.types import List, Tuple, Optional, Dict, Union 
+from ..api.types import List, Tuple, Optional, Dict, Union, Any
 from ..api.util import to_snake_case 
 from ..decorators import Dataify
 from ..exceptions import PlotError 
@@ -30,7 +31,7 @@ from ..tools.coreutils import _assert_all_types, projection_validator
 from ..tools.funcutils import ensure_pkg 
 from ..tools.validator import check_X_y, check_array, validate_square_matrix 
 from ..tools.validator import get_estimator_name, _check_consistency_size 
-from ..tools.validator import parameter_validator
+from ..tools.validator import parameter_validator, validate_sets
 from ._config import PlotConfig 
 from .utils import _manage_plot_kws, pobj, savefigure
 
@@ -39,14 +40,14 @@ __all__=[
     'plot_learning_inspections',
     'plot_loc_projection',
     'plot_matshow',
-    'plot_mlxtend_heatmap',
-    'plot_mlxtend_matrix',
+    'plot_heatmapx',
+    'plot_matrix',
     'plot_sunburst',
     'plot_sankey',
     'plot_euler_diagram',
     'create_upset_plot',
     'plot_venn_diagram',
-    'create_matrix_representation',
+    'plot_set_matrix',
     'plot_woodland', 
     'plot_l_curve', 
     ]
@@ -238,99 +239,107 @@ def plot_woodland(
                 labelright=True)
     # Display the plot
     plt.show()
-    
+   
 def plot_l_curve(
-    rms, 
-    roughness, 
-    tau=None, 
-    hansen_point=None, 
-    rms_target=None,
-    view_tline=False,
-    hpoint_kws=dict(), 
-    fig_size = (10, 4),
-    ax=None,
-    fig=None, 
-    style = 'classic', 
-    savefig=None, 
-    **plot_kws
-    ):
+    rms: Union[List[float], np.ndarray], 
+    roughness: Union[List[float], np.ndarray], 
+    tau: Optional[Union[List[float], np.ndarray]] = None, 
+    hansen_point: Optional[Tuple[float, float]] = None, 
+    rms_target: Optional[float] = None,
+    view_tline: bool = False,
+    hpoint_kws: Dict[str, Any] = dict(), 
+    fig_size: Tuple[int, int] = (10, 4),
+    ax: Optional[plt.Axes] = None,
+    fig: Optional[plt.Figure] = None, 
+    style: str = 'classic', 
+    savefig: Optional[str] = None, 
+    **plot_kws: Any
+) -> plt.Axes:
     """
     Plot the Hansen L-curve.
-    
+
     The L-curve criteria is used to determine the suitable model 
-    after runing multiple inversions with different :math:`\tau` values. 
+    after running multiple inversions with different :math:`\tau` values. 
     The function plots RMS vs. Roughness with an option to highlight a 
     specific point named Hansen point [1]_.
-    
+
     The :math:`\tau` represents the measure of compromise between data fit and 
-    model smoothness. To find out an appropriates-value, the inversion was 
-    carried out with differents-values. The RMS error obtained from each 
-    inversion is plotted against model roughnes [2]_. 
-    
-    Plots RMS vs. Roughness with an option to highlight the Hansen point.
-    
+    model smoothness. To find out an appropriate :math:`\tau` value, the 
+    inversion was carried out with different :math:`\tau` values. The RMS error 
+    obtained from each inversion is plotted against model roughness [2]_.
+
     Parameters 
-    ------------
+    ----------
+    rms : Union[List[float], np.ndarray]
+        Corresponding list or array-like of RMS values.
+
+    roughness : Union[List[float], np.ndarray]
+        List or array-like of roughness values.
+
+    tau : Optional[Union[List[float], np.ndarray]], optional
+        List of tau values to visualize as text mark in the plot. Default is None.
+
+    hansen_point : Optional[Tuple[float, float]], optional
+        The Hansen point to visualize in the plot. It can be determined 
+        automatically if set to "auto". Default is None.
+
+    rms_target : Optional[float], optional
+        The root-mean-squared target. If set, and `view_tline` is ``False``, 
+        the target value should be an axis limit. Default is None.
+
+    view_tline : bool, default=False
+        Whether to display the target line.
+
+    hpoint_kws : Dict[str, Any], optional
+        Keyword arguments to highlight the Hansen point in the figure.
+        Default is an empty dict.
+
+    fig_size : Tuple[int, int], optional
+        Figure size in inches. Default is (10, 4).
+
+    ax : Optional[plt.Axes], optional
+        Axes to plot on. If None, a new figure and axes are created.
+        Default is None.
+
+    fig : Optional[plt.Figure], optional
+        Figure to save automatically if provided. Default is None.
+
+    style : str, optional
+        Matplotlib style to use. Default is 'classic'.
+
+    savefig : Optional[str], optional
+        File path to save the figure. If None, the figure is not saved. 
+        Default is None.
+
+    plot_kws : Dict[str, Any]
+        Additional keyword arguments for `ax.plot`.
+
+    Returns
+    -------
+    ax : plt.Axes
+        The matplotlib axes object with the plot.
+        
     
-    rms: ArrayLike, list, 
-       Corresponding list pr Arraylike of RMS values.
-       
-    roughness: Arraylike, list, 
-       List or ArrayLike of roughness values. 
-       
-    tau: Arraylike or list, optional 
-       List of tau values to visualize as text mark in the plot. 
-
-    hansen_point: A tuple (roughness_value, RMS_value) , optional 
-       The Hansen point to visualize in the plot. It can be determine 
-       automatically if ``highlight_point='auto'``.
-       
-    rms_target: float, optional 
-      The root-mean-squared target. If set, and `view_tline` is ``False``, 
-      the target value should be axis limit. 
-      
-     view_tline: bool, default=False 
-       Display the target line should be  displayed.
-       
-    hpoint_kws: dict, optional 
-      Keyword argument to highlight the hansen point in the figure. 
-     
-    ax: Matplotlib.pyplot.Axes, optional 
-       Axe to collect the figure. Could be used to support other axes. 
-       
-    fig: Matplotlib.pyplot.figure, optional 
-        Supply fig to save automatically the plot, otherwise, keep it 
-        to ``None``.
-
-    savefig: str, optional 
-        Save figure name. The default resolution dot-per-inch is ``300``. 
-         
-    Return 
-    ------
-    ax: Matplotlib.pyplot.Axis 
-        Return axis  
-        
-    References
-    -----------
-    [1] Hansen, P. C., & O'Leary, D. P. (1993). The use of the L-Curve in
-        the regularization of discrete ill-posed problems. SIAM Journal
-        on Scientific Computing, 14(6), 1487–1503. https://doi.org/10.1137/0914086.
-        
-    [2] Kouadio, K.L, Jianxin Liu, lui R., Liu W. Boukhalfa Z. (2024). An integrated
-        Approach for sewage diversion: Case of Huayuan Mine. Geophysics, 89(4). 
-        https://doi.org/10.1190/geo2023-0332.1
-         
     Examples
-    ---------
+    --------
     >>> from gofast.tools.utils import plot_l_curve
-    >>> # Test the function with the provided data points and 
-    >>> # highlighting point (50, 3.12)
     >>> roughness_data = [0, 50, 100, 150, 200, 250, 300, 350]
     >>> RMS_data = [3.16, 3.12, 3.1, 3.08, 3.06, 3.04, 3.02, 3]
     >>> highlight_data = (50, 3.12)
-    >>> plot_l_curve(roughness_data, RMS_data, highlight_data)
-    """
+    >>> plot_l_curve(RMS_data, roughness_data, hansen_point=highlight_data)
     
+    
+    References
+    ----------
+    .. [1] Hansen, P. C., & O'Leary, D. P. (1993). The use of the L-Curve in
+           the regularization of discrete ill-posed problems. SIAM Journal
+           on Scientific Computing, 14(6), 1487–1503. https://doi.org/10.1137/0914086.
+        
+    .. [2] Kouadio, K.L, Jianxin Liu, lui R., Liu W. Boukhalfa Z. (2024). An integrated
+           Approach for sewage diversion: Case of Huayuan Mine. Geophysics, 89(4). 
+           https://doi.org/10.1190/geo2023-0332.1
+           
+    """
     rms= np.array (
         is_iterable(rms, exclude_string= True, transform =True ), 
                    dtype =float) 
@@ -466,20 +475,20 @@ def _get_hansen_point ( roughness, RMS):
     use_conda=PlotConfig.use_conda 
  )
 def plot_venn_diagram(
-    sets: Union[Dict[str, set], List[ArrayLike]],
+    sets: Union[Dict[str, set], List[np.ndarray]],
     set_labels: Optional[Tuple[str, ...]] = None,
     title: str = 'Venn Diagram',
     figsize: Tuple[int, int] = (8, 8),
     set_colors: Tuple[str, ...] = ('red', 'green', 'blue'),
     alpha: float = 0.5, 
-    savefig: Optional[str]=None, 
+    savefig: Optional[str] = None
 ) -> Axes:
     """
-    Create and optionally save a Venn diagram for two sets.
+    Create and optionally save a Venn diagram for two or three sets.
 
     A Venn diagram is a visual representation of the mathematical or logical
-    relationship between two sets of items. It depicts these sets as circles,
-    with the overlap representing items common to both sets. It's a useful
+    relationship between sets of items. It depicts these sets as circles,
+    with the overlap representing items common to the sets. It's a useful
     tool for comparing and contrasting groups of elements, especially in
     the field of data analysis and machine learning.
     
@@ -489,23 +498,43 @@ def plot_venn_diagram(
     Parameters
     ----------
     sets : Union[Dict[str, set], List[np.ndarray]]
-        Either a dictionary with two items, each being a set of elements, or a 
-        list of two arrays. The arrays should be of consistent length, 
+        Either a dictionary with two or three items, each being a set of elements,
+        or a list of two or three arrays. The arrays should be of consistent length,
         and their elements will be treated as unique identifiers.
-    set_labels : Optional[Tuple[str, str]], optional
-        A tuple containing two strings that label the sets in the diagram. If None, 
-        default labels will be used.
+        
+        - `sets` specifies the input sets to be visualized.
+
+    set_labels : Optional[Tuple[str, ...]], optional
+        A tuple containing labels for the sets in the diagram. If None, default
+        labels will be used. Default is None.
+        
+        - `set_labels` provides custom labels for the sets.
+
     title : str, optional
         Title of the Venn diagram. Default is 'Venn Diagram'.
+        
+        - `title` specifies the title of the plot.
+
     figsize : Tuple[int, int], optional
         Size of the figure (width, height). Default is (8, 8).
-    set_colors : Tuple[str, str], optional
-        Colors for the two sets. Default is ('red', 'green').
+        
+        - `figsize` determines the size of the plot.
+
+    set_colors : Tuple[str, ...], optional
+        Colors for the sets. Default is ('red', 'green', 'blue').
+        
+        - `set_colors` defines the colors for each set.
+
     alpha : float, optional
         Transparency level of the set colors. Default is 0.5.
+        
+        - `alpha` sets the transparency level for the set colors.
+
     savefig : Optional[str], optional
         Path and filename to save the figure. If None, the figure is not saved.
-        Example: 'path/to/figure.png'
+        Example: 'path/to/figure.png'. Default is None.
+        
+        - `savefig` specifies the file path to save the plot.
 
     Returns
     -------
@@ -514,12 +543,22 @@ def plot_venn_diagram(
 
     Examples
     --------
+    >>> import numpy as np
     >>> import matplotlib.pyplot as plt
     >>> from sklearn.model_selection import train_test_split
     >>> from sklearn.datasets import make_classification
     >>> from sklearn.ensemble import RandomForestClassifier
     >>> from xgboost import XGBClassifier
     >>> from gofast.plot.inspection import plot_venn_diagram
+    
+    >>> set1 = {1, 2, 3}
+    >>> set2 = {2, 3, 4}
+    >>> ax = plot_venn_diagram({'Set1': set1, 'Set2': set2}, 
+                               set_labels=('Set1', 'Set2'))
+
+    >>> arr1 = np.array([1, 2, 3])
+    >>> arr2 = np.array([2, 3, 4])
+    >>> ax = plot_venn_diagram([arr1, arr2], ('Array1', 'Array2'))
     
     >>> # Example of comparing feature contributions of RandomForest and XGBoost
     >>> X, y = make_classification(n_samples=1000, n_features=20, 
@@ -563,9 +602,37 @@ def plot_venn_diagram(
     in machine learning models, where understanding the overlap and uniqueness
     of feature contributions from different models can provide insights into
     model behavior and performance.
-    """
 
+    The Venn diagram visually represents the following sets and their intersections:
+
+    .. math::
+
+        A \cup B, \quad A \cap B, \quad A - B, \quad B - A
+
+    for two sets :math:`A` and :math:`B`.
+
+    For three sets, it represents:
+
+    .. math::
+
+        A \cup B \cup C, \quad A \cap B, \quad A \cap C, \quad B \cap C, \quad A - B - C, \quad B - A - C, \quad C - A - B
+
+    See Also
+    --------
+    matplotlib_venn : Python library for plotting Venn diagrams.
+
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+       Computing in Science & Engineering, 9(3), 90-95.
+
+    .. [2] matplotlib-venn documentation. Retrieved from
+       https://github.com/konstantint/matplotlib-venn
+    """
+    
     from matplotlib_venn import venn2, venn2_circles, venn3, venn3_circles
+    
+    sets = validate_sets( sets, mode='deep', allow_empty= False )
     num_sets = len(sets)
 
     # Validate input
@@ -607,7 +674,7 @@ def plot_venn_diagram(
             auto_install=PlotConfig.install_dependencies ,
             use_conda=PlotConfig.use_conda 
             )
-def plot_euler_diagram(sets: dict):
+def plot_euler_diagram(sets: dict[str, set[int]]) -> None:
     """
     Creates an Area-Proportional Euler Diagram using R's venneuler package.
 
@@ -620,34 +687,62 @@ def plot_euler_diagram(sets: dict):
     Parameters
     ----------
     sets : dict
-        A dictionary where keys are set names and values are the sets.
+        A dictionary where keys are set names (`str`) and values are the 
+        sets (`set[int]`).
+
+        - `Set1` (`set[int]`): Elements in the first set.
+        - `Set2` (`set[int]`): Elements in the second set.
+        - `Set3` (`set[int]`): Elements in the third set.
 
     Returns
     -------
-    None. The function displays the Euler diagram.
+    None
+        The function displays the Euler diagram.
 
-    Example
-    -------
+    Examples
+    --------
     >>> from gofast.plot.inspection import plot_euler_diagram
     >>> sets = {
-        "Set1": {1, 2, 3},
-        "Set2": {3, 4, 5},
-        "Set3": {5, 6, 7}
-    }
+    ...     "Set1": {1, 2, 3},
+    ...     "Set2": {3, 4, 5},
+    ...     "Set3": {5, 6, 7}
+    ... }
     >>> plot_euler_diagram(sets)
 
     This will create an Euler diagram for three sets, showing their overlaps.
-    Set1 contains elements 1, 2, and 3; Set2 contains 3, 4, and 5; and Set3 
-    contains 5, 6, and 7. The diagram will visually represent the intersections 
-    between these sets.
+    `Set1` contains elements 1, 2, and 3; `Set2` contains 3, 4, and 5; and 
+    `Set3` contains 5, 6, and 7. The diagram will visually represent the 
+    intersections between these sets.
 
     Notes
     -----
-    This function requires a working R environment with the 'venneuler' package 
-    installed, as well as 'rpy2' installed in the Python environment. It creates 
+    This function requires a working R environment with the `venneuler` package 
+    installed, as well as `rpy2` installed in the Python environment. It creates 
     a temporary file to save the plot generated by R, reads this file into Python 
     for display, and then removes the file.
-    """
+
+    Mathematically, the function aims to create an Euler diagram where the area 
+    of each region is proportional to the number of elements in the corresponding 
+    set and intersections. Given sets `A`, `B`, and `C`, the Euler diagram 
+    represents their sizes and intersections:
+    
+    .. math::
+
+        |A \cap B|, |A \cap C|, |B \cap C|, |A \cap B \cap C|
+
+    The areas in the diagram correspond to these intersection sizes.
+
+    See Also
+    --------
+    venneuler : R package for creating Euler and Venn diagrams.
+    rpy2 : Python interface to R.
+
+    References
+    ----------
+    .. [1] Wilkinson, L. (2012). Venneuler: Venn and Euler diagrams. R package 
+       version 1.1-0. https://cran.r-project.org/web/packages/venneuler/
+
+    """ 
 
     import rpy2.robjects as robjects
     # from rpy2.robjects.packages import importr
@@ -655,6 +750,7 @@ def plot_euler_diagram(sets: dict):
     import matplotlib.image as mpimg
     import tempfile
     
+    sets = validate_sets (sets, mode='deep', allow_empty= False )
     # Activate automatic conversion between pandas dataframes and R dataframes
     pandas2ri.activate()
 
@@ -698,46 +794,90 @@ def plot_euler_diagram(sets: dict):
             use_conda=PlotConfig.use_conda 
             )
 def create_upset_plot(
-        data: Dict[str, set], sort_by: str = 'degree', 
-        show_counts: bool = False):
+    data: Dict[str, set], 
+    sort_by: str = 'degree', 
+    show_counts: bool = False
+ ) -> None:
     """
     Creates an UpSet plot, which is an alternative to Venn diagrams for more 
     than three sets.
-    
-    The UpSet plot focuses on the intersections of the sets rather than on the 
-    sets themselves.
+
+    The UpSet plot focuses on the intersections of the sets rather than on 
+    the sets themselves.
 
     Parameters
     ----------
-    data : Dict[str, set]
-        A dictionary where each key is the name of a set and each value is 
-        the set itself.
+    data : dict
+        A dictionary where each key is the name of a set (`str`) and each 
+        value is the set itself (`set[int]`).
+
+        - `Set1` (`set[int]`): Elements in the first set.
+        - `Set2` (`set[int]`): Elements in the second set.
+        - `Set3` (`set[int]`): Elements in the third set.
+        - `Set4` (`set[int]`): Elements in the fourth set.
+
     sort_by : str, optional
         The criteria to sort the bars. Options are 'degree' and 'cardinality'.
         'degree' will sort by the number of sets in the intersection, 
-        'cardinality' by the size of the intersection.
+        'cardinality' by the size of the intersection. Default is 'degree'.
+
     show_counts : bool, optional
-        Whether to show the counts at the top of the bars in the UpSet plot.
+        Whether to show the counts at the top of the bars in the UpSet plot. 
+        Default is False.
 
     Returns
     -------
-    None. The function displays the UpSet plot.
+    None
+        The function displays the UpSet plot.
 
-    Example
-    -------
+    Examples
+    --------
     >>> from gofast.plot.inspection import create_upset_plot
     >>> sets = {
-        "Set1": {1, 2, 3},
-        "Set2": {3, 4, 5},
-        "Set3": {5, 6, 7},
-        "Set4": {7, 8, 9}
-    }
+    ...     "Set1": {1, 2, 3},
+    ...     "Set2": {3, 4, 5},
+    ...     "Set3": {5, 6, 7},
+    ...     "Set4": {7, 8, 9}
+    ... }
     >>> create_upset_plot(sets, sort_by='degree', show_counts=True)
 
     This will create an UpSet plot for four sets, showing their intersections 
     and the counts of elements in each intersection.
+
+    Notes
+    -----
+    The UpSet plot provides a visual representation of the intersections of 
+    multiple sets. The horizontal bars represent the sizes of the individual 
+    sets, while the vertical bars represent the sizes of their intersections.
+
+    Mathematically, if we have sets :math:`A_1, A_2, \ldots, A_n`, the UpSet 
+    plot represents the size of intersections:
+
+    .. math::
+
+        |A_{i_1} \cap A_{i_2} \cap \ldots \cap A_{i_k}|
+
+    where :math:`i_1, i_2, \ldots, i_k` are indices of the sets involved in 
+    the intersection.
+
+    See Also
+    --------
+    upsetplot.plot : Function to create an UpSet plot.
+    upsetplot.from_contents : Function to convert data into UpSet format.
+
+    References
+    ----------
+    .. [1] Lex, A., Gehlenborg, N., Strobelt, H., Vuillemot, R., & Pfister, H.
+       (2014). UpSet: Visualization of Intersecting Sets. IEEE Transactions on 
+       Visualization and Computer Graphics, 20(12), 1983-1992. 
+       https://doi.org/10.1109/TVCG.2014.2346248
+
     """
+    
     from upsetplot import plot, from_contents 
+    
+    data = validate_sets (data, mode='deep', allow_empty= False,
+                          element_type=int )
     # Convert the data into the format required by UpSetPlot
     upset_data = from_contents(data)
 
@@ -749,14 +889,14 @@ def create_upset_plot(
             use_conda=PlotConfig.use_conda 
     )
 def plot_sankey(
-    data: DataFrame , 
+    data: DataFrame, 
     source_col: str, 
     target_col: str, 
     value_col: str, 
     label_col: Optional[str] = None,
     figsize: Tuple[int, int] = (800, 600), 
     title: Optional[str] = None
- ):
+):
     """
     Creates a Sankey diagram from a pandas DataFrame using Plotly.
 
@@ -765,20 +905,42 @@ def plot_sankey(
     data : pd.DataFrame
         The DataFrame containing the source, target, and value columns 
         for the Sankey diagram.
+        
+        - `data` should have at least three columns: source, target, and value.
+        
     source_col : str
-        The name of the column in 'data' that contains the source nodes.
+        The name of the column in `data` that contains the source nodes.
+        
+        - `source_col` specifies the origin nodes in the flow.
+        
     target_col : str
-        The name of the column in 'data' that contains the target nodes.
+        The name of the column in `data` that contains the target nodes.
+        
+        - `target_col` specifies the destination nodes in the flow.
+        
     value_col : str
-        The name of the column in 'data' that contains the flow values
+        The name of the column in `data` that contains the flow values 
         between the nodes.
+        
+        - `value_col` indicates the quantity of flow from source to target.
+        
     label_col : Optional[str], optional
-        The name of the column in 'data' that contains the labels of the nodes.
-        If None, the nodes will be labeled with unique identifiers.
+        The name of the column in `data` that contains the labels of the nodes.
+        If None, the nodes will be labeled with unique identifiers. Default is None.
+        
+        - `label_col` allows for custom labels on the nodes. If not provided, 
+          the function will use unique identifiers derived from source and 
+          target columns.
+          
     figsize : Tuple[int, int], optional
         Figure dimension (width, height) in pixels. Default is (800, 600).
+        
+        - `figsize` determines the size of the generated plot in pixels.
+        
     title : Optional[str], optional
-        The title of the plot. If None, no title is set.
+        The title of the plot. If None, no title is set. Default is None.
+        
+        - `title` specifies the title of the Sankey diagram.
 
     Returns
     -------
@@ -806,11 +968,27 @@ def plot_sankey(
     nodes or stages. The width of the arrows or links is proportional to the 
     flow quantity, allowing for easy comparison of volume or value transfers.
     
+    Mathematically, a Sankey diagram visualizes the flow distribution as:
+
+    .. math::
+
+        F(i, j) \quad \text{for all} \quad (i, j) \in S \times T
+
+    where :math:`F(i, j)` represents the flow from source node :math:`i` to 
+    target node :math:`j`. The width of the flow lines is proportional to 
+    the values of :math:`F(i, j)`.
+
     See Also 
-    ---------
-    gofast.tools.mathex.infer_sankey_columns: 
+    --------
+    gofast.tools.mathex.infer_sankey_columns : 
         Infers source, target, and value columns for a Sankey diagram 
         from a DataFrame.
+
+    References
+    ----------
+    .. [1] Plotly Technologies Inc. (2021). Plotly Python Graphing Library. 
+       Retrieved from https://plotly.com/python/
+    
     """
     import plotly.graph_objects as go
 
@@ -859,29 +1037,43 @@ def plot_sunburst(
     d : List[Dict[str, str]]
         The input data for the sunburst chart, where each dict contains 'name',
         'value', and 'parent' keys.
+        
+        - `name` : The name of the node.
+        - `value` : The value associated with the node.
+        - `parent` : The parent node of the current node. Root nodes have an 
+          empty string as the parent.
+
     figsize : Tuple[int, int], optional
-        Figure dimension (width, height) in pixels. Default is (1000, 800).
-    color : List[str], optional
+        Figure dimension (width, height) in inches. Default is (10, 8).
+        
+        - `figsize` determines the size of the generated plot in inches.
+        
+    color : Optional[List[str]], optional
         A list of color codes for the segments of the sunburst chart. If None,
         default colors are used.
-    title : str, optional
-        The title of the plot. If None, no title is set.
-    savefig : str, optional
+        
+        - `color` specifies the color for each segment of the sunburst chart. 
+          If not provided, Plotly's default colors will be used.
+
+    title : Optional[str], optional
+        The title of the plot. If None, no title is set. Default is None.
+        
+        - `title` specifies the title of the sunburst chart.
+
+    savefig : Optional[str], optional
         Path and filename where the figure should be saved. If ends with 'html',
         saves an interactive HTML file. Otherwise, saves a static image of the
-        plot.
+        plot. Default is None.
+        
+        - `savefig` determines the file path and format for saving the plot. 
+          If the filename ends with '.html', an interactive HTML file is saved. 
+          Otherwise, a static image is saved in the specified format.
 
     Returns
     -------
     go.Figure
         The Plotly Figure object with the plot for further tweaking and rendering.
 
-    See Also
-    ---------
-    gofast.tools.mathex.compute_sunburst_data: 
-        Computes the data structure required for generating a sunburst chart 
-        from a DataFrame.
-        
     Examples
     --------
     >>> from gofast.plot.inspection import plot_sunburst
@@ -899,6 +1091,27 @@ def plot_sunburst(
     radially from root to leaves. The parent-child relation is represented by 
     the enclosure in this chart type.
 
+    Mathematically, a sunburst chart visualizes hierarchical relationships 
+    using nested rings, where each ring represents a level in the hierarchy:
+
+    .. math::
+
+        R_{n} \quad \text{for each level} \quad n
+
+    The angle of each segment is proportional to its value, allowing for 
+    comparison across different segments and levels.
+
+    See Also
+    --------
+    gofast.tools.mathex.compute_sunburst_data : 
+        Computes the data structure required for generating a sunburst chart 
+        from a DataFrame.
+
+    References
+    ----------
+    .. [1] Plotly Technologies Inc. (2021). Plotly Python Graphing Library. 
+       Retrieved from https://plotly.com/python/
+    
     """
     import plotly.graph_objects as go
     # Convert figsize from inches to pixels
@@ -1036,20 +1249,21 @@ def plot_learning_inspections (
     if savefig : 
         fig.savefig (savefig , dpi = 300 )
     plt.show () if savefig is None else plt.close () 
-    
+   
 def plot_learning_inspection(
-    model,  
-    X,  
-    y, 
-    axes=None, 
-    ylim=None, 
-    cv=5, 
-    n_jobs=None,
-    train_sizes=None, 
-    display_legend = True, 
-    title=None,
-):
-    """Inspect model from its learning curve. 
+    model: BaseEstimator,  
+    X: Union[ArrayLike, Any],  
+    y: Union[ArrayLike, Any], 
+    axes: Optional[ArrayLike] = None, 
+    ylim: Optional[Tuple[float, float]] = None, 
+    cv: int = 5, 
+    n_jobs: Optional[int] = None,
+    train_sizes: Optional[np.ndarray] = None, 
+    display_legend: bool = True, 
+    title: Optional[str] = None
+) -> np.ndarray:
+    """
+    Inspect model from its learning curve.
     
     Generate 3 plots: the test and training learning curve, the training
     samples vs fit times curve, the fit times vs score curve.
@@ -1060,73 +1274,118 @@ def plot_learning_inspection(
         An estimator instance implementing `fit` and `predict` methods which
         will be cloned for each validation.
 
-    title : str
-        Title for the chart.
+    title : str, optional
+        Title for the chart. If None, uses the estimator's name.
 
     X : array-like of shape (n_samples, n_features)
-        Training vector, where ``n_samples`` is the number of samples and
-        ``n_features`` is the number of features.
+        Training vector, where `n_samples` is the number of samples and
+        `n_features` is the number of features.
 
     y : array-like of shape (n_samples) or (n_samples, n_features)
-        Target relative to ``X`` for classification or regression;
-        None for unsupervised learning.
+        Target relative to `X` for classification or regression; None for 
+        unsupervised learning.
 
-    axes : array-like of shape (3,), default=None
-        Axes to use for plotting the curves.
+    axes : array-like of shape (3,), optional
+        Axes to use for plotting the curves. Default is None, which creates
+        new axes.
 
-    ylim : tuple of shape (2,), default=None
-        Defines minimum and maximum y-values plotted, e.g. (ymin, ymax).
+    ylim : tuple of shape (2,), optional
+        Defines minimum and maximum y-values plotted, e.g., (ymin, ymax). 
+        Default is None.
 
-    cv : int, cross-validation generator or an iterable, default=None
-        Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
+    cv : int, cross-validation generator or an iterable, optional
+        Determines the cross-validation splitting strategy. Default is 5-fold
+        cross-validation.
 
         - None, to use the default 5-fold cross-validation,
         - integer, to specify the number of folds.
         - :term:`CV splitter`,
         - An iterable yielding (train, test) splits as arrays of indices.
 
-        For integer/None inputs, if ``y`` is binary or multiclass,
-        :class:`StratifiedKFold` used. If the estimator is not a classifier
-        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
+        For integer/None inputs, if `y` is binary or multiclass,
+        :class:`StratifiedKFold` is used. If the estimator is not a classifier
+        or if `y` is neither binary nor multiclass, :class:`KFold` is used.
 
-        Refer :ref:`User Guide <cross_validation>` for the various
+        Refer :ref:`User Guide <cross_validation>` for the various 
         cross-validators that can be used here.
 
-    n_jobs : int or None, default=None
-        Number of jobs to run in parallel.
-        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
-        ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
-        for more details.
+    n_jobs : int or None, optional
+        Number of jobs to run in parallel. `None` means 1 unless in a 
+        :obj:`joblib.parallel_backend` context. `-1` means using all 
+        processors.
 
-    train_sizes : array-like of shape (n_ticks,)
+    train_sizes : array-like of shape (n_ticks,), optional
         Relative or absolute numbers of training examples that will be used to
-        generate the learning curve. If the ``dtype`` is float, it is regarded
+        generate the learning curve. If the `dtype` is float, it is regarded
         as a fraction of the maximum size of the training set (that is
-        determined by the selected validation method), i.e. it has to be within
-        (0, 1]. Otherwise it is interpreted as absolute sizes of the training
-        sets. Note that for classification the number of samples usually have
-        to be big enough to contain at least one sample from each class.
-        (default: np.linspace(0.1, 1.0, 5))
-        
-    display_legend: bool, default ='True' 
-        display the legend
-        
+        determined by the selected validation method), i.e., it has to be 
+        within (0, 1]. Otherwise, it is interpreted as absolute sizes of the 
+        training sets. Note that for classification the number of samples 
+        usually have to be big enough to contain at least one sample from each 
+        class. Default is np.linspace(0.1, 1.0, 5).
+
+    display_legend : bool, optional
+        Whether to display the legend. Default is True.
+
     Returns
-    ----------
-    axes: Matplotlib axes 
-    
-    Examples 
-    ----------
+    -------
+    axes : np.ndarray
+        Matplotlib axes array with the plotted curves.
+
+    Examples
+    --------
     >>> from gofast.datasets import fetch_data
     >>> from gofast.models import p 
-    >>> from gofast.plot.evaluate  import plot_learning_inspection 
-    >>> # import sparse  matrix from Bagoue datasets 
-    >>> X, y = fetch_data ('bagoue prepared') 
-    >>> # import the  pretrained Radial Basis Function (RBF) from SVM 
-    >>> plot_learning_inspection (p.SVM.rbf.best_estimator_  , X, y )
-    
-    """ 
+    >>> from gofast.plot.inspection import plot_learning_inspection 
+    >>> X, y = fetch_data('bagoue prepared') 
+    >>> plot_learning_inspection(p.SVM.rbf.best_estimator_, X, y)
+
+    Notes
+    -----
+    This function generates three plots to inspect the model's performance:
+    the learning curve, the scalability curve, and the performance curve.
+
+    The learning curve shows the training and cross-validation scores as 
+    functions of the number of training samples.
+
+    The scalability curve shows the fit times as functions of the number of 
+    training samples.
+
+    The performance curve shows the cross-validation scores as functions of 
+    the fit times.
+
+    Mathematically, the learning curve represents the relationship between 
+    the training score :math:`S_{train}` and the cross-validation score 
+    :math:`S_{cv}` against the training set size :math:`N`.
+
+    .. math::
+
+        S_{train}(N), \quad S_{cv}(N)
+
+    The scalability curve represents the relationship between the fit time 
+    :math:`T` and the training set size :math:`N`.
+
+    .. math::
+
+        T(N)
+
+    The performance curve represents the relationship between the 
+    cross-validation score :math:`S_{cv}` and the fit time :math:`T`.
+
+    .. math::
+
+        S_{cv}(T)
+
+    See Also
+    --------
+    sklearn.model_selection.learning_curve : Computes learning curves for a model.
+
+    References
+    ----------
+    .. [1] Scikit-learn: Machine Learning in Python - 
+       https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.learning_curve.html
+
+    """
     train_sizes = train_sizes or np.linspace(0.1, 1.0, 5)
     
     X, y = check_X_y(
@@ -1240,87 +1499,201 @@ def plot_learning_inspection(
 
     return axes
 
+@Dataify(auto_columns= True)
 @ensure_pkg("mlxtend", extra=(
     "Can't plot heatmap using 'mlxtend' package."),  
     auto_install=PlotConfig.install_dependencies ,
     use_conda=PlotConfig.use_conda 
  )
-def plot_mlxtend_heatmap (df, columns =None, savefig=None,  **kws): 
-    """ Plot correlation matrix array  as a heat map 
-    
-    :param df: dataframe pandas  
-    :param columns: list of features, 
-        If given, only the dataframe with that features is considered. 
-    :param kws: additional keyword arguments passed to 
-        :func:`mlxtend.plotting.heatmap`
-    :return: :func:`mlxtend.plotting.heatmap` axes object 
-    
-    :example: 
-        
-    >>> from gofast.datasets import load_hlogs 
-    >>> from gofast.tools.utils import plot_mlxtend_heatmap
-    >>> h=load_hlogs()
-    >>> features = ['gamma_gamma', 'sp',
-                'natural_gamma', 'resistivity']
-    >>> plot_mlxtend_heatmap (h.frame , columns =features, cmap ='PuOr')
+def plot_heatmapx(
+    data: DataFrame, 
+    columns: Optional[List[str]] = None, 
+    savefig: Optional[str] = None, 
+    **kws: Any
+) -> Any:
     """
+    Plot correlation matrix array as a heat map.
 
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The pandas DataFrame containing the data.
+        
+        - `data` should have numerical columns for correlation computation.
+
+    columns : Optional[List[str]], optional
+        List of features. If given, only the dataframe with those features 
+        is considered. Default is None.
+        
+        - `columns` specifies the subset of DataFrame columns to consider 
+          for the correlation matrix. If None, all columns are used.
+          
+    savefig : Optional[str], optional
+        Path and filename where the figure should be saved. If None, the figure 
+        is shown using plt.show(). Default is None.
+        
+        - `savefig` determines the file path and format for saving the plot. 
+          If provided, the plot is saved instead of shown.
+          
+    kws : Any
+        Additional keyword arguments passed to `mlxtend.plotting.heatmap`.
+        
+        - `kws` allows for customization of the heatmap plot via keyword 
+          arguments accepted by `mlxtend.plotting.heatmap`.
+
+    Returns
+    -------
+    Any
+        The `mlxtend.plotting.heatmap` axes object.
+
+    Examples
+    --------
+    >>> from gofast.datasets import load_hlogs 
+    >>> from gofast.tools.utils import plot_heatmapx
+    >>> h = load_hlogs()
+    >>> features = ['gamma_gamma', 'sp', 'natural_gamma', 'resistivity']
+    >>> plot_heatmapx(h.frame, columns=features, cmap='PuOr')
+
+    Notes
+    -----
+    This function computes the correlation matrix of the specified columns 
+    in the DataFrame and visualizes it as a heat map using `mlxtend.plotting.heatmap`.
+    
+    The correlation matrix :math:`C` is defined as:
+
+    .. math::
+
+        C_{ij} = \frac{\text{cov}(X_i, X_j)}{\sigma_{X_i} \sigma_{X_j}}
+
+    where :math:`\text{cov}(X_i, X_j)` is the covariance of variables :math:`X_i` 
+    and :math:`X_j`, and :math:`\sigma_{X_i}` and :math:`\sigma_{X_j}` are the 
+    standard deviations of :math:`X_i` and :math:`X_j`, respectively.
+
+    See Also
+    --------
+    mlxtend.plotting.heatmap : Function to plot a heatmap of a correlation matrix.
+
+    References
+    ----------
+    .. [1] Raschka, S. (2018). mlxtend: Providing machine learning and data science 
+       utilities and extensions to Python's scientific computing stack. 
+       The Journal of Open Source Software, 3(24), 638, 
+       https://doi.org/10.21105/joss.00638
+    """
     from mlxtend.plotting import  heatmap 
-    cm = np.corrcoef(df[columns]. values.T)
-    ax= heatmap(cm, row_names = columns , column_names = columns, **kws )
+
+    cm = np.corrcoef(data.values.T)
+    ax = heatmap(cm, row_names=columns, column_names=columns, **kws)
     
     if savefig is not None:
-         savefigure(savefig, savefig )
-    plt.close () if savefig is not None else plt.show() 
+        plt.savefig(savefig)
+        plt.close()
+    else:
+        plt.show()
     
-    return ax 
+    return ax
 
+@Dataify(auto_columns= True)
 @ensure_pkg("mlxtend", extra=(
     "Can't plot the scatter matrix using 'mlxtend' package."), 
     auto_install=PlotConfig.install_dependencies ,
     use_conda=PlotConfig.use_conda 
     )
-def plot_mlxtend_matrix(df, columns =None, fig_size = (10 , 8 ),
-                        alpha =.5, savefig=None  ):
-    """ Visualize the pair wise correlation between the different features in  
-    the dataset in one place. 
-    
-    :param df: dataframe pandas  
-    :param columns: list of features, 
-        If given, only the dataframe with that features is considered. 
-    :param fig_size: tuple of int (width, heigh) 
-        Size of the displayed figure 
-    :param alpha: figure transparency, default is ``.5``. 
-    
-    :return: :func:`mlxtend.plotting.scatterplotmatrix` axes object 
-    :example: 
+def plot_matrix(
+    data: DataFrame, 
+    columns: Optional[List[str]] = None, 
+    fig_size: Tuple[int, int] = (10, 8), 
+    alpha: float = 0.5, 
+    savefig: Optional[str] = None
+) -> Any:
+    """
+    Visualize the pairwise correlation between different features in the dataset 
+    in one place.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The pandas DataFrame containing the data.
+        
+        - `data` should have numerical columns for plotting the scatterplot matrix.
+
+    columns : Optional[List[str]], optional
+        List of features. If given, only the DataFrame with those features 
+        is considered. Default is None.
+        
+        - `columns` specifies the subset of DataFrame columns to consider 
+          for the scatterplot matrix. If None, all columns are used.
+          
+    fig_size : Tuple[int, int], optional
+        Size of the displayed figure (width, height). Default is (10, 8).
+        
+        - `fig_size` determines the size of the generated plot in inches.
+        
+    alpha : float, optional
+        Figure transparency. Default is 0.5.
+        
+        - `alpha` sets the transparency level for the scatterplot points.
+
+    savefig : Optional[str], optional
+        Path and filename where the figure should be saved. If None, the figure 
+        is shown using plt.show(). Default is None.
+        
+        - `savefig` determines the file path and format for saving the plot. 
+          If provided, the plot is saved instead of shown.
+
+    Returns
+    -------
+    Any
+        The `mlxtend.plotting.scatterplotmatrix` axes object.
+
+    Examples
+    --------
     >>> from gofast.datasets import load_hlogs 
-    >>> from gofast.tools.utils import plot_mlxtend_matrix
+    >>> from gofast.tools.utils import plot_matrix
     >>> import pandas as pd 
     >>> import numpy as np 
-    >>> h=load_hlogs()
+    >>> h = load_hlogs()
     >>> features = ['gamma_gamma', 'natural_gamma', 'resistivity']
-    >>> data = pd.DataFrame ( np.log10 (h.frame[features]), columns =features )
-    >>> plot_mlxtend_matrix (data, columns =features)
+    >>> data = pd.DataFrame(np.log10(h.frame[features]), columns=features)
+    >>> plot_matrix(data, columns=features)
 
+    Notes
+    -----
+    This function creates a scatterplot matrix to visualize pairwise 
+    relationships between features in a dataset. The scatterplot matrix 
+    displays each feature against every other feature in a grid of subplots, 
+    helping to identify potential correlations or patterns.
+
+    Mathematically, the scatterplot matrix visualizes the relationship 
+    between each pair of features :math:`X_i` and :math:`X_j` by plotting:
+
+    .. math::
+
+        (X_i, X_j) \quad \forall i, j \in \{1, 2, \ldots, n\}
+
+    where :math:`n` is the number of features.
+
+    See Also
+    --------
+    mlxtend.plotting.scatterplotmatrix : Function to plot a scatterplot matrix.
+
+    References
+    ----------
+    .. [1] Raschka, S. (2018). mlxtend: Providing machine learning and data science 
+       utilities and extensions to Python's scientific computing stack. 
+       The Journal of Open Source Software, 3(24), 638, 
+       https://doi.org/10.21105/joss.00638
     """
+
     from mlxtend.plotting import scatterplotmatrix
                                        
     if isinstance (columns, str): 
         columns = [columns ] 
-    try: 
-        iter (columns)
-    except : 
-        raise TypeError(" Columns should be an iterable object, not"
-                        f" {type (columns).__name__!r}")
+    
     columns =list(columns)
-    
-    
-    if columns is not None: 
-        df =df[columns ] 
         
     ax = scatterplotmatrix (
-        df[columns].values , figsize =fig_size,names =columns , alpha =alpha 
+        data[columns].values , figsize =fig_size,names =columns , alpha =alpha 
         )
     plt.tight_layout()
 
@@ -1329,86 +1702,113 @@ def plot_mlxtend_matrix(df, columns =None, fig_size = (10 , 8 ),
     plt.close () if savefig is not None else plt.show() 
     
     return ax 
+
+
 def plot_loc_projection(
-    X: DataFrame | NDArray, 
-    Xt: DataFrame | NDArray =None, *, 
-    columns: List[str] =None, 
-    test_kws: dict =None,  
-    **baseplot_kws 
-    ): 
-    """ Visualize train and test dataset based on 
-    the geographical coordinates.
-    
-    Since there is geographical information(latitude/longitude or
+    X: Union[pd.DataFrame, np.ndarray], 
+    Xt: Optional[Union[pd.DataFrame, np.ndarray]] = None, *, 
+    columns: Optional[List[str]] = None, 
+    test_kws: Optional[Dict] = None,  
+    **baseplot_kws: Dict
+) -> None:
+    """
+    Visualize train and test dataset based on the geographical coordinates.
+
+    Since there is geographical information (latitude/longitude or
     easting/northing), it is a good idea to create a scatterplot of 
     all instances to visualize data.
-    
-    Parameters 
-    ---------
-    X:  Ndarray ( M x N matrix where ``M=m-samples``, & ``N=n-features``)
-        training set; Denotes data that is observed at training and prediction 
-        time, used as independent variables in learning. The notation 
-        is uppercase to denote that it is ordinarily a matrix. When a matrix, 
-        each sample may be represented by a feature vector, or a vector of 
-        precomputed (dis)similarity with each training sample. 
 
-    Xt: Ndarray ( M x N matrix where ``M=m-samples``, & ``N=n-features``)
-        Shorthand for "test set"; data that is observed at testing and 
-        prediction time, used as independent variables in learning. The 
-        notation is uppercase to denote that it is ordinarily a matrix.
-    columns: list of str or index, optional 
-        columns is usefull when a dataframe is given  with a dimension size 
-        greater than 2. If such data is passed to `X` or `Xt`, columns must
-        hold the name to considered as 'easting', 'northing' when UTM 
-        coordinates are given or 'latitude' , 'longitude' when latlon are 
-        given. 
-        If dimension size is greater than 2 and columns is None , an error 
-        will raises to prevent the user to provide the index for 'y' and 'x' 
-        coordinated retrieval. 
-        
-    test_kws: dict, 
-        keywords arguments passed to :func:`matplotlib.plot.scatter` as test
-        location font and colors properties. 
-        
-    baseplot_kws: dict, 
-        All all  the keywords arguments passed to the peroperty  
-        :class:`gofast.property.BasePlot` class. 
-        
+    Parameters 
+    ----------
+    X : Union[pd.DataFrame, np.ndarray]
+        Training set; Denotes data that is observed at training and prediction 
+        time, used as independent variables in learning. When a matrix, 
+        each sample may be represented by a feature vector, or a vector of 
+        precomputed (dis)similarity with each training sample.
+
+    Xt : Optional[Union[pd.DataFrame, np.ndarray]], optional
+        Test set; data that is observed at testing and prediction time, used 
+        as independent variables in learning. Default is None.
+
+    columns : Optional[List[str]], optional
+        Useful when a DataFrame is given with a dimension size greater than 2. 
+        If such data is passed to `X` or `Xt`, `columns` must hold the names 
+        to be considered as 'easting', 'northing' when UTM coordinates are 
+        given or 'latitude', 'longitude' when latlon are given. If dimension 
+        size is greater than 2 and `columns` is None, an error will be raised 
+        to prompt the user to provide the index for 'y' and 'x' coordinate 
+        retrieval. Default is None.
+
+    test_kws : Optional[Dict], optional
+        Keyword arguments passed to `matplotlib.plot.scatter` as test 
+        location font and colors properties. Default is None.
+
+    baseplot_kws : Dict
+        All the keyword arguments passed to the properties of 
+        `gofast.property.BasePlot` class.
+
+    Returns
+    -------
+    None
+
     Examples
     --------
     >>> from gofast.datasets import fetch_data 
-    >>> from gofast.plot.evaluate  import plot_loc_projection 
-    >>> # Discard all the non-numeric data 
-    >>> # then inut numerical data 
+    >>> from gofast.plot.inspection import plot_loc_projection 
     >>> from gofast.utils import to_numeric_dtypes, naive_imputer
-    >>> X, Xt, *_ = fetch_data ('bagoue', split_X_y =True, as_frame =True) 
-    >>> X =to_numeric_dtypes(X, pop_cat_features=True )
-    >>> X= naive_imputer(X)
-    >>> Xt = to_numeric_dtypes(Xt, pop_cat_features=True )
-    >>> Xt= naive_imputer(Xt)
-    >>> plot_kws = dict (fig_size=(8, 12),
-                     lc='k',
-                     marker='o',
-                     lw =3.,
-                     font_size=15.,
-                     xlabel= 'easting (m) ',
-                     ylabel='northing (m)' , 
-                     markerfacecolor ='k', 
-                     markeredgecolor='r',
-                     alpha =1., 
-                     markeredgewidth=2., 
-                     show_grid =True,
-                     galpha =0.2, 
-                     glw=.5, 
-                     rotate_xlabel =90.,
-                     fs =3.,
-                     s =None )
-    >>> plot_loc_projection( X, Xt , columns= ['east', 'north'], 
-                        trainlabel='train location', 
-                        testlabel='test location', **plot_kws
-                       )
+    >>> X, Xt, *_ = fetch_data('bagoue', split_X_y=True, as_frame=True) 
+    >>> X = to_numeric_dtypes(X, pop_cat_features=True)
+    >>> X = naive_imputer(X)
+    >>> Xt = to_numeric_dtypes(Xt, pop_cat_features=True)
+    >>> Xt = naive_imputer(Xt)
+    >>> plot_kws = dict(fig_size=(8, 12),
+                        lc='k',
+                        marker='o',
+                        lw=3.,
+                        font_size=15.,
+                        xlabel='easting (m)',
+                        ylabel='northing (m)',
+                        markerfacecolor='k', 
+                        markeredgecolor='r',
+                        alpha=1., 
+                        markeredgewidth=2., 
+                        show_grid=True,
+                        galpha=0.2, 
+                        glw=0.5, 
+                        rotate_xlabel=90.,
+                        fs=3.,
+                        s=None)
+    >>> plot_loc_projection(X, Xt, columns=['east', 'north'], 
+                            trainlabel='train location', 
+                            testlabel='test location', **plot_kws)
+
+    Notes
+    -----
+    This function creates a scatter plot of geographical coordinates to visualize 
+    the locations of training and testing datasets. It uses the provided 
+    geographical information to plot the data points.
+
+    The function supports both latitude/longitude and easting/northing coordinates.
+
+    Mathematically, the function plots points :math:`(x, y)` for training data 
+    and :math:`(x_t, y_t)` for testing data.
+
+    .. math::
+
+        \{(x_i, y_i)\} \quad \text{for training data}
+
+        \{(x_{t_i}, y_{t_i})\} \quad \text{for testing data}
+
+    See Also
+    --------
+    matplotlib.pyplot.scatter : Scatter plot in matplotlib.
+
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+       Computing in Science & Engineering, 9(3), 90-95.
+
     """
-    
     trainlabel =baseplot_kws.pop ('trainlabel', None )
     testlabel =baseplot_kws.pop ('testlabel', None  )
     
@@ -1515,9 +1915,12 @@ def plot_loc_projection(
     pobj.save(fig)
 
 def plot_matshow(
-    arr, / , labelx:List[str] =None, labely:List[str]=None, 
-    matshow_kws=None, **baseplot_kws
-    ): 
+    arr: np.ndarray, /, 
+    labelx: Optional[List[str]] = None, 
+    labely: Optional[List[str]] = None, 
+    matshow_kws: Optional[Dict[str, Any]] = None, 
+    **baseplot_kws: Any
+) -> None:
     
     #xxxxxxxxx update base plot keyword arguments
     for k  in list(baseplot_kws.keys()): 
@@ -1540,7 +1943,6 @@ def plot_matshow(
         pobj.cb_label=''
     ax.set_xlabel( pobj.xlabel,
           fontsize= pobj.font_size )
-    
     
     # for label in zip ([labelx, labely]): 
     #     if label is not None:
@@ -1584,58 +1986,106 @@ def plot_matshow(
 
     pobj.save(fig)
 
-plot_matshow.__doc__ ="""\
-Quick matrix visualization using matplotlib.pyplot.matshow.
+plot_matshow.__doc__ = """\
+Quick matrix visualization using `matplotlib.pyplot.matshow`.
 
 Parameters
 ----------
-arr: 2D ndarray, 
-    matrix of n rowns and m-columns items 
-matshow_kws: dict
-    Additional keywords arguments for :func:`matplotlib.axes.matshow`
-    
-labelx: list of str, optional 
-        list of labels names that express the name of each category on 
-        x-axis. It might be consistent with the matrix number of 
-        columns of `arr`. 
-        
-label: list of str, optional 
-        list of labels names that express the name of each category on 
-        y-axis. It might be consistent with the matrix number of 
-        row of `arr`.
-    
-Examples
----------
->>> import numpy as np
->>> from gofast.plot.evaluate  import plot_matshow 
->>> matshow_kwargs ={
-    'aspect': 'auto',
-    'interpolation': None,
-   'cmap':'copper_r', 
-        }
->>> baseplot_kws ={'lw':3, 
-           'lc':(.9, 0, .8), 
-           'font_size':15., 
-            'cb_format':None,
-            #'cb_label':'Rate of prediction',
-            'xlabel': 'Predicted flow classes',
-            'ylabel': 'Geological rocks',
-            'font_weight':None,
-            'tp_labelbottom':False,
-            'tp_labeltop':True,
-            'tp_bottom': False
-            }
->>> labelx =['FR0', 'FR1', 'FR2', 'FR3', 'Rates'] 
->>> labely =['VOLCANO-SEDIM. SCHISTS', 'GEOSYN. GRANITES', 
-             'GRANITES', '1.0', 'Rates']
->>> array2d = np.array([(1. , .5, 1. ,1., .9286), 
-                    (.5,  .8, 1., .667, .7692),
-                    (.7, .81, .7, .5, .7442),
-                    (.667, .75, 1., .75, .82),
-                    (.9091, 0.8064, .7, .8667, .7931)])
->>> plot_matshow(array2d, labelx, labely, matshow_kwargs,**baseplot_kws )  
+arr : np.ndarray
+    2D array of shape (n_rows, n_cols).
+    The matrix to be visualized.
 
+labelx : Optional[List[str]], optional
+    List of labels for the x-axis categories. Must match the number of 
+    columns in `arr`.
+
+labely : Optional[List[str]], optional
+    List of labels for the y-axis categories. Must match the number of 
+    rows in `arr`.
+
+matshow_kws : Optional[Dict[str, Any]], optional
+    Additional keyword arguments for `matplotlib.axes.Axes.matshow`.
+
+baseplot_kws : Dict[str, Any]
+    Additional keyword arguments for base plot properties, such as:
+    
+    - `fig_size` : Tuple[int, int], size of the figure.
+    - `font_size` : float, font size for labels and ticks.
+    - `cb_label` : str, label for the colorbar.
+    - `xlabel` : str, label for the x-axis.
+    - `ylabel` : str, label for the y-axis.
+    - `rotate_xlabel` : float, rotation angle for x-axis labels.
+    - `rotate_ylabel` : float, rotation angle for y-axis labels.
+    - `tp_axis` : str, axis for tick parameters ('x', 'y', or 'both').
+    - `tp_labeltop` : bool, whether to display x-axis labels on top.
+    - `tp_labelbottom` : bool, whether to display x-axis labels on bottom.
+    - `tp_bottom` : bool, whether to display x-axis ticks on bottom.
+    - `tp_top` : bool, whether to display x-axis ticks on top.
+    - `cb_props` : Dict[str, Any], properties for colorbar.
+
+Returns
+-------
+None
+
+Examples
+--------
+>>> import numpy as np
+>>> from gofast.plot.inspection import plot_matshow 
+>>> matshow_kwargs = {
+...     'aspect': 'auto',
+...     'interpolation': None,
+...     'cmap': 'copper_r',
+... }
+>>> baseplot_kws = {
+...     'fig_size': (10, 8),
+...     'font_size': 15.,
+...     'xlabel': 'Predicted flow classes',
+...     'ylabel': 'Geological rocks',
+...     'rotate_xlabel': 45.,
+...     'rotate_ylabel': 45.,
+...     'tp_labelbottom': False,
+...     'tp_labeltop': True,
+... }
+>>> labelx = ['FR0', 'FR1', 'FR2', 'FR3', 'Rates'] 
+>>> labely = ['VOLCANO-SEDIM. SCHISTS', 'GEOSYN. GRANITES', 
+...           'GRANITES', '1.0', 'Rates']
+>>> array2d = np.array([
+...     [1., .5, 1., 1., .9286], 
+...     [.5, .8, 1., .667, .7692],
+...     [.7, .81, .7, .5, .7442],
+...     [.667, .75, 1., .75, .82],
+...     [.9091, .8064, .7, .8667, .7931]
+... ])
+>>> plot_matshow(array2d, labelx, labely, matshow_kwargs, **baseplot_kws)
+
+Notes
+-----
+This function provides a quick visualization of a matrix using a heatmap.
+
+The function takes a 2D array `arr` and visualizes it as a heatmap. The 
+labels for the x-axis and y-axis can be specified using `labelx` and `labely`.
+
+Mathematically, the heatmap visualizes the matrix elements :math:`A_{ij}`:
+
+.. math::
+
+    A = \\begin{bmatrix}
+    a_{11} & a_{12} & \\cdots & a_{1n} \\
+    a_{21} & a_{22} & \\cdots & a_{2n} \\
+    \\vdots & \\vdots & \\ddots & \\vdots \\
+    a_{m1} & a_{m2} & \\cdots & a_{mn}
+    \\end{bmatrix}
+
+See Also
+--------
+matplotlib.pyplot.matshow : Visualize a matrix in a new figure window.
+
+References
+----------
+.. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+   Computing in Science & Engineering, 9(3), 90-95.
 """
+
   
 def _check_labelxy (lablist, ar, ax, axis = 'x' ): 
     """ Assert whether the x and y labels given for setting the ticklabels 
@@ -1669,16 +2119,16 @@ def _check_labelxy (lablist, ar, ax, axis = 'x' ):
             ax_labels(lablist)
         
     return ax         
-        
-def create_matrix_representation(
-        data: Dict[str, set], 
-        cmap: str = 'Blues', 
-        savefig: Optional[str] = None
-        ) -> plt.Axes:
+   
+def plot_set_matrix(
+    data: Dict[str, set], 
+    cmap: str = 'Blues', 
+    savefig: Optional[str] = None
+    ) -> plt.Axes:
     """
     Creates and optionally saves a matrix-based representation to visualize 
     intersections among multiple sets.
-    
+
     Rows represent elements and columns represent sets. Cells in the matrix 
     are filled to indicate membership.
 
@@ -1687,11 +2137,20 @@ def create_matrix_representation(
     data : Dict[str, set]
         A dictionary where each key is the name of a set and each value is 
         the set itself.
+        
+        - `data` contains the sets to be visualized in the matrix.
+        
     cmap : str, optional
         The colormap used for the matrix plot. Defaults to 'Blues'.
+        
+        - `cmap` sets the color scheme for the matrix visualization.
+        
     savefig : Optional[str], optional
         The file path and name to save the figure. If None, the figure is 
         not saved.
+        
+        - `savefig` specifies the file path to save the plot image. If not 
+          provided, the plot is displayed without saving.
 
     Returns
     -------
@@ -1700,17 +2159,45 @@ def create_matrix_representation(
 
     Example
     -------
-    >>> from gofast.plot.inspection import create_matrix_representation
+    >>> from gofast.plot.inspection import plot_set_matrix
     >>> sets = {
-        "Set1": {1, 2, 3},
-        "Set2": {2, 3, 4},
-        "Set3": {3, 4, 5}
-    }
-    >>> ax = create_matrix_representation(sets, cmap='Greens', savefig='set_matrix.png')
+    ...     "Set1": {1, 2, 3},
+    ...     "Set2": {2, 3, 4},
+    ...     "Set3": {3, 4, 5}
+    ... }
+    >>> ax = plot_set_matrix(sets, cmap='Greens', savefig='set_matrix.png')
 
     This will create a matrix plot for three sets, showing which elements 
     belong to which sets and optionally save it to 'set_matrix.png'.
+
+    Notes
+    -----
+    This function generates a visual representation of set intersections using 
+    a matrix format. The matrix allows easy identification of elements belonging 
+    to multiple sets.
+
+    The matrix is constructed as follows:
+
+    .. math::
+
+        M_{ij} = \\begin{cases}
+        1 & \\text{if element } i \\text{ is in set } j \\\\
+        0 & \\text{otherwise}
+        \\end{cases}
+
+    where :math:`M_{ij}` represents the membership of element :math:`i` in set 
+    :math:`j`.
+
+    See Also
+    --------
+    matplotlib.pyplot.imshow : Display data as an image, i.e., on a 2D regular raster.
+
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. 
+       Computing in Science & Engineering, 9(3), 90-95.
     """
+    data = validate_sets(data, mode='deep', allow_empty= False )
     # Create a DataFrame to represent the sets
     all_elements = sorted(set.union(*data.values()))
     matrix_data = pd.DataFrame(index=all_elements, columns=data.keys(), data=0)
@@ -1737,5 +2224,7 @@ def create_matrix_representation(
         plt.savefig(savefig, format='png', bbox_inches='tight')
 
     return ax
+     
+
 
 

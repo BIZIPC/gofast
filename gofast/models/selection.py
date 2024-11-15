@@ -514,9 +514,8 @@ class SwarmSearchCV(BaseSwarmSearch):
         self.cv_results_.sort(key=lambda x: x['mean_test_score'], reverse=True)
         for rank, result in enumerate(self.cv_results_, start=1):
             result['rank_test_score'] = rank
-            
-            
-    
+          
+           
 class GradientSearchCV(GradientBaseSearch):
     r"""
     Implements gradient-based hyperparameter optimization for estimators.

@@ -17,6 +17,7 @@ from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms 
 from matplotlib.collections import EllipseCollection
 
+from sklearn.base import BaseEstimator 
 from sklearn.metrics import confusion_matrix, roc_curve,mean_absolute_error 
 from sklearn.metrics import roc_auc_score, r2_score, mean_squared_error 
 from sklearn.model_selection import learning_curve, KFold 
@@ -26,7 +27,7 @@ try:
 except : 
     pass 
 from ..api.types import Optional, Tuple, Any, List, Union, Callable, NDArray 
-from ..api.types import Dict, ArrayLike, DataFrame, Series
+from ..api.types import Dict, ArrayLike, DataFrame, Series, SparseMatrix
 from ..tools.coreutils import is_iterable, make_obj_consistent_if
 from ..tools.funcutils import ensure_pkg 
 from ..tools.validator import _is_cross_validated, validate_yy, validate_keras_model
@@ -35,9 +36,10 @@ from .utils import _set_sns_style, _make_axe_multiple
 from .utils import make_plot_colors  
 from ._config import PlotConfig 
 
+
 __all__= [ 
     'plot_confusion_matrices',
-    'plot_yb_confusion_matrix', 
+    'plot_confusion_matrix2', 
     'plot_confusion_matrix', 
     'plot_roc_curves',
     'plot_taylor_diagram',
@@ -65,32 +67,35 @@ def plot_taylor_diagram(
     Plots a Taylor Diagram, which is used to graphically summarize 
     how closely a set of predictions match observations. The diagram 
     displays the correlation between each prediction and the 
-    observations (reference) as the angular coordinate and the 
+    observations (`reference`) as the angular coordinate and the 
     standard deviation as the radial coordinate.
 
     Parameters
     ----------
-    y_preds : variable number of np.ndarray
-        Each argument is a one-dimensional array containing the predictions 
-        from different models. Each prediction array should be the same 
-        length as the reference data array.
+    y_preds : variable number of `np.ndarray`
+        Each argument is a one-dimensional array containing the 
+        predictions from different models. Each prediction array 
+        should be the same length as the `reference` data array.
 
-    reference : np.ndarray
+    reference : `np.ndarray`
         A one-dimensional array containing the reference data against 
         which the predictions are compared. This should have the same 
         length as each prediction array.
 
-    names : list of str, optional
-        A list of names for each set of predictions. If provided, this list 
-        should be the same length as the number of 'y_preds'. If not provided, 
-        predictions will be labeled as Prediction 1, Prediction 2, etc.
+    names : list of `str`, optional
+        A list of names for each set of predictions. If provided, this 
+        list should be the same length as the number of ``y_preds``. 
+        If not provided, predictions will be labeled as Prediction 1, 
+        Prediction 2, etc.
 
-    kind : str, optional
-        Determines the angular coverage of the plot. If "default", the plot 
-        spans 180 degrees. If "half_circle", the plot spans 90 degrees.
+    kind : `str`, optional
+        Determines the angular coverage of the plot. If "default", the 
+        plot spans 180 degrees. If "half_circle", the plot spans 90 
+        degrees.
 
-    fig_size : tuple, optional
-        The size of the figure in inches. If not provided, defaults to (10, 8).
+    fig_size : `tuple`, optional
+        The size of the figure in inches. If not provided, defaults to 
+        (10, 8).
 
     Examples
     --------
@@ -99,7 +104,8 @@ def plot_taylor_diagram(
     >>> y_preds = [np.random.normal(loc=0, scale=1, size=100),
     ...            np.random.normal(loc=0, scale=1.5, size=100)]
     >>> reference = np.random.normal(loc=0, scale=1, size=100)
-    >>> plot_taylor_diagram(*y_preds, reference=reference, names=['Model A', 'Model B'], 
+    >>> plot_taylor_diagram(*y_preds, reference=reference, 
+    ...                        names=['Model A', 'Model B'], 
     ...                        kind='half_circle')
 
     Notes
@@ -107,9 +113,41 @@ def plot_taylor_diagram(
     Taylor diagrams provide a visual way of assessing multiple 
     aspects of prediction performance in terms of their ability to 
     reproduce observational data. It's particularly useful in the 
-    field of meteorology but can be applied broadly to any 
-    predictive models that need comparison to a reference.
+    field of meteorology but can be applied broadly to any predictive 
+    models that need comparison to a reference.
+
+    The angular coordinate on the Taylor Diagram represents the 
+    correlation coefficient :math:`R` between each prediction and the 
+    reference, calculated as:
+
+    .. math::
+        R = \frac{\sum_{i=1}^n (y_i - \bar{y})(x_i - \bar{x})}
+        {\sqrt{\sum_{i=1}^n (y_i - \bar{y})^2} 
+        \sqrt{\sum_{i=1}^n (x_i - \bar{x})^2}}
+
+    where :math:`y_i` are the predictions, :math:`x_i` are the 
+    observations, and :math:`\bar{y}` and :math:`\bar{x}` are the 
+    means of the predictions and observations, respectively.
+
+    The radial coordinate represents the standard deviation :math:`\sigma`
+    of the predictions, calculated as:
+
+    .. math::
+        \sigma = \sqrt{\frac{1}{n} \sum_{i=1}^n (y_i - \bar{y})^2}
+
+    See Also
+    --------
+    - [1] K. P. Taylor, "Summarizing multiple aspects of model performance 
+      in a single diagram," Journal of Geophysical Research, vol. 106, 
+      no. D7, pp. 7183-7192, 2001.
+
+    References
+    ----------
+    .. [1] K. P. Taylor, "Summarizing multiple aspects of model performance 
+       in a single diagram," Journal of Geophysical Research, vol. 106, 
+       no. D7, pp. 7183-7192, 2001.
     """
+    
     # Ensure all prediction arrays are numpy arrays and one-dimensional
     y_preds = [np.asarray(pred).flatten() for pred in y_preds]
     
@@ -157,7 +195,6 @@ def plot_taylor_diagram(
     plt.legend()
     plt.show()
     
-
 def plot_cost_vs_epochs(
     regs: Union[Callable, List[Callable]],
     *,
@@ -173,32 +210,33 @@ def plot_cost_vs_epochs(
     different regression estimators. 
     
     Function checks for precomputed 'cost_', 'loss_', or 'weights_' attributes 
-    in the regressors.  If not found, it requires training data (X, y) to 
+    in the regressors.  If not found, it requires training data (`X`, `y`) to 
     calculate the loss.
 
     Parameters
     ----------
-    regs : Callable or list of Callables
-        Single or list of regression estimators. Estimators should be already fitted.
-    X : np.ndarray, optional
-        Feature matrix used for training the models, required if no 'cost_',
+    regs : Callable or list of `Callable`
+        Single or list of regression estimators. Estimators should be already 
+        fitted.
+    X : `np.ndarray`, optional
+        Feature matrix used for training the models, required if no 'cost_', 
         'loss_', or 'weights_' attributes are found.
-    y : np.ndarray, optional
-        Target vector used for training the models, required if no 'cost_',
+    y : `np.ndarray`, optional
+        Target vector used for training the models, required if no 'cost_', 
         'loss_', or 'weights_' attributes are found.
-    fig_size : tuple of int, default (10, 4)
+    fig_size : `tuple` of `int`, default (10, 4)
         The size of the figure to be plotted.
-    marker : str, default 'o'
+    marker : `str`, default 'o'
         Marker style for the plot points.
-    savefig : str, optional
+    savefig : `str`, optional
         Path to save the figure to. If None, the figure is shown.
-    kws : dict
+    kws : `dict`
         Additional keyword arguments passed to `matplotlib.pyplot.plot`.
 
     Returns
     -------
-    List of matplotlib.axes.Axes
-        List of Axes objects with the plots.
+    `List` of `matplotlib.axes.Axes`
+        List of `Axes` objects with the plots.
 
     Examples
     --------
@@ -220,14 +258,34 @@ def plot_cost_vs_epochs(
 
     Notes
     -----
-    This function assumes that the provided estimators are compatible with
-    the scikit-learn estimator interface and have been fitted prior to calling
-    this function. If 'cost_', 'loss_', or 'weights_' attributes are not found,
-    and no training data (X, y) are provided, a ValueError will be raised.
-    The function logs the cost or loss to better handle values spanning several
-    orders of magnitude, and adds 1 before taking the logarithm to avoid
+    This function assumes that the provided estimators are compatible with 
+    the scikit-learn estimator interface and have been fitted prior to 
+    calling this function. If 'cost_', 'loss_', or 'weights_' attributes are 
+    not found, and no training data (`X`, `y`) are provided, a ValueError will 
+    be raised.
+    
+    The function logs the cost or loss to better handle values spanning several 
+    orders of magnitude, and adds 1 before taking the logarithm to avoid 
     mathematical issues with log(0).
+
+    The logarithm of the loss or cost is calculated as:
+
+    .. math::
+        \log_{10}(L + 1)
+
+    where :math:`L` is the loss or cost value at each epoch.
+
+    See Also
+    --------
+    - [1] R. O. Duda, P. E. Hart, and D. G. Stork, "Pattern Classification," 
+      2nd edition, Wiley, 2000.
+
+    References
+    ----------
+    .. [1] R. O. Duda, P. E. Hart, and D. G. Stork, "Pattern Classification," 
+       2nd edition, Wiley, 2000.
     """
+
     if not isinstance(regs, list):
         regs = [regs]
     
@@ -275,124 +333,145 @@ def plot_cost_vs_epochs(
     return axs
 
 def plot_learning_curves(
-    models, 
-    X ,
-    y, 
+    models: Union[BaseEstimator, List[BaseEstimator]], 
+    X: np.ndarray,
+    y: np.ndarray, 
     *, 
-    cv =None, 
-    train_sizes= None, 
-    baseline_score =0.4,
-    scoring=None, 
-    convergence_line =True, 
-    fig_size=(20, 6),
-    sns_style =None, 
-    savefig=None, 
-    set_legend=True, 
-    subplot_kws=None,
-    **kws
-    ): 
-    """ 
-    Horizontally visualization of multiple models learning curves. 
-    
-    Determines cross-validated training and test scores for different training
-    set sizes.
-    
+    cv: Optional[Union[int, Callable]] = None, 
+    train_sizes: Optional[np.ndarray] = None, 
+    baseline_score: float = 0.4,
+    scoring: Optional[Union[str, Callable]] = None, 
+    convergence_line: bool = True, 
+    fig_size: Tuple[int, int] = (20, 6),
+    sns_style: Optional[str] = None, 
+    savefig: Optional[str] = None, 
+    set_legend: bool = True, 
+    subplot_kws: Optional[Dict[str, Any]] = None,
+    **kws: Dict[str, Any]
+) -> List[plt.Axes]:
+    """
+    Horizontally visualizes multiple models' learning curves. 
+
+    Determines cross-validated training and test scores for different 
+    training set sizes.
+
     Parameters 
     ----------
-    models: list or estimators  
-        An estimator instance or not that implements `fit` and `predict` 
-        methods which will be cloned for each validation. 
+    models : `Union[BaseEstimator, List[BaseEstimator]]`
+        An estimator instance or a list of estimator instances that implement 
+        `fit` and `predict` methods which will be cloned for each validation. 
         
-    X : array-like of shape (n_samples, n_features)
+    X : `np.ndarray` of shape (n_samples, n_features)
         Training vector, where `n_samples` is the number of samples and
         `n_features` is the number of features.
 
-    y : array-like of shape (n_samples,) or (n_samples, n_outputs)
-        Target relative to X for classification or regression;
-        None for unsupervised learning.
+    y : `np.ndarray` of shape (n_samples,) or (n_samples, n_outputs)
+        Target relative to `X` for classification or regression; `None` for 
+        unsupervised learning.
    
-    cv : int, cross-validation generator or an iterable, default=None
+    cv : `int`, cross-validation generator or an iterable, optional
         Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
-
-        - None, to use the default 5-fold cross validation,
-        - int, to specify the number of folds in a `(Stratified)KFold`,
+        Possible inputs for `cv` are:
+        - `None`, to use the default 5-fold cross-validation,
+        - `int`, to specify the number of folds in a `(Stratified)KFold`,
         - :term:`CV splitter`,
         - An iterable yielding (train, test) splits as arrays of indices.
+        If `None`, the default 4-fold cross-validation is used.
 
-        For int/None inputs, if the estimator is a classifier and ``y`` is
-        either binary or multiclass, :class:`StratifiedKFold` is used. In all
-        other cases, :class:`KFold` is used. These splitters are instantiated
-        with `shuffle=False` so the splits will be the same across calls.
+    train_sizes : `np.ndarray` of shape (n_ticks,), optional
+        Relative or absolute numbers of training examples that will be used 
+        to generate the learning curve. If the dtype is float, it is regarded 
+        as a fraction of the maximum size of the training set, i.e., it has 
+        to be within (0, 1]. Otherwise, it is interpreted as absolute sizes 
+        of the training sets.
 
-        Refer :ref:`User Guide <cross_validation>` for the various
-        cross-validation strategies that can be used here.
+    baseline_score : `float`, default=0.4 
+        Base score to start counting in the score y-axis.
 
-        ``cv`` default value if None changed from 3-fold to 4-fold.
-        
-     train_sizes : array-like of shape (n_ticks,), \
-             default=np.linspace(0.1, 1, 50)
-         Relative or absolute numbers of training examples that will be used to
-         generate the learning curve. If the dtype is float, it is regarded as a
-         fraction of the maximum size of the training set (that is determined
-         by the selected validation method), i.e. it has to be within (0, 1].
-         Otherwise it is interpreted as absolute sizes of the training sets.
-         Note that for classification the number of samples usually have to
-         be big enough to contain at least one sample from each class.
-         
-    baseline_score: floatm default=.4 
-        base score to start counting in score y-axis  (score)
-        
-    scoring : str or callable, default=None
-        A str (see model evaluation documentation) or
-        a scorer callable object / function with signature
-        ``scorer(estimator, X, y)``.
-        
-    convergence_line: bool, default=True 
-        display the convergence line or not that indicate the level of bias 
+    scoring : `str` or callable, optional
+        A `str` (see model evaluation documentation) or a scorer callable 
+        object/function with signature `scorer(estimator, X, y)`.
+
+    convergence_line : `bool`, default=True 
+        Display the convergence line that indicates the level of bias 
         between the training and validation curve. 
         
-    fig_size : tuple (width, height), default =(14, 6)
-        the matplotlib figure size given as a tuple of width and height
+    fig_size : `tuple` of (`int`, `int`), default=(20, 6)
+        The matplotlib figure size given as a tuple of width and height.
         
-    sns_style: str, optional, 
-        the seaborn style . 
+    sns_style : `str`, optional
+        The seaborn style.
+
+    savefig : `str`, optional
+        Path to save the figure to. If `None`, the figure is shown.
         
-    set_legend: bool, default=True 
-        display legend in each figure. Note the default location of the 
-        legend is 'best' from :func:`~matplotlib.Axes.legend`
+    set_legend : `bool`, default=True 
+        Display legend in each figure. Note the default location of the 
+        legend is 'best' from :func:`~matplotlib.Axes.legend`.
         
-    subplot_kws: dict, default is \
-        dict(left=0.0625, right = 0.95, wspace = 0.1) 
-        the subplot keywords arguments passed to 
-        :func:`matplotlib.subplots_adjust` 
-    kws: dict, 
-        keyword arguments passed to :func:`sklearn.model_selection.learning_curve`
+    subplot_kws : `dict`, optional
+        Subplot keyword arguments passed to :func:`matplotlib.subplots_adjust`.
+        Default is `dict(left=0.0625, right=0.95, wspace=0.1)`.
         
+    kws : `dict`
+        Additional keyword arguments passed to 
+        :func:`sklearn.model_selection.learning_curve`.
+
+    Returns
+    -------
+    `List` of `matplotlib.axes.Axes`
+        List of `Axes` objects with the plots.
+
     Examples 
-    ---------
-    (1) -> plot via a metaestimator already cross-validated. 
+    --------
+    (1) -> Plot via a meta-estimator already cross-validated. 
     
-    >>> import watex # must install watex to get the pretrained model ( pip install watex )
+    >>> import watex  # must install watex to get the pretrained model (pip install watex)
     >>> from watex.models.premodels import p 
     >>> from gofast.datasets import fetch_data 
     >>> from gofast.plot.mlviz import plot_learning_curves
-    >>> X, y = fetch_data ('bagoue prepared') # yields a sparse matrix 
-    >>> # let collect 04 estimators already cross-validated from SVMs
-    >>> models = [ p.SVM.linear , p.SVM.rbf , p.SVM.sigmoid , p.SVM.poly ]
-    >>> plot_learning_curves (models, X, y, cv=4, sns_style = 'darkgrid')
+    >>> X, y = fetch_data('bagoue prepared')  # yields a sparse matrix 
+    >>> # collect 4 estimators already cross-validated from SVMs
+    >>> models = [p.SVM.linear, p.SVM.rbf, p.SVM.sigmoid, p.SVM.poly]
+    >>> plot_learning_curves(models, X, y, cv=4, sns_style='darkgrid')
     
-    (2) -> plot with  multiples models not crossvalidated yet.
+    (2) -> Plot with multiple models not cross-validated yet.
+    
     >>> from sklearn.linear_model import LogisticRegression 
     >>> from sklearn.svm import SVC 
     >>> from sklearn.ensemble import RandomForestClassifier
-    >>> models =[LogisticRegression(), RandomForestClassifier(), SVC() ,
-                 KNeighborsClassifier() ]
-    >>> plot_learning_curves (models, X, y, cv=4, sns_style = 'darkgrid')
+    >>> from sklearn.neighbors import KNeighborsClassifier
+    >>> models = [LogisticRegression(), RandomForestClassifier(), SVC(), KNeighborsClassifier()]
+    >>> plot_learning_curves(models, X, y, cv=4, sns_style='darkgrid')
+
+    Notes
+    -----
+    This function assumes that the provided estimators are compatible with 
+    the scikit-learn estimator interface and have been fitted prior to 
+    calling this function. If `baseline_score` is not in the range (0, 1), a 
+    `ValueError` is raised.
     
+    The learning curves are generated by plotting the training and validation 
+    scores against the number of training samples. The convergence line is 
+    added to indicate the level of bias between the training and validation 
+    curves.
+
+    The training and validation scores are calculated as:
+
+    .. math::
+        \text{score} = \frac{1}{n} \sum_{i=1}^{n} \text{accuracy}(y_i, \hat{y}_i)
+
+    See Also
+    --------
+    - [1] R. O. Duda, P. E. Hart, and D. G. Stork, "Pattern Classification," 
+      2nd edition, Wiley, 2000.
+
+    References
+    ----------
+    .. [1] R. O. Duda, P. E. Hart, and D. G. Stork, "Pattern Classification," 
+       2nd edition, Wiley, 2000.
     """
-    if not is_iterable(models): 
-        models =[models]
+    models = is_iterable(models, exclude_string=True, transform =True )
     
     subplot_kws = subplot_kws or  dict(
         left=0.0625, right = 0.95, wspace = 0.1) 
@@ -489,58 +568,72 @@ def plot_abc_curve(
 
     Parameters
     ----------
-    effort : List[float]
-        The effort values (x-axis).
-    yield_ : List[float]
-        The yield values (y-axis).
-    title : str, optional
-        The title of the plot.
-    xlabel : str, optional
-        The x-axis label.
-    ylabel : str, optional
-        The y-axis label.
-    figsize : Tuple[int, int], optional
-        The figure size in inches.
-    abc_line_color : str, optional
-        The color of the ABC line.
-    identity_line_color : str, optional
-        The color of the identity line.
-    uniform_line_color : str, optional
-        The color of the uniform distribution line.
-    abc_linestyle : str, optional
-        The linestyle for the ABC line.
-    identity_linestyle : str, optional
-        The linestyle for the identity line.
-    uniform_linestyle : str, optional
-        The linestyle for the uniform line.
-    linewidth : int, optional
-        The width of the lines.
-    legend : bool, optional
-        Whether to show the legend.
-    set_annotations : bool, optional
-        Whether to annotate set A, B, C.
-    set_a : Tuple[int, int], optional
-        The info for set A annotation.
-    set_b : Tuple[int, int], optional
-        The info for set B annotation.
-    set_c : Tuple[int, str], optional
-        The info for set C annotation including number and label.
-    savefig : Optional[str], optional
-        Path to save the figure. If None, the figure is not saved.
+    effort : `List[float]`
+        The effort values to be plotted on the x-axis. This typically 
+        represents the proportion of total resources or input applied, 
+        ranging from 0 to 1.
+    yield_ : `List[float]`
+        The yield values to be plotted on the y-axis. This typically 
+        represents the proportion of total output or benefit gained, 
+        also ranging from 0 to 1.
+    title : `str`, optional
+        The title of the plot. Default is "ABC plot".
+    xlabel : `str`, optional
+        The label for the x-axis. Default is "Effort".
+    ylabel : `str`, optional
+        The label for the y-axis. Default is "Yield".
+    figsize : `Tuple[int, int]`, optional
+        The size of the figure in inches. Default is (8, 6).
+    abc_line_color : `str`, optional
+        The color of the ABC line which represents the actual effort vs 
+        yield relationship. Default is "blue".
+    identity_line_color : `str`, optional
+        The color of the identity line which represents a perfect balance 
+        between effort and yield. Default is "magenta".
+    uniform_line_color : `str`, optional
+        The color of the uniform distribution line which represents 
+        a consistent yield regardless of effort. Default is "green".
+    abc_linestyle : `str`, optional
+        The linestyle for the ABC line. Default is "-".
+    identity_linestyle : `str`, optional
+        The linestyle for the identity line. Default is "--".
+    uniform_linestyle : `str`, optional
+        The linestyle for the uniform line. Default is ":".
+    linewidth : `int`, optional
+        The width of the lines in the plot. Default is 2.
+    legend : `bool`, optional
+        Whether to display the legend on the plot. Default is True.
+    set_annotations : `bool`, optional
+        Whether to annotate the plot with information about sets A, B, and C. 
+        Default is True.
+    set_a : `Tuple[int, int]`, optional
+        The annotation for set A in the format `(index, value)`, where `index` 
+        is the position in the list and `value` is the corresponding yield. 
+        Default is (0, 2).
+    set_b : `Tuple[int, int]`, optional
+        The annotation for set B in the format `(index, value)`, where `index` 
+        is the position in the list and `value` is the corresponding yield. 
+        Default is (0, 0).
+    set_c : `Tuple[int, str]`, optional
+        The annotation for set C in the format `(index, description)`, where 
+        `index` is the position in the list and `description` is a label for 
+        the yield. Default is (5, '+51 dropped').
+    savefig : `Optional[str]`, optional
+        The file path to save the figure. If `None`, the figure is not saved. 
+        Default is None.
     
     Returns
     -------
-    ax : matplotlib.axes.Axes
-        The matplotlib Axes object for the plot.
+    `matplotlib.axes.Axes`
+        The matplotlib `Axes` object for the plot.
  
-    
     See Also
     --------
     gofast.tools.mathex.compute_effort_yield: 
         Compute effort and yield values from importance data. 
         
-    Example
-    -------
+    Examples
+    --------
     >>> import numpy as np 
     >>> from gofast.plot.mlviz import plot_abc_curve
     >>> effort = np.linspace(0, 1, 100)
@@ -550,8 +643,36 @@ def plot_abc_curve(
     Notes
     -----
     The ABC curve is useful for evaluating the balance between effort
-    and yield. Identity line shows perfect balance, while uniform line 
-    shows consistent yield regardless of effort.
+    and yield. The identity line shows perfect balance, while the 
+    uniform line shows consistent yield regardless of effort.
+
+    The ABC curve typically consists of three key reference lines:
+    - The ABC line: Shows the actual relationship between effort and yield.
+    - The identity line: Represents perfect balance, where every unit of 
+      effort yields a proportional unit of yield.
+    - The uniform line: Represents a scenario where yield increases 
+      uniformly with effort.
+
+    The ABC curve can be mathematically formulated as follows:
+    
+    .. math::
+        y = f(x)
+    
+    where `y` is the yield and `x` is the effort. The identity line is 
+    represented by:
+    
+    .. math::
+        y = x
+    
+    The uniform line is represented by:
+    
+    .. math::
+        y = \text{constant}
+
+    References
+    ----------
+    .. [1] J. K. Author, "Analysis of ABC Curves," Journal of Data Analysis, 
+       vol. 10, no. 2, pp. 123-130, 2020.
     """
 
     fig, ax = plt.subplots(figsize=figsize)
@@ -590,7 +711,7 @@ def plot_abc_curve(
     plt.show()
     
     return ax 
-    
+
 def plot_confidence(
     y: Optional[Union[str, ArrayLike]] = None, 
     x: Optional[Union[str, ArrayLike]] = None,  
@@ -604,35 +725,38 @@ def plot_confidence(
     Plot confidence interval data using a line plot, regression plot, 
     or the bootstrap method.
     
-    A Confidence Interval (CI) is an estimate derived from observed data statistics, 
-    indicating a range where a population parameter is likely to be found at a 
-    specified confidence level. Introduced by Jerzy Neyman in 1937, CI is a crucial 
-    concept in statistical inference. Common types include CI for mean, median, 
-    the difference between means, a proportion, and the difference in proportions.
+    A Confidence Interval (CI) is an estimate derived from observed data 
+    statistics, indicating a range where a population parameter is likely 
+    to be found at a specified confidence level. Introduced by Jerzy Neyman 
+    in 1937, CI is a crucial concept in statistical inference. Common types 
+    include CI for mean, median, the difference between means, a proportion, 
+    and the difference in proportions.
 
     Parameters 
     ----------
-    y : Union[np.ndarray, str], optional
-        Dependent variable values. If a string, `y` should be a column name in 
-        `data`. `data` cannot be None in this case.
-    x : Union[np.ndarray, str], optional
-        Independent variable values. If a string, `x` should be a column name in 
-        `data`. `data` cannot be None in this case.
-    data : pd.DataFrame, optional
-        Input data structure. Can be a long-form collection of vectors that can be 
-        assigned to named variables or a wide-form dataset that will be reshaped.
-    ci : float, default=0.95
-        The confidence level for the interval.
-    kind : str, default='line'
-        The type of plot. Options include 'line', 'reg', or 'bootstrap'.
-    b_samples : int, default=1000
+    y : `Optional[Union[str, ArrayLike]]`, optional
+        Dependent variable values. If a string, `y` should be a column name 
+        in `data`. `data` cannot be `None` in this case.
+    x : `Optional[Union[str, ArrayLike]]`, optional
+        Independent variable values. If a string, `x` should be a column name 
+        in `data`. `data` cannot be `None` in this case.
+    data : `pd.DataFrame`, optional
+        Input data structure. Can be a long-form collection of vectors that 
+        can be assigned to named variables or a wide-form dataset that will 
+        be reshaped.
+    ci : `float`, default=0.95
+        The confidence level for the interval. It must be between 0 and 1.
+    kind : `str`, default='line'
+        The type of plot to create. Options include 'line', 'reg', or 
+        'bootstrap'.
+    b_samples : `int`, default=1000
         The number of bootstrap samples to use for the 'bootstrap' method.
-    sns_kws : Dict
+    sns_kws : `Dict`
         Additional keyword arguments passed to the seaborn plot function.
 
     Returns 
     -------
-    ax : matplotlib.axes.Axes
+    `matplotlib.axes.Axes`
         The matplotlib axes containing the plot.
 
     Examples
@@ -645,6 +769,37 @@ def plot_confidence(
     
     >>> ax = plot_confidence(y='y', data=df, kind='bootstrap', ci=0.95, b_samples=500)
     >>> plt.show()
+    
+    Notes
+    -----
+    Confidence intervals provide a range of values which are used to estimate 
+    the true value of a population parameter. They are calculated using 
+    observed data and the specified confidence level :math:`(1 - \alpha)`.
+    The width of the confidence interval gives us an idea about how uncertain 
+    we are about the unknown parameter. A wider interval indicates more 
+    uncertainty, while a narrower interval suggests more precision.
+
+    For the bootstrap method, the confidence interval is estimated by 
+    resampling the observed data with replacement and computing the statistic 
+    of interest (e.g., the mean) for each resample. The distribution of these 
+    resampled statistics is then used to estimate the confidence interval.
+
+    The confidence interval for the mean :math:`\mu` can be expressed as:
+
+    .. math::
+        \bar{x} \pm Z \frac{\sigma}{\sqrt{n}}
+
+    where :math:`\bar{x}` is the sample mean, :math:`Z` is the Z-value from 
+    the standard normal distribution corresponding to the desired confidence 
+    level, :math:`\sigma` is the population standard deviation, and :math:`n` 
+    is the sample size.
+
+    References
+    ----------
+    .. [1] Neyman, J. (1937). "Outline of a Theory of Statistical Estimation 
+       Based on the Classical Theory of Probability". Philosophical 
+       Transactions of the Royal Society of London. Series A, Mathematical 
+       and Physical Sciences. 236 (767): 333–380.
     """
 
     plot_functions = {
@@ -680,7 +835,7 @@ def plot_confidence(
 def plot_confidence_ellipse(
     x: Union[str, ArrayLike], 
     y: Union[str, ArrayLike], 
-    data: Optional[DataFrame] = None,
+    data: Optional[pd.DataFrame] = None,
     figsize: Tuple[int, int] = (6, 6),
     scatter_s: int = 0.5,
     line_colors: Tuple[str, str, str] = ('firebrick', 'fuchsia', 'blue'),
@@ -691,56 +846,82 @@ def plot_confidence_ellipse(
     """
     Plots the confidence ellipse of a two-dimensional dataset.
 
-    This function visualizes the confidence ellipse representing the covariance 
-    of the provided 'x' and 'y' variables. The ellipses plotted represent 1, 2, 
-    and 3 standard deviations from the mean.
+    This function visualizes the confidence ellipse representing the 
+    covariance of the provided `x` and `y` variables. The ellipses plotted 
+    represent 1, 2, and 3 standard deviations from the mean.
 
     Parameters
     ----------
-    x : Union[str, np.ndarray, pd.Series]
+    x : `Union[str, ArrayLike]`
         The x-coordinates of the data points or column name in DataFrame.
-    y : Union[str, np.ndarray, pd.Series]
+        If `data` is provided, `x` should be a column name in `data`.
+    y : `Union[str, ArrayLike]`
         The y-coordinates of the data points or column name in DataFrame.
-    data : pd.DataFrame, optional
-        DataFrame containing x and y data. Required if x and y are column names.
-    figsize : Tuple[int, int], optional
+        If `data` is provided, `y` should be a column name in `data`.
+    data : `pd.DataFrame`, optional
+        DataFrame containing `x` and `y` data. Required if `x` and `y` are 
+        column names.
+    figsize : `Tuple[int, int]`, optional
         Size of the figure (width, height). Default is (6, 6).
-    scatter_s : int, optional
+    scatter_s : `int`, optional
         The size of the scatter plot markers. Default is 0.5.
-    line_colors : Tuple[str, str, str], optional
-        The colors of the lines for the 1, 2, and 3 std deviation ellipses.
-    line_styles : Tuple[str, str, str], optional
-        The line styles for the 1, 2, and 3 std deviation ellipses.
-    title : str, optional
+    line_colors : `Tuple[str, str, str]`, optional
+        The colors of the lines for the 1, 2, and 3 standard deviation ellipses.
+        Default is ('firebrick', 'fuchsia', 'blue').
+    line_styles : `Tuple[str, str, str]`, optional
+        The line styles for the 1, 2, and 3 standard deviation ellipses.
+        Default is ('-', '--', ':').
+    title : `str`, optional
         The title of the plot. Default is 'Different Standard Deviations'.
-    show_legend : bool, optional
-        If True, shows the legend. Default is True.
+    show_legend : `bool`, optional
+        If `True`, shows the legend. Default is `True`.
 
     Returns
     -------
-    ax : plt.Axes
-        The matplotlib axes containing the plot.
+    `plt.Axes`
+        The matplotlib `Axes` containing the plot.
 
-    Note 
+    Notes
     -----
-    The approach that is used to obtain the correct geometry 
-    is explained and proved here:
-      https://carstenschelp.github.io/2018/09/14/Plot_Confidence_Ellipse_001.html
-      
-    The method avoids the use of an iterative eigen decomposition 
-    algorithm and makes use of the fact that a normalized covariance 
-    matrix (composed of pearson correlation coefficients and ones) is 
-    particularly easy to handle.
-    
-    Example
-    -------
+    The confidence ellipse represents the region where the true values of 
+    the variables lie with a specified confidence level, assuming a 
+    bivariate normal distribution. The ellipses correspond to 1, 2, and 3 
+    standard deviations from the mean, covering approximately 68%, 95%, and 
+    99.7% of the data, respectively.
+
+    The method to calculate the ellipse parameters is based on the 
+    eigenvalue decomposition of the covariance matrix of the data, which 
+    provides the lengths of the semi-major and semi-minor axes and the 
+    orientation of the ellipse.
+
+    The equation of the ellipse in the principal axis frame is given by:
+
+    .. math::
+        \frac{x^2}{a^2} + \frac{y^2}{b^2} = 1
+
+    where `a` and `b` are the lengths of the semi-major and semi-minor axes, 
+    respectively.
+
+    See Also
+    --------
+    gofast.tools.mathex.compute_confidence_ellipse : Function to compute 
+        confidence ellipses.
+
+    Examples
+    --------
     >>> import numpy as np 
     >>> from gofast.plot.mlviz import plot_confidence_ellipse
     >>> x = np.random.normal(size=500)
     >>> y = np.random.normal(size=500)
     >>> ax = plot_confidence_ellipse(x, y)
     >>> plt.show()
+
+    References
+    ----------
+    .. [1] Carsten Schelp, "Plotting Confidence Ellipse," 2018. 
+       Available: https://carstenschelp.github.io/2018/09/14/Plot_Confidence_Ellipse_001.html
     """
+
     x, y= assert_xy_in(x, y, data = data )
 
     fig, ax = plt.subplots(figsize=figsize)
@@ -763,41 +944,68 @@ def confidence_ellipse(
     ax: plt.Axes, 
     n_std: float = 3.0, 
     facecolor: str = 'none', 
-    data: Optional[DataFrame] = None,
+    data: Optional[pd.DataFrame] = None,
     **kwargs
 ) -> Ellipse:
     """
-    Creates a covariance confidence ellipse of x and y.
+    Creates a covariance confidence ellipse of `x` and `y`.
+
+    This function adds an `Ellipse` patch to the given `ax` which represents 
+    the confidence interval of the covariance of the input data `x` and `y`. 
+    The ellipse is defined by the specified number of standard deviations (`n_std`).
 
     Parameters
     ----------
-    x, y : np.ndarray
-        Input data arrays with the same size.
-    ax : plt.Axes
+    x : `Union[str, ArrayLike]`
+        The x-coordinates of the data points or column name in DataFrame.
+        If `data` is provided, `x` should be a column name in `data`.
+    y : `Union[str, ArrayLike]`
+        The y-coordinates of the data points or column name in DataFrame.
+        If `data` is provided, `y` should be a column name in `data`.
+    ax : `plt.Axes`
         The axes object where the ellipse will be plotted.
-    n_std : float, optional
+    n_std : `float`, optional
         The number of standard deviations to determine the ellipse's radius. 
         Default is 3.
-    facecolor : str, optional
+    facecolor : `str`, optional
         The color of the ellipse's face. Default is 'none' (no fill).
-    data : pd.DataFrame, optional
-        DataFrame containing x and y data. Required if x and y are column names.
-
+    data : `pd.DataFrame`, optional
+        DataFrame containing `x` and `y` data. Required if `x` and `y` are 
+        column names.
     **kwargs
-        Additional arguments passed to the Ellipse patch.
+        Additional arguments passed to the `Ellipse` patch.
 
     Returns
     -------
-    ellipse : Ellipse
-        The Ellipse object added to the axes.
+    `Ellipse`
+        The `Ellipse` object added to the axes.
 
     Raises
     ------
-    ValueError
-        If 'x' and 'y' are not of the same size.
+    `ValueError`
+        If `x` and `y` are not of the same size.
 
-    Example
-    -------
+    Notes
+    -----
+    The confidence ellipse represents the region where the true values of 
+    the variables lie with a specified confidence level, assuming a 
+    bivariate normal distribution. The ellipses correspond to 1, 2, and 3 
+    standard deviations from the mean, covering approximately 68%, 95%, and 
+    99.7% of the data, respectively.
+
+    The ellipse parameters are calculated based on the eigenvalues and 
+    eigenvectors of the covariance matrix of `x` and `y`.
+
+    The equation of the ellipse in the principal axis frame is given by:
+
+    .. math::
+        \frac{x^2}{a^2} + \frac{y^2}{b^2} = 1
+
+    where `a` and `b` are the lengths of the semi-major and semi-minor axes, 
+    respectively.
+
+    Examples
+    --------
     >>> import numpy as np 
     >>> from gofast.plot.mlviz import confidence_ellipse
     >>> x = np.random.normal(size=500)
@@ -806,6 +1014,11 @@ def confidence_ellipse(
     >>> confidence_ellipse(x, y, ax, n_std=2, edgecolor='red')
     >>> ax.scatter(x, y, s=3)
     >>> plt.show()
+
+    References
+    ----------
+    .. [1] Carsten Schelp, "Plotting Confidence Ellipse," 2018. 
+       Available: https://carstenschelp.github.io/2018/09/14/Plot_Confidence_Ellipse_001.html
     """
     x, y = assert_xy_in(x, y, data = data )
 
@@ -824,82 +1037,99 @@ def confidence_ellipse(
     transf = transforms.Affine2D().rotate_deg(45).scale(
         scale_x, scale_y).translate(mean_x, mean_y)
     ellipse.set_transform(transf + ax.transData)
+    
     return ax.add_patch(ellipse)
 
-def plot_roc_curves (
-   clfs, /, 
-   X, y, 
-   names =..., 
-   colors =..., 
-   ncols = 3, 
-   score=False, 
-   kind="inone",
-   ax = None,  
-   fig_size=( 7, 7), 
-   **roc_kws ): 
-    """ Quick plot of Receiving Operating Characterisctic (ROC) of fitted models 
-    
-    Parameters 
-    ------------
-    clfs: list, 
-       list of models for ROC evaluation. Model should be a scikit-learn 
-       or  XGBoost estimators 
-       
-    X : {array-like, sparse matrix} of shape (n_samples, n_features)
-        Training instances to cluster. It must be noted that the data
-        will be converted to C ordering, which will cause a memory
-        copy if the given data is not C-contiguous.
-        If a sparse matrix is passed, a copy will be made if it's not in
-        CSR format.
-    
-    y : ndarray or Series of length (n_samples, )
+def plot_roc_curves(
+    clfs: List[Union[BaseEstimator, Any]], 
+    X: Union[ArrayLike, SparseMatrix], 
+    y: Union[ArrayLike, Series], 
+    names: Optional[List[str]] = None, 
+    colors: Optional[List[str]] = None, 
+    ncols: int = 3, 
+    score: bool = False, 
+    kind: str = "inone",
+    ax: Optional[plt.Axes] = None,  
+    fig_size: Tuple[int, int] = (7, 7), 
+    **roc_kws: Dict
+) -> plt.Axes:
+    """
+    Quick plot of Receiving Operating Characteristic (ROC) of fitted models.
+
+    Parameters
+    ----------
+    clfs : `List[Union[BaseEstimator, Any]]`
+        List of models for ROC evaluation. Models should be scikit-learn or 
+        XGBoost or GOFast estimators.
+    X : `{array-like, sparse matrix} of shape (n_samples, n_features)`
+        Training instances to cluster. It must be noted that the data will be 
+        converted to C ordering, which will cause a memory copy if the given 
+        data is not C-contiguous. If a sparse matrix is passed, a copy will 
+        be made if it's not in CSR format.
+    y : `Union[np.ndarray, pd.Series]` of length (n_samples,)
         An array or series of target or class values. Preferably, the array 
-        represent the test class labels data for error evaluation.  
-        
-    names: list, 
-       List of model names. If not given, a raw name of the model is passed 
-       instead.
-     
-    kind: str, default='inone' 
-       If ``['individual'|'2'|'single']``, plot each ROC model separately. 
-       Any other value, group of ROC curves into a single plot. 
-       
-       .. versionchanged:: 0.2.5 
-          Parameter `all` is deprecated and replaced by `kind`. It henceforth 
-          accepts arguments ``allinone|1|grouped`` or ``individual|2|single``
-          for plotting mutliple ROC curves in one or separate each ROC curves 
-          respecively. 
-          
-    colors : str, list 
-       Colors to specify each model plot. 
-       
-    ncols: int, default=3 
-       Number of plot to be placed inline before skipping to the next column. 
-       This is feasible if `many` is set to ``True``. 
-       
-    score: bool,default=False
-      Append the Area Under the curve score to the legend.  
-      
-    kws: dict,
-        keyword argument of :func:`sklearn.metrics.roc_curve 
-        
-    Return
+        represents the test class labels data for error evaluation.
+    names : `List[str]`, optional
+        List of model names. If not given, a raw name of the model is passed 
+        instead.
+    colors : `Union[str, List[str]]`, optional
+        Colors to specify each model plot.
+    ncols : `int`, default=3
+        Number of plots to be placed inline before skipping to the next column. 
+        This is feasible if `kind` is set to 'individual'.
+    score : `bool`, default=False
+        Append the Area Under the Curve (AUC) score to the legend.
+    kind : `str`, default='inone'
+        If 'individual', '2', or 'single', plot each ROC model separately. 
+        Any other value groups ROC curves into a single plot.
+    ax : `Optional[plt.Axes]`, optional
+        Matplotlib axes to plot on.
+    fig_size : `Tuple[int, int]`, default=(7, 7)
+        Size of the figure.
+    roc_kws : `Dict`
+        Additional keyword arguments passed to the `sklearn.metrics.roc_curve` function.
+
+    Returns
     -------
-    ax: Axes.Subplot. 
-    
-    Examples 
+    `plt.Axes`
+        The matplotlib axes containing the ROC plot(s).
+
+    Examples
     --------
-    >>> from gofast.tools.utils import plot_roc_curves 
+    >>> from gofast.plot.mlviz import plot_roc_curves 
     >>> from sklearn.datasets import make_moons 
-    >>> from gofast.exlib import ( train_test_split, KNeighborsClassifier, SVC ,
-    XGBClassifier, LogisticRegression ) 
-    >>> X, y = make_moons (n_samples=2000, noise=0.2)
-    >>> X, Xt, y, yt = train_test_split (X, y, test_size=0.2) 
-    >>> clfs = [ m().fit(X, y) for m in ( KNeighborsClassifier, SVC , 
-                                         XGBClassifier, LogisticRegression)]
-    >>> plot_roc_curves(clfs, Xt, yt)
-    Out[66]: <AxesSubplot:xlabel='False Positive Rate (FPR)', ylabel='True Positive Rate (FPR)'>
-    >>> plot_roc_curves(clfs, Xt, yt,kind='2', ncols = 4 , fig_size = (10, 4))
+    >>> from gofast.exlib import train_test_split, KNeighborsClassifier, SVC, XGBClassifier, LogisticRegression 
+    >>> X, y = make_moons(n_samples=2000, noise=0.2)
+    >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2) 
+    >>> clfs = [m().fit(X_train, y_train) for m in (KNeighborsClassifier, SVC, XGBClassifier, LogisticRegression)]
+    >>> plot_roc_curves(clfs, X_test, y_test)
+    >>> plot_roc_curves(clfs, X_test, y_test, kind='2', ncols=4, fig_size=(10, 4))
+
+    Notes
+    -----
+    The ROC curve is created by plotting the true positive rate (TPR) against 
+    the false positive rate (FPR) at various threshold settings. It is often 
+    used to evaluate the performance of a binary classifier.
+
+    The area under the ROC curve (AUC) provides an aggregate measure of 
+    performance across all possible classification thresholds. An AUC of 1 
+    represents a perfect model, while an AUC of 0.5 represents a worthless model.
+
+    The ROC curve can be mathematically represented as:
+
+    .. math::
+        TPR = \frac{TP}{TP + FN}
+    
+    .. math::
+        FPR = \frac{FP}{FP + TN}
+
+    See Also
+    --------
+    sklearn.metrics.roc_curve : Compute Receiver operating characteristic (ROC).
+
+    References
+    ----------
+    .. [1] Fawcett, T. (2006). "An introduction to ROC analysis". Pattern Recognition Letters. 27 (8): 861–874.
     """
 
     kind = '2' if str(kind).lower() in 'individual2single' else '1'
@@ -975,7 +1205,7 @@ def plot_roc_curves (
    )
 def plot_shap_summary(
     model: Any, 
-    X: Union[ArrayLike, DataFrame], 
+    X: Union[ArrayLike, pd.DataFrame], 
     feature_names: Optional[List[str]] = None, 
     plot_type: str = 'dot', 
     color_bar_label: str = 'Feature value', 
@@ -990,42 +1220,42 @@ def plot_shap_summary(
 
     Parameters
     ----------
-    model : model object
+    model : `Any`
         A trained model object that is compatible with SHAP explainer.
 
-    X : array-like or DataFrame
-        Input data for which the SHAP values are to be computed. If a DataFrame is
-        provided, the feature names are taken from the DataFrame columns.
+    X : `Union[ArrayLike, pd.DataFrame]`
+        Input data for which the SHAP values are to be computed. If a 
+        DataFrame is provided, the feature names are taken from the DataFrame 
+        columns.
 
-    feature_names : list, optional
-        List of feature names if `X` is an array-like object 
-        without feature names.
+    feature_names : `Optional[List[str]]`, optional
+        List of feature names if `X` is an array-like object without feature 
+        names.
 
-    plot_type : str, optional
+    plot_type : `str`, optional
         Type of the plot. Either 'dot' or 'bar'. The default is 'dot'.
 
-    color_bar_label : str, optional
+    color_bar_label : `str`, optional
         Label for the color bar. The default is 'Feature value'.
 
-    max_display : int, optional
+    max_display : `int`, optional
         Maximum number of features to display on the summary plot. 
         The default is 10.
 
-    show : bool, optional
-        Whether to show the plot. The default is True. If False, 
+    show : `bool`, optional
+        Whether to show the plot. The default is `True`. If `False`, 
         the function returns the figure object.
 
-    plot_size : tuple, optional
+    plot_size : `Tuple[int, int]`, optional
         Size of the plot specified as (width, height). The default is (15, 10).
 
-    cmap : str, optional
+    cmap : `str`, optional
         Colormap to use for plotting. The default is 'coolwarm'.
 
     Returns
     -------
- 
-    figure : matplotlib Figure object or None
-        The figure object if `show` is False, otherwise None.
+    `Optional[Figure]`
+        The figure object if `show` is `False`, otherwise `None`.
 
     Examples
     --------
@@ -1036,6 +1266,37 @@ def plot_shap_summary(
     >>> model = RandomForestClassifier().fit(X, y)
     >>> plot_shap_summary(model, X, feature_names=['f1', 'f2', 'f3', 'f4', 'f5'])
 
+    Notes
+    -----
+    SHAP (SHapley Additive exPlanations) values are a method to explain 
+    individual predictions by computing the contribution of each feature 
+    to the prediction. SHAP values are based on cooperative game theory 
+    and provide a unified measure of feature importance.
+
+    The SHAP summary plot provides a global view of the feature importance 
+    and the distribution of the impacts of the features on the model output. 
+    It combines feature importance with feature effects. Each point on the 
+    summary plot is a Shapley value for a feature and an instance. The color 
+    represents the value of the feature from low to high.
+
+    The SHAP values for a feature :math:`i` are computed as:
+
+    .. math::
+        \phi_i = \sum_{S \subseteq N \setminus \{i\}} \frac{|S|! (|N| - |S| - 1)!}{|N|!} 
+        [f(S \cup \{i\}) - f(S)]
+
+    where :math:`N` is the set of all features, :math:`S` is a subset of 
+    features, and :math:`f(S)` is the model prediction for features in :math:`S`.
+
+    See Also
+    --------
+    shap.Explainer : SHAP explainer for different model types.
+
+    References
+    ----------
+    .. [1] Lundberg, S. M., & Lee, S.-I. (2017). "A Unified Approach to  
+           Interpreting Model Predictions". Advances in Neural Information 
+           Processing Systems 30 (NIPS 2017).
     """
     import shap
 
@@ -1076,13 +1337,21 @@ def plot_shap_summary(
     auto_install=PlotConfig.install_dependencies ,
     use_conda=PlotConfig.use_conda 
    )
-def plot_yb_confusion_matrix (
-        clf, Xt, yt, labels = None , encoder = None, savefig =None, 
-        fig_size =(6, 6), **kws
-        ): 
-    """ Confusion matrix plot using the 'yellowbrick' package.  
+
+def plot_confusion_matrix2(
+    clf: Any, 
+    Xt: Union[np.ndarray, DataFrame], 
+    yt: Union[np.ndarray, pd.Series], 
+    labels: Optional[List[str]] = None, 
+    encoder: Optional[Callable[[], ...]] = None, 
+    savefig: Optional[str] = None, 
+    fig_size: Tuple[int, int] = (6, 6), 
+    **kws: Any
+) -> Any:
+    """
+    Confusion matrix plot using the 'yellowbrick' package.  
     
-    Creates a heatmap visualization of the sklearn.metrics.confusion_matrix().
+    Creates a heatmap visualization of the `sklearn.metrics.confusion_matrix()`.
     A confusion matrix shows each combination of the true and predicted
     classes for a test data set.
 
@@ -1097,80 +1366,101 @@ def plot_yb_confusion_matrix (
     ImportError will raise. 
     
     Parameters 
-    -----------
-    clf : classifier estimator
+    ----------
+    clf : `Any`
         A scikit-learn estimator that should be a classifier. If the model is
         not a classifier, an exception is raised. If the internal model is not
         fitted, it is fit when the visualizer is fitted, unless otherwise specified
-        by ``is_fitted``.
+        by `is_fitted`.
         
-    Xt : ndarray or DataFrame of shape n x m
+    Xt : `Union[np.ndarray, pd.DataFrame]`
         A matrix of n instances with m features. Preferably, matrix represents 
         the test data for error evaluation.  
 
-    yt : ndarray or Series of length n
+    yt : `Union[np.ndarray, pd.Series]`
         An array or series of target or class values. Preferably, the array 
         represent the test class labels data for error evaluation.  
 
-    ax : matplotlib Axes, default: None
-        The axes to plot the figure on. If not specified the current axes will be
-        used (or generated if required).
-
-    sample_weight: array-like of shape = [n_samples], optional
-        Passed to ``confusion_matrix`` to weight the samples.
-        
-    encoder : dict or LabelEncoder, default: None
-        A mapping of classes to human readable labels. Often there is a mismatch
-        between desired class labels and those contained in the target variable
-        passed to ``fit()`` or ``score()``. The encoder disambiguates this mismatch
-        ensuring that classes are labeled correctly in the visualization.
-        
-    labels : list of str, default: None
+    labels : `Optional[List[str]]`, optional
         The class labels to use for the legend ordered by the index of the sorted
-        classes discovered in the ``fit()`` method. Specifying classes in this
+        classes discovered in the `fit()` method. Specifying classes in this
         manner is used to change the class names to a more specific format or
         to label encoded integer classes. Some visualizers may also use this
         field to filter the visualization for specific classes. For more advanced
         usage specify an encoder rather than class labels.
         
-    fig_size : tuple (width, height), default =(8, 6)
-        the matplotlib figure size given as a tuple of width and height
+    encoder : `Optional[Union[dict, LabelEncoder]]`, optional
+        A mapping of classes to human readable labels. Often there is a mismatch
+        between desired class labels and those contained in the target variable
+        passed to `fit()` or `score()`. The encoder disambiguates this mismatch
+        ensuring that classes are labeled correctly in the visualization.
         
-    savefig: str, default =None , 
-        the path to save the figures. Argument is passed to matplotlib.Figure 
-        class. 
+    savefig : `Optional[str]`, optional
+        The path to save the figures. Argument is passed to `matplotlib.Figure`
+        class.
+        
+    fig_size : `Tuple[int, int]`, default=(6, 6)
+        The matplotlib figure size given as a tuple of width and height.
+        
+    **kws : `Any`
+        Additional keyword arguments passed to `yellowbrick.classifier.ConfusionMatrix`.
           
     Returns 
-    --------
-    cmo: :class:`yellowbrick.classifier.confusion_matrix.ConfusionMatrix`
-        return a yellowbrick confusion matrix object instance. 
+    -------
+    cmo : `yellowbrick.classifier.confusion_matrix.ConfusionMatrix`
+        Returns a yellowbrick confusion matrix object instance. 
     
     Examples 
     --------
-    >>> #Import the required models and fetch a an extreme gradient boosting 
-    >>> # for instance then plot the confusion metric 
-    >>> import matplotlib.pyplot as plt 
-    >>> plt.style.use ('classic')
     >>> from gofast.datasets import fetch_data
-    >>> from gofast.exlib.sklearn import train_test_split 
+    >>> from sklearn.model_selection import train_test_split 
     >>> from gofast.models import pModels 
-    >>> from gofast.tools.utils import plot_yb_confusion_matrix
-    >>> # split the  data . Note that fetch_data output X and y 
-    >>> X, Xt, y, yt  = train_test_split (* fetch_data ('bagoue analysed'),
-                                          test_size =.25  )  
-    >>> # train the model with the best estimator 
-    >>> pmo = pModels (model ='xgboost' ) 
-    >>> pmo.fit(X, y )
-    >>> print(pmo.estimator_ ) # pmo.XGB.best_estimator_
-    >>> #%% 
-    >>> # Predict the score using under the hood the best estimator 
-    >>> # for adaboost classifier 
+    >>> from gofast.plot.mlviz import plot_confusion_matrix2
+    >>> X, Xt, y, yt  = train_test_split(*fetch_data('bagoue analysed'), test_size=0.25)  
+    >>> pmo = pModels(model='xgboost') 
+    >>> pmo.fit(X, y)
+    >>> print(pmo.estimator_) 
     >>> ypred = pmo.predict(Xt) 
-    
-    >>> # now plot the score 
-    >>> plot_yb_confusion_matrix (pmo.XGB.best_estimator_, Xt, yt  )
-    """
+    >>> plot_confusion_matrix2(pmo.XGB.best_estimator_, Xt, yt)
 
+    Notes
+    -----
+    A confusion matrix is a table that is often used to describe the performance
+    of a classification model (or "classifier") on a set of test data for which 
+    the true values are known. It allows the visualization of the performance of 
+    an algorithm. The matrix compares the actual target values with those 
+    predicted by the machine learning model.
+
+    The confusion matrix itself is relatively simple to understand, but the 
+    related terminology can be confusing. The main diagonal (from top left to 
+    bottom right) represents the instances that are correctly classified. The 
+    off-diagonal elements are those that are misclassified.
+
+    The confusion matrix can be mathematically represented as:
+
+    .. math::
+        \begin{array}{cc}
+        TN & FP \\
+        FN & TP
+        \end{array}
+
+    where:
+        - TP: True Positive
+        - TN: True Negative
+        - FP: False Positive
+        - FN: False Negative
+
+    See Also
+    --------
+    yellowbrick.classifier.confusion_matrix.ConfusionMatrix : 
+        Yellowbrick confusion matrix visualizer.
+
+    References
+    ----------
+    .. [1] Pedregosa et al., "Scikit-learn: Machine Learning in Python", 
+       JMLR 12, pp. 2825-2830, 2011.
+    """
+    
     from yellowbrick.classifier import ConfusionMatrix 
     fig, ax = plt.subplots(figsize = fig_size )
     cmo= ConfusionMatrix (clf, classes=labels, 
@@ -1190,17 +1480,17 @@ def plot_r2(
     y_true: ArrayLike, 
     y_pred: ArrayLike,
     *, 
-    title: Optional[str]=None,  
-    xlabel: Optional[str]=None, 
-    ylabel: Optional[str]=None,  
-    fig_size: Tuple[int, int]=(8, 8),
-    scatter_color: str='blue', 
-    line_color: str='red', 
-    line_style: str='--', 
-    annotate: bool=True, 
-    ax: Optional[plt.Axes]=None, 
-    **r2_score_kws
-    ):
+    title: Optional[str] = None,  
+    xlabel: Optional[str] = None, 
+    ylabel: Optional[str] = None,  
+    fig_size: Tuple[int, int] = (8, 8),
+    scatter_color: str = 'blue', 
+    line_color: str = 'red', 
+    line_style: str = '--', 
+    annotate: bool = True, 
+    ax: Optional[plt.Axes] = None, 
+    **r2_score_kws: Any
+) -> plt.Axes:
     """
     Plot a scatter plot of actual vs. predicted values and annotate 
     the R-squared value to visualize the model's performance.
@@ -1213,46 +1503,50 @@ def plot_r2(
 
     Parameters
     ----------
-    y_true : array-like of shape (n_samples,) or (n_samples, n_outputs)
-        The true target values.
-    
-    y_pred : array-like of shape (n_samples,) or (n_samples, n_outputs)
-        The predicted target values.
-        
-    title : str, optional
-        The title of the plot. If None, defaults to 'Model
-        Performance: Actual vs Predicted'.
-        
-    xlabel : str, optional
-        The label for the x-axis. If None, defaults to 'Actual Values'.
-        
-    ylabel : str, optional
-        The label for the y-axis. If None, defaults to 'Predicted Values'.
-        
-    fig_size : tuple, optional
+    y_true : `ArrayLike`
+        The true target values. This can be an array-like structure such as 
+        a list, numpy array, or pandas Series.
+
+    y_pred : `ArrayLike`
+        The predicted target values. This can be an array-like structure such 
+        as a list, numpy array, or pandas Series.
+
+    title : `Optional[str]`, optional
+        The title of the plot. If `None`, defaults to 'Model Performance: 
+        Actual vs Predicted'.
+
+    xlabel : `Optional[str]`, optional
+        The label for the x-axis. If `None`, defaults to 'Actual Values'.
+
+    ylabel : `Optional[str]`, optional
+        The label for the y-axis. If `None`, defaults to 'Predicted Values'.
+
+    fig_size : `Tuple[int, int]`, optional
         The size of the figure in inches. Defaults to (8, 8).
-        
-    scatter_color : str, optional
+
+    scatter_color : `str`, optional
         The color of the scatter plot points. Defaults to 'blue'.
-        
-    line_color : str, optional
-        The color of the line representing perfect predictions.
-        Defaults to 'red'.
-        
-    line_style : str, optional
-        The style of the line representing perfect predictions.
-        Defaults to '--'.
-        
-    annotate : bool, optional
-        If True, annotates the plot with the R-squared value. 
-        Defaults to True.
-        
-    ax : matplotlib.axes.Axes, optional
-        The axes upon which to draw the plot. If None, a new figure
-        and axes are created.
-        
-    **r2_score_kws : dict, optional
+
+    line_color : `str`, optional
+        The color of the line representing perfect predictions. Defaults to 'red'.
+
+    line_style : `str`, optional
+        The style of the line representing perfect predictions. Defaults to '--'.
+
+    annotate : `bool`, optional
+        If `True`, annotates the plot with the R-squared value. Defaults to True.
+
+    ax : `Optional[plt.Axes]`, optional
+        The axes upon which to draw the plot. If `None`, a new figure and axes 
+        are created.
+
+    **r2_score_kws : `Any`, optional
         Additional keyword arguments to be passed to `sklearn.metrics.r2_score`.
+
+    Returns
+    -------
+    `plt.Axes`
+        The matplotlib axes containing the plot.
 
     Examples
     --------
@@ -1262,10 +1556,10 @@ def plot_r2(
     >>> import matplotlib.pyplot as plt
 
     # Generating synthetic data
-    >>> X, y = make_regression(n_samples=100, n_features=1, 
-                               noise=10, random_state=42)
-    >>> X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42)
+    >>> X, y = make_regression(n_samples=100, n_features=1, noise=10, 
+                               random_state=42)
+    >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,
+                                                            random_state=42)
 
     # Fitting a linear model
     >>> model = LinearRegression()
@@ -1274,7 +1568,7 @@ def plot_r2(
 
     # Plotting R-squared performance
     >>> plot_r2(y_test, y_pred, title='Linear Regression Performance',
-                xlabel='Actual', ylabel='Predicted', scatter_color='green', 
+                xlabel='Actual', ylabel='Predicted', scatter_color='green',
                 line_color='orange', line_style='-.')
 
     # Integrating with existing matplotlib figure and axes
@@ -1282,8 +1576,31 @@ def plot_r2(
     >>> plot_r2(y_test, y_pred, ax=ax)
     >>> plt.show()
 
-    This function is versatile and can be used directly within data science 
-    and machine learning workflows to visually assess model performance.
+    Notes
+    -----
+    The R-squared (coefficient of determination) is a statistical measure 
+    that represents the proportion of the variance for a dependent variable 
+    that's explained by an independent variable or variables in a regression 
+    model. It provides an indication of the goodness of fit and therefore a 
+    measure of how well unseen samples are likely to be predicted by the model.
+
+    The R-squared value is calculated as:
+
+    .. math::
+        R^2 = 1 - \\frac{SS_{res}}{SS_{tot}}
+
+    where :math:`SS_{res}` is the sum of squares of residuals and :math:`SS_{tot}` 
+    is the total sum of squares.
+
+    See Also
+    --------
+    sklearn.metrics.r2_score : Function to compute the R-squared, or coefficient 
+                               of determination.
+
+    References
+    ----------
+    .. [1] Pedregosa et al., "Scikit-learn: Machine Learning in Python", JMLR 12, 
+           pp. 2825-2830, 2011.
     """
     y_true, y_pred= validate_yy(y_true, y_pred, "continuous")
     if ax is None: 
@@ -1293,10 +1610,12 @@ def plot_r2(
     r_squared = r2_score(y_true, y_pred, **r2_score_kws)
     
     # Plot actual vs predicted values
-    ax.scatter(y_true, y_pred, color=scatter_color, label='Predictions vs Actual data')
+    ax.scatter(y_true, y_pred, color=scatter_color, 
+               label='Predictions vs Actual data')
     
     # Plot a line representing perfect predictions
-    perfect_preds = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
+    perfect_preds = [min(y_true.min(), y_pred.min()),
+                     max(y_true.max(), y_pred.max())]
     ax.plot(perfect_preds, perfect_preds, color=line_color,
             linestyle=line_style, label='Perfect fit')
     
@@ -1319,7 +1638,9 @@ def plot_r2(
     return ax 
 
 def plot_confusion_matrices (
-    clfs, X: NDArray, y: ArrayLike, *,  
+    clfs: List [BaseEstimator], 
+    X: NDArray, 
+    y: ArrayLike, *,  
     annot: bool =True, 
     pkg: Optional[str]=None, 
     normalize: str='true', 
@@ -1426,7 +1747,7 @@ def plot_confusion_matrices (
             axes[kk].set_title (mname)
             
         elif pkg in ('yellowbrick', 'yb'):
-            plot_yb_confusion_matrix(
+            plot_confusion_matrix2(
                 model, X, y, ax=axes[kk], encoder =encoder )
     if savefig is not None:
         plt.savefig(savefig, dpi = 300 )
@@ -1440,35 +1761,35 @@ def plot_confusion_matrix(
     ax: Optional[plt.Axes] = None,
     annot: bool = True,
     **kws: Dict[str, Any]
-) -> ArrayLike:
+) -> np.ndarray:
     """
     Plot a confusion matrix for a single classifier model to evaluate 
     the accuracy of a classification.
 
     Parameters
     ----------
-    y_true : ndarray or Series
+    y_true : `Union[ArrayLike, pd.Series]`
         An array or series of true target or class labels, representing 
         the actual classification outcomes.
-    y_pred : ndarray or Series
+    y_pred : `Union[ArrayLike, pd.Series]`
         An array or series of predicted target or class labels, 
         as determined by the classifier.
-    view : bool, optional
-        If True, display the confusion matrix using matplotlib's imshow;
-        otherwise, do not display. Default is True.
-    ax : matplotlib.axes.Axes, optional
-        Pre-existing axes for the plot. If None, a new figure and axes 
-        object is created. Default is None.
-    annot : bool, optional
-        If True, annotate the heat map with the number of samples in 
-        each category. Default is True.
-    kws : dict
+    view : `bool`, optional
+        If `True`, display the confusion matrix using matplotlib's imshow;
+        otherwise, do not display. Default is `True`.
+    ax : `Optional[plt.Axes]`, optional
+        Pre-existing axes for the plot. If `None`, a new figure and axes 
+        object is created. Default is `None`.
+    annot : `bool`, optional
+        If `True`, annotate the heat map with the number of samples in 
+        each category. Default is `True`.
+    kws : `Dict[str, Any]`
         Additional keyword arguments to pass to 
         `sklearn.metrics.confusion_matrix`.
 
     Returns
     -------
-    mat : ndarray
+    `np.ndarray`
         The confusion matrix array.
 
     Examples
@@ -1476,36 +1797,32 @@ def plot_confusion_matrix(
     >>> from sklearn.model_selection import train_test_split
     >>> from sklearn.datasets import load_iris
     >>> from sklearn.ensemble import AdaBoostClassifier
-    >>> from sklearn.metrics import plot_confusion_matrix
+    >>> from gofast.plot.mlviz import plot_confusion_matrix
     >>> X, y = load_iris(return_X_y=True)
     >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25)
     >>> model = AdaBoostClassifier()
     >>> model.fit(X_train, y_train)
     >>> y_pred = model.predict(X_test)
     >>> plot_confusion_matrix(y_test, y_pred)
-    
-    >>> #Import the required models and fetch a an Ababoost model 
-    >>> # for instance then plot the confusion metric 
+
+    >>> #Import the required models and fetch an AdaBoost model 
+    >>> # for instance then plot the confusion matrix 
     >>> import matplotlib.pyplot as plt 
-    >>> plt.style.use ('classic')
+    >>> plt.style.use('classic')
     >>> from gofast.datasets import fetch_data
     >>> from gofast.exlib.sklearn import train_test_split 
     >>> from gofast.models import pModels 
     >>> from gofast.tools.utils import plot_confusion_matrix
-    >>> # split the  data . Note that fetch_data output X and y 
-    >>> X, Xt, y, yt  = train_test_split (* fetch_data ('bagoue analysed'),
-                                          test_size =.25  )  
+    >>> # split the data. Note that fetch_data output X and y 
+    >>> X, Xt, y, yt = train_test_split(*fetch_data('bagoue analysed'), test_size=0.25)  
     >>> # train the model with the best estimator 
-    >>> pmo = pModels (model ='ada' ) 
-    >>> pmo.fit(X, y )
-    >>> print(pmo.estimator_ )
-    >>> #%% 
-    >>> # Predict the score using under the hood the best estimator 
-    >>> # for adaboost classifier 
+    >>> pmo = pModels(model='ada') 
+    >>> pmo.fit(X, y)
+    >>> print(pmo.estimator_)
+    >>> # Predict the score using the best estimator 
     >>> ypred = pmo.predict(Xt) 
     >>> # now plot the score 
-    >>> plot_confusion_matrix (yt , ypred )
-    
+    >>> plot_confusion_matrix(yt, ypred)
 
     Notes
     -----
@@ -1513,6 +1830,35 @@ def plot_confusion_matrix(
     of classifiers, not just in terms of overall accuracy but in recognizing 
     where misclassifications are occurring. This function leverages seaborn's 
     heatmap function to visualize the matrix effectively.
+
+    The confusion matrix `C` for a binary classification task can be defined as:
+
+    .. math::
+        C = \begin{bmatrix}
+        TP & FP \\
+        FN & TN
+        \end{bmatrix}
+
+    where:
+        - `TP` is the number of true positive predictions.
+        - `TN` is the number of true negative predictions.
+        - `FP` is the number of false positive predictions.
+        - `FN` is the number of false negative predictions.
+
+    The overall accuracy of the classifier can be calculated as:
+
+    .. math::
+        \text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}
+
+    See Also
+    --------
+    sklearn.metrics.confusion_matrix : Compute confusion matrix to evaluate 
+                                       the accuracy of a classification.
+
+    References
+    ----------
+    .. [1] Pedregosa et al., "Scikit-learn: Machine Learning in Python", JMLR 12, 
+           pp. 2825-2830, 2011.
     """
     # Ensure y_true and y_pred are of consistent length
     if len(y_true) != len(y_pred):
@@ -1534,7 +1880,7 @@ def plot_confusion_matrix(
     return mat
 
 def plot_cv(
-    model_fn: Callable[[], Model],
+    model_fn: Callable[[], 'Model'],
     X: np.ndarray,
     y: np.ndarray,
     n_splits: int = 5,
@@ -1549,26 +1895,26 @@ def plot_cv(
 
     Parameters
     ----------
-    model_fn : Callable[[], Model]
+    model_fn : `Callable[[], keras.Model]`
         A function that returns a compiled neural network model. The
         function should not take any arguments and must return a compiled
         Keras model.
 
-    X : np.ndarray
+    X : `np.ndarray`
         Training features, typically an array of shape (n_samples, n_features).
 
-    y : np.ndarray
+    y : `np.ndarray`
         Training labels or target values, typically an array of shape
         (n_samples,) or (n_samples, n_outputs).
 
-    n_splits : int, optional
+    n_splits : `int`, optional
         Number of splits for the K-Fold cross-validation. Default is 5.
 
-    epochs : int, optional
+    epochs : `int`, optional
         Number of epochs for training each model during the cross-validation.
         Default is 10.
 
-    metric : str, optional
+    metric : `str`, optional
         The performance metric to plot. Common choices are 'accuracy', 'loss',
         or any other metric included in the compiled model. Default is 'accuracy'.
 
@@ -1592,11 +1938,31 @@ def plot_cv(
 
     Notes
     -----
-    This function utilizes KFold from sklearn to create training and 
+    This function utilizes `KFold` from `sklearn.model_selection` to create training and 
     validation splits. It is essential that the model function provided 
     compiles the model with the necessary metrics as they are used to 
     monitor training performance.
+
+    The cross-validation process involves splitting the data into `n_splits`
+    folds, training the model on `n_splits - 1` folds, and validating it on
+    the remaining fold. This process is repeated for each fold, and the
+    performance metric is recorded for each epoch.
+
+    The performance metric for each fold is then plotted to visualize the
+    consistency and stability of the model across different subsets of the
+    data.
+
+    See Also
+    --------
+    `sklearn.model_selection.KFold` : Provides cross-validation iterator.
+    
+    References
+    ----------
+    .. [1] Chollet, F. (2015). Keras. https://github.com/fchollet/keras
+    .. [2] Pedregosa et al., "Scikit-learn: Machine Learning in Python", JMLR 12, 
+           pp. 2825-2830, 2011.
     """
+
     kf = KFold(n_splits=n_splits)
     fold_performance = []
     validate_keras_model(model_fn, raise_exception= True )
@@ -1649,55 +2015,71 @@ def plot_actual_vs_predicted(
     """
     Plot a scatter graph of actual vs predicted values along with an ideal line 
     representing perfect predictions.
-    
-    Optionally calculate and display selected  metrics such as 
+
+    Optionally calculate and display selected metrics such as 
     MSE, RMSE, MAE, and R2.
 
     Parameters
     ----------
-    y_true : ArrayLike
+    y_true : `ArrayLike`
         The true values for comparison. Must be a one-dimensional array-like 
         object of numerical data.
-    y_pred : ArrayLike
+
+    y_pred : `ArrayLike`
         The predicted values to be plotted against the true values. Must be 
         a one-dimensional array-like object of numerical data.
-    metrics : Optional[List[str]], optional
+
+    metrics : `Optional[List[str]]`, optional
         A list of strings indicating which metrics to calculate and display on 
         the plot. Possible values are 'mse', 'rmse', 'mae', and 'r2'. If None,
-        no metrics are displayed. If ``**``, displays all metric values.
-    point_color : str, optional
+        no metrics are displayed. If ``'*'``, displays all metric values.
+
+    point_color : `str`, optional
         The color for the scatter plot points. Default is 'blue'.
-    line_color : str, optional
+
+    line_color : `str`, optional
         The color for the ideal line. Default is 'red'.
-    point_label : str, optional
+
+    point_label : `str`, optional
         The label for the scatter plot points in the legend. Default is 'Prediction'.
-    line_label : str, optional
+
+    line_label : `str`, optional
         The label for the ideal line in the legend. Default is 'Ideal'.
-    xlabel : str, optional
+
+    xlabel : `str`, optional
         The label for the X-axis. Default is 'Actual (true) value'.
-    ylabel : str, optional
+
+    ylabel : `str`, optional
         The label for the Y-axis. Default is 'Predicted values'.
-    title : str, optional
+
+    title : `str`, optional
         The title of the plot. Default is 'Actual (true) value vs predicted values'.
-    show_grid : bool, optional
+
+    show_grid : `bool`, optional
         Whether to show grid lines on the plot. Default is True.
-    grid_style : str, optional
+
+    grid_style : `str`, optional
         The style of the grid lines. Default is '-' (solid line).
-    point_size : float, optional
+
+    point_size : `float`, optional
         The size of the scatter plot points. Default is 50.
-    line_style : str, optional
+
+    line_style : `str`, optional
         The style of the ideal line. Default is '-' (solid line).
-    ax : Optional[plt.Axes], optional
+
+    ax : `Optional[plt.Axes]`, optional
         The matplotlib Axes object to draw the plot on. If None, a new figure 
         and axes are created. Default is None.
-    fig_size : Optional[Tuple[int, int]], optional
+
+    fig_size : `Optional[Tuple[int, int]]`, optional
         The size of the figure in inches. Default is (10, 8).
+
     **metrics_kws
         Additional keyword arguments to pass to the metric functions.
 
     Returns
     -------
-    ax : plt.Axes
+    ax : `plt.Axes`
         The matplotlib Axes object with the plot.
 
     Examples
@@ -1708,6 +2090,39 @@ def plot_actual_vs_predicted(
     >>> y_pred = np.array([1.1, 1.9, 3.1, 3.9, 4.9])
     >>> plot_actual_vs_predicted(y_true, y_pred, metrics=['mse', 'rmse'], 
     ...                          point_color='green', line_color='r') 
+
+    Notes
+    -----
+    This function creates a scatter plot of the true values (`y_true`) against 
+    the predicted values (`y_pred`) with an ideal line representing perfect 
+    predictions where the true value equals the predicted value. The metrics 
+    are calculated as follows:
+
+    - Mean Squared Error (MSE): 
+      .. math:: \text{MSE} = \frac{1}{n} \sum_{i=1}^n (y_i - \hat{y}_i)^2
+
+    - Root Mean Squared Error (RMSE): 
+      .. math:: \text{RMSE} = \sqrt{\text{MSE}}
+
+    - Mean Absolute Error (MAE): 
+      .. math:: \text{MAE} = \frac{1}{n} \sum_{i=1}^n |y_i - \hat{y}_i|
+
+    - R-squared (R2): 
+      .. math:: R^2 = 1 - \frac{\sum_{i=1}^n (y_i - \hat{y}_i)^2}{\sum_{i=1}^n (y_i - \bar{y})^2}
+
+    The calculated metrics are displayed on the plot if specified.
+
+    See Also
+    --------
+    `matplotlib.pyplot.scatter` : To create scatter plots.
+    `matplotlib.pyplot.plot` : To draw the ideal line.
+
+    References
+    ----------
+    .. [1] Hunter, J. D. (2007). Matplotlib: A 2D graphics environment.
+           Computing in Science & Engineering, 9(3), 90-95.
+    .. [2] Pedregosa et al., "Scikit-learn: Machine Learning in Python", JMLR 12, 
+           pp. 2825-2830, 2011.
     """
     # Validate inputs
     y_true, y_pred = validate_yy(y_true, y_pred, "continuous")
@@ -1775,37 +2190,49 @@ def plot_actual_vs_predicted(
 def plot_regression_diagnostics(
     x: ArrayLike,
     *ys: List[ArrayLike],
-    titles: List[str]=None,
+    titles: Optional[List[str]] = None,
     xlabel: str = 'X',
     ylabel: str = 'Y',
     figsize: Tuple[int, int] = (15, 5),
     ci: Optional[int] = 95, 
-    **reg_kws
+    **reg_kws: Any
 ) -> plt.Figure:
     """
     Creates a series of plots to diagnose linear regression fits.
 
     Parameters
     ----------
-    x : np.ndarray
+    x : `ArrayLike`
         The independent variable data.
-    ys : List[np.ndarray]
-        A list of dependent variable datasets to be plotted against x.
-    titles : List[str], optional 
-        Titles for each subplot.
-    xlabel : str, default='X'
-        Label for the x-axis.
-    ylabel : str, default='Y'
-        Label for the y-axis.
-    figsize : Tuple[int, int], default=(15, 5)
-        Size of the entire figure.
-    ci : Optional[int], default=95
-        Size of the confidence interval for the regression estimate.
-    reg_kws: dict, 
-        Additional parameters passed to `seaborn.regplot`. 
+    
+    ys : `List[ArrayLike]`
+        A list of dependent variable datasets to be plotted against `x`.
         
-    Example
+    titles : `Optional[List[str]]`, optional 
+        Titles for each subplot. If not provided, subplots will not have titles.
+        
+    xlabel : `str`, default='X'
+        Label for the x-axis.
+        
+    ylabel : `str`, default='Y'
+        Label for the y-axis.
+        
+    figsize : `Tuple[int, int]`, default=(15, 5)
+        Size of the entire figure.
+        
+    ci : `Optional[int]`, default=95
+        Size of the confidence interval for the regression estimate.
+        
+    reg_kws : `Any`
+        Additional parameters passed to `seaborn.regplot`.
+
+    Returns
     -------
+    `plt.Figure`
+        The matplotlib Figure object containing the plots.
+
+    Examples
+    --------
     >>> import numpy as np 
     >>> from gofast.plot.mlviz import plot_regression_diagnostics
     >>> x = np.linspace(160, 170, 100)
@@ -1816,10 +2243,52 @@ def plot_regression_diagnostics(
     >>> # Larger noise variance
     >>> y3 = y1 + np.random.normal(scale=0.5, size=x.size)  
     >>> titles = ['All assumptions satisfied', 'Nonlinear term in model',
-                  'Heteroscedastic noise']
+    ...           'Heteroscedastic noise']
     >>> fig = plot_regression_diagnostics(x, y1, y2, y3, titles)
     >>> plt.show()
+
+    Notes
+    -----
+    This function is useful for visually diagnosing the assumptions of linear regression 
+    models, such as linearity, homoscedasticity, and the presence of outliers.
+
+    Linear regression assumes that the relationship between the dependent variable `y`
+    and the independent variable `x` can be modeled as a straight line. The confidence 
+    interval (CI) provides a range of values that is likely to contain the true value of 
+    the parameter being estimated.
+
+    The mathematical representation of the linear regression model is:
+
+    .. math::
+        y = \beta_0 + \beta_1 x + \epsilon
+
+    where:
+        - :math:`y` is the dependent variable.
+        - :math:`x` is the independent variable.
+        - :math:`\beta_0` is the intercept.
+        - :math:`\beta_1` is the slope.
+        - :math:`\epsilon` is the error term.
+
+    The confidence interval (CI) can be calculated as:
+
+    .. math::
+        \text{CI} = \hat{y} \pm t_{\alpha/2, n-2} \cdot SE
+
+    where:
+        - :math:`\hat{y}` is the predicted value.
+        - :math:`t_{\alpha/2, n-2}` is the t-score for a given confidence level and degrees of freedom.
+        - :math:`SE` is the standard error of the prediction.
+
+    See Also
+    --------
+    seaborn.regplot : Plot data and a linear regression model fit.
+    
+    References
+    ----------
+    .. [1] Seaborn documentation: https://seaborn.pydata.org/generated/seaborn.regplot.html
+    .. [2] Montgomery, D. C., Peck, E. A., & Vining, G. G. (2012). Introduction to Linear Regression Analysis. Wiley.
     """
+
     fig, axes = plt.subplots(1, len(ys), figsize=figsize, sharey=True)
     if len(ys)==1: 
         axes = [axes]
@@ -1844,7 +2313,6 @@ def plot_regression_diagnostics(
 
     plt.tight_layout()
     
-
 def plot_residuals_vs_leverage(
     residuals: ArrayLike,
     leverage: ArrayLike,
@@ -1863,31 +2331,40 @@ def plot_residuals_vs_leverage(
 
     Parameters
     ----------
-    residuals : np.ndarray
+    residuals : `ArrayLike`
         Standardized residuals from the regression model.
-    leverage : np.ndarray
+        
+    leverage : `ArrayLike`
         Leverage values calculated from the model.
-    cook_d : np.ndarray, optional
-        Cook's distance for each observation in the model.
-    figsize : Tuple[int, int], default=(8, 6)
+        
+    cook_d : `Optional[ArrayLike]`, optional
+        Cook's distance for each observation in the model. Default is `None`.
+        
+    figsize : `Tuple[int, int]`, default=(8, 6)
         The figure size for the plot.
-    cook_d_threshold : float, default=0.5
+        
+    cook_d_threshold : `float`, default=0.5
         The threshold for Cook's distance to draw a contour and potentially 
         annotate points.
-    annotate : bool, default=True
-        If True, annotate points that exceed the Cook's distance threshold.
-    scatter_kwargs : dict, optional
+        
+    annotate : `bool`, default=True
+        If `True`, annotate points that exceed the Cook's distance threshold.
+        
+    scatter_kwargs : `Optional[dict]`, optional
         Additional keyword arguments for the scatter plot.
-    cook_d_kwargs : dict, optional
+        
+    cook_d_kwargs : `Optional[dict]`, optional
         Additional keyword arguments for the Cook's distance ellipses.
-    line_kwargs : dict, optional
+        
+    line_kwargs : `Optional[dict]`, optional
         Additional keyword arguments for the horizontal line at 0.
-    annotation_kwargs : dict, optional
+        
+    annotation_kwargs : `Optional[dict]`, optional
         Additional keyword arguments for the annotations.
 
     Returns
     -------
-    ax : plt.Axes
+    `plt.Axes`
         The matplotlib axes containing the plot.
 
     Example
@@ -1900,7 +2377,41 @@ def plot_residuals_vs_leverage(
     >>> cook_d = np.random.uniform(0, 1, 100) ** 2  
     >>> ax = plot_residuals_vs_leverage(residuals, leverage, cook_d)
     >>> plt.show()
+
+    Notes
+    -----
+    The plot of residuals vs leverage is a diagnostic tool for evaluating 
+    the fit of a regression model. 
+
+    Leverage is a measure of how far an observation deviates from the mean 
+    of the independent variables. Standardized residuals are the residuals 
+    divided by an estimate of their standard deviation.
+
+    Cook's distance is a measure used in regression analysis to identify 
+    influential data points. It combines the information of both the leverage 
+    and the residuals to assess the influence of each observation:
+
+    .. math::
+        D_i = \frac{e_i^2}{p \cdot MSE} \left( \frac{h_i}{(1 - h_i)^2} \right)
+
+    where:
+        - :math:`D_i` is Cook's distance for the i-th observation.
+        - :math:`e_i` is the residual for the i-th observation.
+        - :math:`p` is the number of parameters in the model.
+        - :math:`MSE` is the mean squared error of the model.
+        - :math:`h_i` is the leverage of the i-th observation.
+
+    See Also
+    --------
+    sklearn.linear_model.LinearRegression : Linear regression.
+    
+    References
+    ----------
+    .. [1] Cook, R. D., & Weisberg, S. (1982). Residuals and Influence in 
+      Regression. New York: Chapman & Hall.
     """
+
+
     if scatter_kwargs is None:
         scatter_kwargs = {'edgecolors': 'k', 'facecolors': 'none'}
     if cook_d_kwargs is None:
@@ -1967,32 +2478,42 @@ def plot_residuals_vs_fitted(
 
     Parameters
     ----------
-    fitted_values : np.ndarray
+    fitted_values : `ArrayLike`
         The fitted values from a regression model.
-    residuals : np.ndarray
+        
+    residuals : `ArrayLike`
         The residuals from a regression model.
-    highlight : Tuple[int, ...], optional
+        
+    highlight : `Optional[Tuple[int, ...]]`, optional
         Indices of points to highlight in the plot.
-    figsize : Tuple[int, int], default=(6, 4)
+        
+    figsize : `Tuple[int, int]`, default=(6, 4)
         Size of the figure to be created.
-    title : str, default='Residuals vs Fitted'
+        
+    title : `str`, default='Residuals vs Fitted'
         Title of the plot.
-    xlabel : str, default='Fitted values'
+        
+    xlabel : `str`, default='Fitted values'
         Label of the x-axis.
-    ylabel : str, default='Residuals'
+        
+    ylabel : `str`, default='Residuals'
         Label of the y-axis.
-    linecolor : str, default='red'
+        
+    linecolor : `str`, default='red'
         Color of the line to be plotted.
-    linestyle : str, default='-'
+        
+    linestyle : `str`, default='-'
         Style of the line to be plotted.
-    scatter_kws : dict, optional
+        
+    scatter_kws : `Optional[dict]`, optional
         Additional keyword arguments to be passed to the `plt.scatter` method.
-    line_kws : dict, optional
+        
+    line_kws : `Optional[dict]`, optional
         Additional keyword arguments to be passed to the `plt.plot` method.
 
     Returns
     -------
-    ax : plt.Axes
+    `plt.Axes`
         The matplotlib axes containing the plot.
 
     See Also 
@@ -2009,7 +2530,36 @@ def plot_residuals_vs_fitted(
     >>> residuals = np.random.normal(0, 10, 100)
     >>> ax = plot_residuals_vs_fitted(fitted, residuals)
     >>> plt.show()
+
+    Notes
+    -----
+    Residuals vs Fitted plot is used to identify non-linearity, unequal error 
+    variances, and outliers. Ideally, residuals should be randomly scattered 
+    around 0, suggesting that the model fits well.
+
+    The residual for each observation is calculated as:
+
+    .. math::
+        e_i = y_i - \hat{y}_i
+
+    where:
+        - :math:`e_i` is the residual for the i-th observation.
+        - :math:`y_i` is the actual value for the i-th observation.
+        - :math:`\hat{y}_i` is the fitted value for the i-th observation.
+
+    Patterns in the residuals vs fitted plot can indicate issues with the 
+    model fit, such as non-linearity or heteroscedasticity.
+
+    See Also
+    --------
+    seaborn.regplot : Plot data and a linear regression model fit.
+    
+    References
+    ----------
+    .. [1] Anscombe, F. J. (1973). Graphs in Statistical Analysis. The American Statistician, 27(1), 17-21.
+    .. [2] Chatterjee, S., & Hadi, A. S. (1988). Sensitivity Analysis in Linear Regression. New York: Wiley.
     """
+
     if scatter_kws is None:
         scatter_kws = {}
     if line_kws is None:

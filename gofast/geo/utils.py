@@ -472,8 +472,7 @@ def compute_azimuth(
         plt.show()
 
     return azim
-
-
+ 
 def calculate_bearing(
     latlon1: Tuple[float, float], 
     latlon2: Tuple[float, float], 

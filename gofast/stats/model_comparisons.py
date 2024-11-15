@@ -29,6 +29,8 @@ from ..tools.funcutils import ensure_pkg
 from ..tools.validator import _is_arraylike_1d, validate_comparison_data
 from ..tools.validator import parameter_validator 
 
+_MAXROWS = 50  ; _MAXCOLS= 5 
+
 __all__=[
     "perform_friedman_test", 
     "perform_nemenyi_posthoc_test", 
@@ -212,7 +214,10 @@ def perform_friedman_test(
 
     formatted_result= MultiFrameFormatter( titles=titles,
        keywords=['friedman_result', 'post_hoc_result'], 
-       descriptor="FriedmanTest").add_dfs(*results)
+       descriptor="FriedmanTest", 
+       max_rows = _MAXROWS,
+       max_cols = _MAXCOLS
+       ).add_dfs(*results)
     
     return formatted_result
  
@@ -340,7 +345,10 @@ def perform_nemenyi_posthoc_test(
         ] 
     keywords = ['p_values', 'significant_differences', 'average_ranks']
     results= MultiFrameFormatter(titles = titles, keywords= keywords, 
-                                 descriptor="NemenyiPosthocTest").add_dfs(
+                                 descriptor="NemenyiPosthocTest", 
+                                 max_rows = _MAXROWS,
+                                 max_cols = _MAXCOLS
+                                 ).add_dfs(
         pairwise_p_values, significant_diffs,  avg_ranks
     )
     
@@ -588,7 +596,10 @@ def perform_wilcoxon_test(
         p_values_df[~significant_diffs] = np.nan
         
     p_values_df= DataFrameFormatter(
-        "Wilcoxon Test Results", descriptor="WilcoxonTest").add_df (p_values_df)
+        "Wilcoxon Test Results", descriptor="WilcoxonTest", 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (p_values_df)
     return p_values_df
 
 @isdf 
@@ -673,7 +684,10 @@ def perform_friedman_test2(
 
     # Formatting the result DataFrame for presentation
     formatted_result = DataFrameFormatter(
-        title="Friedman Test Results", descriptor="FriedmanTest").add_df(result)
+        title="Friedman Test Results", descriptor="FriedmanTest", 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df(result)
 
     return formatted_result
 
@@ -725,7 +739,10 @@ def perform_nemenyi_posthoc_test2(
     pairwise_comparisons.columns = model_performance_data.columns
     
     pairwise_comparisons= DataFrameFormatter(
-        "PairWise Results", descriptor="NemenyiTest").add_df (
+        "PairWise Results", descriptor="NemenyiTest", 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (
         pairwise_comparisons)
     
     return pairwise_comparisons
@@ -798,7 +815,10 @@ def perform_nemenyi_test2(
     pairwise_comparisons.columns = ranks.columns
     pairwise_comparisons= DataFrameFormatter(
         "Nemenyi Results", descriptor="NemenyiTest", 
-        keyword='result').add_df (
+        keyword='result', 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (
         pairwise_comparisons)
     return pairwise_comparisons
 
@@ -876,7 +896,10 @@ def perform_wilcoxon_test2(
     np.fill_diagonal(results.values, pd.NA)
     results= DataFrameFormatter(
         "Wilcoxon Results", descriptor="WilcoxonTest", 
-        keyword='result').add_df (results)
+        keyword='result', 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (results)
     return results
 
 def plot_cd_diagram(
@@ -1267,7 +1290,10 @@ def perform_posthoc_test(
         index=model_performance_data.columns 
         ) 
     posthoc_result= DataFrameFormatter(
-        f"Posthoc {test_method} Results", descriptor="NemenyiTest").add_df (
+        f"Posthoc {test_method} Results", descriptor="NemenyiTest", 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (
         posthoc_result)
     
     return posthoc_result
@@ -1590,7 +1616,10 @@ def perform_posthoc_analysis(
     title = f"Multiple Comparison of Means - {test_method.title()}, FWER={significance_level}"
     analysis_result= DataFrameFormatter(
         title=title, descriptor=f"{test_method}Test", 
-        keyword ='result').add_df (
+        keyword ='result', 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (
         pd.DataFrame(records))
     
     return analysis_result
@@ -1751,7 +1780,10 @@ def compute_stats_comparisons(data_or_result, test_type='wilcoxon'):
 
     comparison_results = DataFrameFormatter( 
         title =f"{test_type} Results", keyword='result', 
-        descriptor=f"{test_type}Test").add_df (result_df)
+        descriptor=f"{test_type}Test", 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (result_df)
     
     return comparison_results
 
@@ -1835,7 +1867,10 @@ def perform_posthoc_test2(
     else:
         raise ValueError(f"Unsupported test method '{test_method}'."
                          " Choose 'tukey' or 'nemenyi'.")
-    posthoc_result= DataFrameFormatter(f"Posthoc {test_method} Results").add_df (
+    posthoc_result= DataFrameFormatter(f"Posthoc {test_method} Results", 
+                                       max_rows = _MAXROWS,
+                                       max_cols = _MAXCOLS
+                                       ).add_df (
         posthoc_result)
     return posthoc_result
 
@@ -2095,7 +2130,10 @@ def visualize_wilcoxon_test(
     
     if return_result : 
         return DataFrameFormatter(
-            "wilcoxon Results", descriptor="WilcoxonTest").add_df (results_df)
+            "wilcoxon Results", descriptor="WilcoxonTest", 
+            max_rows = _MAXROWS,
+            max_cols = _MAXCOLS
+            ).add_df (results_df)
 
 @isdf 
 def generate_model_pairs(
@@ -2235,7 +2273,10 @@ def compute_model_summary(
     summary= summary.sort_values(ascending= not higher_is_better)
     formatted_summary = DataFrameFormatter('Summary Statistics', 
         descriptor="ModelSummary", keyword='summary', 
-        series_name = "average_score").add_df (summary) 
+        series_name = "average_score", 
+        max_rows = _MAXROWS,
+        max_cols = _MAXCOLS
+        ).add_df (summary) 
     
     return formatted_summary # Bunch object and print to see content 
 
